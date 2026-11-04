@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>AVE Staff Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Grupo AVE · Personal</div>
+      <h1>Staff Records</h1>
+      <div class="muted">Employee files, safety training expiry and birthdays.</div>
+    </div>
+    <div class="head-actions">
+      <button class="btn quiet" id="pwBtn">Change password</button>
+      <button class="btn quiet" id="outBtn">Sign out</button>
+      <button class="btn primary" id="addBtn">+ Add employee</button>
+    </div>
+  </header>
+
+  <section class="stats" aria-label="Summary">
+    <div class="stat"><b id="sTotal">–</b><span>Employees</span></div>
+    <div class="stat bad"><b id="sExpired">–</b><span>Trainings expired</span></div>
+    <div class="stat warn"><b id="sExpiring">–</b><span id="sExpiringL">Expiring soon</span></div>
+    <div class="stat bday"><b id="sBday">–</b><span>Birthdays next 30 days</span></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Roster</h2>
+        <div class="toolbar">
+          <input class="search" id="q" type="search" placeholder="Search name, position or site" aria-label="Search employees">
+          <div class="seg" role="group" aria-label="Filter">
+            <button id="fAll" aria-pressed="true">All</button>
+            <button id="fAttn" aria-pressed="false">Needs attention</button>
+          </div>
+        </div>
+      </div>
+      <div class="roster" id="roster"><div class="state muted">Loading records…</div></div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Safety training</h2>
+          <label class="window">Warn me
+            <select id="win" aria-label="Warning window">
+              <option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option>
+            </select> ahead</label>
+        </div>
+        <div class="alerts" id="trainAlerts"></div>
+      </section>
+      <section class="panel">
+        <h2>Upcoming birthdays</h2>
+        <div class="alerts" id="bdayAlerts"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<datalist id="trainingNames">
+  <option value="DC-3 Constancia de habilidades (STPS)">
+  <option value="NOM-251 Manejo higiénico de alimentos">
+  <option value="Distintivo H">
+  <option value="Primeros auxilios">
+  <option value="Brigada contra incendios">
+  <option value="Evacuación y protección civil">
+  <option value="NOM-017 Equipo de protección personal">
+  <option value="NOM-030 Seguridad y salud en el trabajo">
+  <option value="Manejo de gas LP">
+  <option value="Certificado médico / tarjeta de salud">
+</datalist>
+
+<dialog id="dlg" aria-labelledby="dName">
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <div class="eyebrow">Employee file</div>
+        <h2 id="dName">New employee</h2>
+        <div class="muted" id="dSub"></div>
+      </div>
+      <button class="close" id="dClose" aria-label="Close">×</button>
+    </div>
+
+    <form class="card" id="profile" novalidate>
+      <h3>Profile</h3>
+      <div class="fields">
+        <div class="field full"><label for="p_name">Full name *</label><input id="p_name" required autocomplete="off"></div>
+        <div class="field"><label for="p_position">Position</label><input id="p_position" placeholder="Cocinero, Higienista…"></div>
+        <div class="field"><label for="p_site">Site / plant</label><input id="p_site" placeholder="JABIL Juárez…"></div>
+        <div class="field"><label for="p_birthday">Birthday</label><input id="p_birthday" type="date"></div>
+        <div class="field"><label for="p_hire">Hire date</label><input id="p_hire" type="date"></div>
+        <div class="field"><label for="p_phone">Phone</label><input id="p_phone" type="tel"></div>
+        <div class="field"><label for="p_emerg">Emergency contact</label><input id="p_emerg" placeholder="Name and phone"></div>
+        <div class="field full"><label for="p_notes">Notes</label><textarea id="p_notes"></textarea></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn danger" id="delEmp">Delete employee</button>
+        <button type="submit" class="btn primary" id="saveProfile">Save profile</button>
+      </div>
+    </form>
+
+    <section class="card" id="trainCard">
+      <h3>Safety trainings</h3>
+      <div class="list" id="trainList"></div>
+      <form class="addrow" id="trainForm" novalidate>
+        <div class="field n"><label for="t_name">Training</label><input id="t_name" list="trainingNames" placeholder="Pick or type a course"></div>
+        <div class="field"><label for="t_done">Completed</label><input id="t_done" type="date"></div>
+        <div class="field"><label for="t_exp">Expires</label><input id="t_exp" type="date"></div>
+        <button class="btn" type="submit">Add</button>
+      </form>
+      <div class="note">To renew a course, add it again with the same name and new dates. The old record is replaced.</div>
+    </section>
+
+    <section class="card" id="docCard">
+      <h3>Documents</h3>
+      <div class="list" id="docList"></div>
+      <form class="addrow docs" id="docForm" novalidate>
+        <div class="field"><label for="u_type">Document type</label>
+          <select id="u_type">
+            <option>INE</option><option>CURP</option><option>RFC / Constancia fiscal</option><option>NSS (IMSS)</option>
+            <option>Acta de nacimiento</option><option>Comprobante de domicilio</option><option>Contrato</option>
+            <option>Certificado médico</option><option>Constancia DC-3</option><option>Otro</option>
+          </select></div>
+        <div class="field"><label for="u_file">File</label><input id="u_file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"></div>
+        <button class="btn" type="submit" id="upBtn">Upload</button>
+      </form>
+      <div class="note">PDF or photo (JPG, PNG), up to 20 MB each.</div>
+    </section>
+  </div>
+</dialog>
+
+<dialog id="pwDlg" aria-labelledby="pwTitle">
+  <div class="sheet narrow">
+    <div class="sheet-head">
+      <div><div class="eyebrow">Account</div><h2 id="pwTitle">Change password</h2></div>
+      <button class="close" id="pwClose" aria-label="Close">×</button>
+    </div>
+    <form class="card" id="pwForm" novalidate>
+      <div class="fields one">
+        <div class="field"><label for="pw_cur">Current password</label><input id="pw_cur" type="password" autocomplete="current-password"></div>
+        <div class="field"><label for="pw_new">New password</label><input id="pw_new" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="pw_new2">Repeat new password</label><input id="pw_new2" type="password" autocomplete="new-password"></div>
+      </div>
+      <div class="note">At least 10 characters. Other devices will be signed out.</div>
+      <div class="err" id="pwErr" role="alert" hidden></div>
+      <div class="actions end"><button class="btn primary" type="submit">Save new password</button></div>
+    </form>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

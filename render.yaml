@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: ave-staff-records
+    runtime: node
+    plan: starter            # a paid instance is required to attach a persistent disk
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    disk:
+      name: ave-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_USER
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false          # you type this in the Render dashboard; it is never stored in the code
