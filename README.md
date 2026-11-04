@@ -24,6 +24,14 @@ Optional: in the service's **Settings → Custom Domains** you can point somethi
 | `DATA_DIR` | `/var/data`, the persistent disk. |
 | `RESET_PASSWORD` | Forgot the password? Set this to `1`, put a new `ADMIN_PASSWORD`, redeploy, sign in, then **delete** `RESET_PASSWORD` and redeploy again. |
 
+## Reports
+
+The **Reports** panel on the main screen downloads PDFs, generated on the spot from the current records (dates use Ciudad Juárez time):
+
+- **Weekly report:** expired trainings, trainings expiring within the warning window (30/60/90 days), and birthdays in the next 30 days.
+- **Past-due trainings:** every expired course, most overdue first, with phone numbers, plus employees with no trainings on file.
+- **Monthly calendar:** pick a month; a landscape calendar with birthdays, training expiries and work anniversaries, followed by a full list.
+
 ## Security
 
 - The password is checked on the server and stored scrambled (scrypt), never as plain text.

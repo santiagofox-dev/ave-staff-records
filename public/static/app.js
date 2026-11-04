@@ -225,7 +225,15 @@ $('#addBtn').addEventListener('click', () => openFile(null));
 $('#q').addEventListener('input', renderRoster);
 $('#fAll').addEventListener('click', () => { filter = 'all'; $('#fAll').setAttribute('aria-pressed', 'true'); $('#fAttn').setAttribute('aria-pressed', 'false'); renderRoster(); });
 $('#fAttn').addEventListener('click', () => { filter = 'attn'; $('#fAttn').setAttribute('aria-pressed', 'true'); $('#fAll').setAttribute('aria-pressed', 'false'); renderRoster(); });
-$('#win').addEventListener('change', () => { win = +$('#win').value; try { localStorage.setItem('ave-win', String(win)); } catch (e) {} render(); });
+function syncReports() {
+  $('#rWeekly').href = '/reports/weekly.pdf?days=' + win;
+  $('#rWeeklyS').textContent = `Expired, expiring in ${win} days, birthdays`;
+  $('#rCal').href = '/reports/calendar.pdf?month=' + ($('#rMonth').value || '');
+}
+{ const t = new Date(); $('#rMonth').value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`; }
+$('#rMonth').addEventListener('change', syncReports);
+syncReports();
+$('#win').addEventListener('change', () => { win = +$('#win').value; try { localStorage.setItem('ave-win', String(win)); } catch (e) {} syncReports(); render(); });
 
 async function load() {
   try { employees = await api('GET', '/api/employees'); loaded = true; render(); }

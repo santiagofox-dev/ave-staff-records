@@ -60,6 +60,22 @@
         <h2>Upcoming birthdays</h2>
         <div class="alerts" id="bdayAlerts"></div>
       </section>
+      <section class="panel">
+        <h2>Reports</h2>
+        <div class="reports">
+          <a class="report" id="rWeekly" href="/reports/weekly.pdf" download>
+            <span><span class="t">Weekly report</span><br><span class="s" id="rWeeklyS">Expired, expiring soon and birthdays</span></span>
+            <span class="dl">PDF ↓</span></a>
+          <a class="report" href="/reports/past-due.pdf" download>
+            <span><span class="t">Past-due trainings</span><br><span class="s">Every expired course, most overdue first</span></span>
+            <span class="dl">PDF ↓</span></a>
+          <div class="report cal">
+            <span><span class="t">Monthly calendar</span><br><span class="s">Birthdays, expiries and anniversaries</span></span>
+            <span class="cal-pick"><label class="sr" for="rMonth">Month</label><input id="rMonth" type="month">
+              <a class="dl" id="rCal" href="/reports/calendar.pdf" download>PDF ↓</a></span>
+          </div>
+        </div>
+      </section>
     </aside>
   </div>
 </div>

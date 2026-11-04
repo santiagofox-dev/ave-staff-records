@@ -106,7 +106,7 @@ app.use(cookieSession({
 const authed = req => req.session && req.session.ok && req.session.ver === state.auth.ver;
 function requireAuth(req, res, next) {
   if (authed(req)) return next();
-  if (req.path.startsWith('/api/') || req.path.startsWith('/files/')) return res.status(401).json({ error: 'Sign in again.' });
+  if (req.path.startsWith('/api/') || req.path.startsWith('/files/') || req.path.startsWith('/reports/')) return res.status(401).json({ error: 'Sign in again.' });
   return res.redirect('/login');
 }
 
@@ -130,7 +130,7 @@ app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true 
 
 /* everything below needs a login */
 app.use(requireAuth);
-app.use(['/api', '/files'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use(['/api', '/files', '/reports'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
 
@@ -249,6 +249,19 @@ app.get('/files/:docId', (req, res) => {
     }
   }
   res.status(404).send('File not found.');
+});
+
+/* ---- downloadable reports ---- */
+const reports = require('./reports');
+const empList = () => Object.values(state.employees);
+app.get('/reports/weekly.pdf', (req, res) => {
+  const w = [30, 60, 90].includes(+req.query.days) ? +req.query.days : 60;
+  reports.weekly(res, empList(), w);
+});
+app.get('/reports/past-due.pdf', (req, res) => reports.pastDue(res, empList()));
+app.get('/reports/calendar.pdf', (req, res) => {
+  const m = /^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month || '') ? req.query.month : reports.todayISO().slice(0, 7);
+  reports.calendar(res, empList(), m);
 });
 
 app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'Something went wrong on the server.' }); });

@@ -90,6 +90,16 @@ button.row:hover{background:var(--sunk)}
 .window{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
 .window select{border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:3px 6px}
 
+.reports{display:flex;flex-direction:column;gap:6px}
+.report{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;background:var(--sunk);border-radius:6px;padding:10px 12px;color:var(--fg);text-decoration:none}
+a.report:hover{filter:brightness(.97)}
+.report .t{font-weight:600;font-size:14px}
+.report .s{font-size:13px;color:var(--muted)}
+.report .dl{font-family:var(--f-mono);font-size:12px;font-weight:500;color:var(--accent);white-space:nowrap;text-decoration:none}
+.cal-pick{display:flex;gap:8px;align-items:center}
+.cal-pick input{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 6px;font-size:13px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
 /* employee file sheet */
 dialog{border:0;padding:0;background:transparent;max-width:none;max-height:none;width:100%;height:100%;margin:0;color:var(--fg)}
 dialog::backdrop{background:var(--scrim)}
