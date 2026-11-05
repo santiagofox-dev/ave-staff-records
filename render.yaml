@@ -3,6 +3,7 @@ services:
     name: ave-staff-records
     runtime: node
     plan: starter            # a paid instance is required to attach a persistent disk
+    region: ohio
     buildCommand: npm install --omit=dev
     startCommand: node server.js
     healthCheckPath: /healthz
