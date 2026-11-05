@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Expedientes de Personal AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/styles.css?v=4">
+<link rel="stylesheet" href="/static/styles.css?v=5">
 </head>
 <body>
 <div class="wrap">
@@ -116,10 +116,14 @@
         <div class="field"><label for="p_curp">CURP</label><input id="p_curp" maxlength="18" autocomplete="off" style="text-transform:uppercase"></div>
         <div class="field"><label for="p_rfc">RFC</label><input id="p_rfc" maxlength="13" autocomplete="off" style="text-transform:uppercase"></div>
         <div class="field"><label for="p_nss">NSS</label><input id="p_nss" maxlength="20" autocomplete="off"></div>
+        <div class="field"><label for="p_contractType">Tipo de contrato</label><select id="p_contractType"><option value="">—</option><option>Indeterminado</option><option>Temporal</option><option>Periodo de prueba</option><option>Capacitación inicial</option></select></div>
+        <div class="field full"><label for="p_address">Domicilio</label><input id="p_address" maxlength="200"></div>
         <div class="field"><label for="p_birthday">Fecha de cumpleaños</label><input id="p_birthday" type="date"></div>
         <div class="field"><label for="p_hire">Fecha de ingreso</label><input id="p_hire" type="date"></div>
         <div class="field"><label for="p_phone">Teléfono</label><input id="p_phone" type="tel"></div>
         <div class="field"><label for="p_emerg">Contacto de emergencia</label><input id="p_emerg" placeholder="Nombre y teléfono"></div>
+        <div class="field"><label for="p_status">Estatus</label><select id="p_status"><option value="activo">Activo</option><option value="baja">Baja</option></select></div>
+        <div class="field"><label for="p_bajaDate">Fecha de baja</label><input id="p_bajaDate" type="date"></div>
         <div class="field full"><label for="p_notes">Notas</label><textarea id="p_notes"></textarea></div>
       </div>
       <details class="extra" id="extraBox" hidden><summary>Datos de la hoja EXPEDIENTES</summary><dl id="extraList"></dl></details>
@@ -180,6 +184,6 @@
 </dialog>
 
 <div class="toast" id="toast" hidden></div>
-<script src="/static/app.js?v=4"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

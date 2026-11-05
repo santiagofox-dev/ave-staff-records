@@ -11,11 +11,15 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@napi-rs/canvas": "0.1.100",
+    "@tesseract.js-data/spa": "1.0.0",
     "cookie-session": "2.1.0",
     "exceljs": "4.4.0",
     "express": "4.21.2",
     "multer": "2.0.2",
+    "pdfjs-dist": "5.7.284",
     "pdfkit": "0.17.2",
+    "tesseract.js": "7.0.0",
     "yauzl": "3.4.0"
   }
 }

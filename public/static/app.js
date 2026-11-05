@@ -73,12 +73,12 @@ const getEmp = id => employees.find(e => e.id === id);
 
 /* ---------- pantalla ---------- */
 function render() {
-  const t = employees.length; let expired = 0, expiring = 0; const tAlerts = [];
-  employees.forEach(e => (e.trainings || []).forEach(tr => {
+  const act = active(); const t = act.length; let expired = 0, expiring = 0; const tAlerts = [];
+  act.forEach(e => (e.trainings || []).forEach(tr => {
     const s = tStatus(tr); if (s.key === 'bad') expired++; if (s.key === 'warn') expiring++;
     if (s.key === 'bad' || s.key === 'warn') tAlerts.push({ e, tr, s });
   }));
-  const bdays = employees.map(e => ({ e, b: nextBirthday(e) })).filter(x => x.b && x.b.days <= 30).sort((a, b) => a.b.days - b.b.days);
+  const bdays = act.map(e => ({ e, b: nextBirthday(e) })).filter(x => x.b && x.b.days <= 30).sort((a, b) => a.b.days - b.b.days);
   const show = loaded || t;
   $('#sTotal').textContent = show ? t : '–'; $('#sExpired').textContent = show ? expired : '–';
   $('#sExpiring').textContent = show ? expiring : '–'; $('#sExpiringL').textContent = `Vencen en ${win} días`; $('#sBday').textContent = show ? bdays.length : '–';
@@ -105,7 +105,7 @@ function renderRoster() {
     return;
   }
   const q = $('#q').value.trim().toLowerCase();
-  let list = employees.filter(e => (!plantSel || (e.site || '') === plantSel) && (!q || [e.name, e.number, e.position, e.site, e.curp].some(v => (v || '').toLowerCase().includes(q))));
+  let list = employees.filter(e => (plantSel === '__bajas' ? isBaja(e) : !isBaja(e) && (!plantSel || (e.site || '') === plantSel)) && (!q || [e.name, e.number, e.position, e.site, e.curp].some(v => (v || '').toLowerCase().includes(q))));
   if (filter === 'attn') list = list.filter(e => ['bad', 'warn'].includes(eStatus(e).key));
   const rank = { bad: 0, warn: 1, none: 2, ok: 3 };
   const byNum = (a, b) => (parseInt(a.number, 10) || 1e9) - (parseInt(b.number, 10) || 1e9) || (a.name || '').localeCompare(b.name || '', LOC);
@@ -120,10 +120,12 @@ function renderRoster() {
 const PLANT_ORDER = ['Auto Kabel Juárez', 'Juárez', 'Guadalajara', 'Monclova', 'Tijuana', 'Jabil Chihuahua', 'Wistron', 'Jabil Torres'];
 const plantRank = p => { const i = PLANT_ORDER.indexOf(p); return i < 0 ? 99 : i; };
 function renderPlants() {
-  const counts = {}; employees.forEach(e => { const k = e.site || 'Sin planta'; counts[k] = (counts[k] || 0) + 1; });
+  const counts = {}; employees.filter(e => !isBaja(e)).forEach(e => { const k = e.site || 'Sin planta'; counts[k] = (counts[k] || 0) + 1; });
+  const nb = employees.filter(isBaja).length;
   const names = Object.keys(counts).sort((a, b) => plantRank(a) - plantRank(b) || a.localeCompare(b, LOC));
-  if (plantSel && !counts[plantSel]) plantSel = '';
-  $('#plant').innerHTML = `<option value="">Todas las plantas (${employees.length})</option>` + names.map(n => `<option value="${esc(n === 'Sin planta' ? '' : n)}"${n === plantSel ? ' selected' : ''}>${esc(n)} (${counts[n]})</option>`).join('');
+  if (plantSel && plantSel !== '__bajas' && !counts[plantSel]) plantSel = '';
+  $('#plant').innerHTML = `<option value="">Todas las plantas (${employees.length - nb})</option>` + names.map(n => `<option value="${esc(n === 'Sin planta' ? '' : n)}"${n === plantSel ? ' selected' : ''}>${esc(n)} (${counts[n]})</option>`).join('')
+    + (nb ? `<option value="__bajas"${plantSel === '__bajas' ? ' selected' : ''}>Bajas (${nb})</option>` : '');
   $('#plantNames').innerHTML = [...new Set([...PLANT_ORDER, ...names.filter(n => n !== 'Sin planta')])].map(n => `<option value="${esc(n)}">`).join('');
 }
 function rowHTML(e) {
@@ -139,13 +141,16 @@ function rowHTML(e) {
 }
 
 /* ---------- expediente ---------- */
-const P = ['name', 'number', 'position', 'site', 'curp', 'rfc', 'nss', 'birthday', 'hire', 'phone', 'emerg', 'notes'];
+const P = ['name', 'number', 'position', 'site', 'curp', 'rfc', 'nss', 'contractType', 'address', 'status', 'bajaDate', 'birthday', 'hire', 'phone', 'emerg', 'notes'];
+const isBaja = e => e.status === 'baja';
+const active = () => employees.filter(e => !isBaja(e) && !/no es empleado/i.test(e.name));
 function setLocked(v) { $('#trainCard').classList.toggle('locked', v); $('#docCard').classList.toggle('locked', v); }
 function openFile(id) {
   const e = id ? getEmp(id) : null; isNew = !e;
   openId = e ? e.id : newId();
-  P.forEach(k => $('#p_' + k).value = e ? (e[k] || '') : '');
-  if (!e && plantSel) $('#p_site').value = plantSel;
+  P.forEach(k => $('#p_' + k).value = e ? (e[k] || (k === 'status' ? 'activo' : '')) : '');
+  if (!e && plantSel && plantSel !== '__bajas') $('#p_site').value = plantSel;
+  if (!e) $('#p_status').value = 'activo';
   const ex = e && e.extra ? Object.entries(e.extra) : [];
   $('#extraBox').hidden = !ex.length;
   $('#extraList').innerHTML = ex.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');

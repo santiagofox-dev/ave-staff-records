@@ -168,6 +168,9 @@ app.put('/api/employees/:id', (req, res) => {
     emerg: S(b.emerg, 160), notes: S(b.notes, 2000),
     birthday: D(b.birthday), hire: D(b.hire),
     number: S(b.number, 20), curp: S(b.curp, 18).toUpperCase(), rfc: S(b.rfc, 13).toUpperCase(), nss: S(b.nss, 20),
+    address: S(b.address, 200), contractType: S(b.contractType, 40),
+    status: b.status === 'baja' ? 'baja' : 'activo', bajaDate: b.status === 'baja' ? D(b.bajaDate) : '',
+    filledFrom: prev && prev.filledFrom ? prev.filledFrom : undefined,
     extra: prev && prev.extra ? prev.extra : {},
     src: prev ? prev.src : undefined,
     trainings,
@@ -257,7 +260,7 @@ app.get('/files/:docId', (req, res) => {
 
 /* ---- downloadable reports ---- */
 const reports = require('./reports');
-const empList = () => Object.values(state.employees);
+const empList = () => Object.values(state.employees).filter(e => e.status !== 'baja' && !/no es empleado/i.test(e.name));
 app.get('/reports/weekly.pdf', (req, res) => {
   const w = [30, 60, 90].includes(+req.query.days) ? +req.query.days : 60;
   reports.weekly(res, empList(), w);

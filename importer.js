@@ -180,11 +180,12 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
     const { url, plant } = req.body || {};
     try { dropboxURL(url, true); } catch (e) { return res.status(400).json({ error: e.message }); }
     if (!plant || typeof plant !== 'string') return res.status(400).json({ error: 'Falta el nombre de la planta.' });
-    const ok = start('plant', () => importPlant(url, plant.trim().slice(0, 60)));
+    const status = req.body.status === 'baja' ? 'baja' : 'activo';
+    const ok = start('plant', () => importPlant(url, plant.trim().slice(0, 60), { status }));
     res.status(ok ? 202 : 409).json(ok ? { ok: true } : { error: 'Ya hay una importación en curso.' });
   });
 
-  async function importPlant(url, plant) {
+  async function importPlant(url, plant, opts = {}) {
     const zipPath = path.join(WORK, 'plant.zip');
     log(`${plant}: descargando carpeta de Dropbox…`);
     const size = await download(url, zipPath);
@@ -243,7 +244,7 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
       let emp = state.employees[id];
       if (!emp) {
         emp = { id, name: title(longest), position: '', site: plant, phone: '', emerg: '', notes: '', birthday: '', hire: '',
-          number: g.number, curp: '', rfc: '', nss: '', extra: {}, trainings: [], docs: [], src: { plant, folders: g.names },
+          number: g.number, curp: '', rfc: '', nss: '', address: '', status: opts.status || 'activo', extra: {}, trainings: [], docs: [], src: { plant, folders: g.names },
           createdAt: new Date().toISOString() };
         state.employees[id] = emp; stats.created++;
       }
@@ -336,7 +337,7 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
     return {
       headerRow: sh.rows[idx].r, H,
       col: {
-        number: f(/NO\.? ?EMPLEADO|^NO\.?$|NUM\w* (DE )?EMP/), active: f(/(^| )ACTIVO$/), hire: f(/INGRESO/), baja: f(/BAJA/),
+        number: f(/NO\.? ?EMPLEADO|^NO\.?$|NUM\w* (DE )?EMP/), active: f(/(^| )ACTIVO$|(^| )ESTATUS$/), hire: f(/INGRESO/), baja: f(/BAJA/),
         nss: f(/(^| )NSS$|SEGURO SOCIAL/), name: (H.find(h => /(^|\/ )(EMPLEADO|NOMBRE( COMPLETO)?( (DEL )?EMPLEADO)?)$/.test(h.label) && !/NO\.? ?EMPLEADO|NUM/.test(h.label)) || {}).i, position: f(/PUESTO/), shift: f(/TURNO/),
         curp: f(/(^| )CURP$/), rfc: f(/(^| )RFC$/), phone: f(/TELEFONO|CELULAR/), email: f(/CORREO/),
         emerg: f(/CONTACTO DE EMERGENCIA/), kin: f(/PARENTESCO/), emergPhone: f(/(^| )NUMERO$/), birthday: f(/NACIMIENTO|CUMPLE/),
@@ -349,7 +350,7 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
 
   app.post('/api/import/apply-auto', (req, res) => {
     if (!fs.existsSync(SHEET)) return res.status(404).json({ error: 'Primero descarga la hoja.' });
-    const { sheet, plant, dryRun } = req.body || {};
+    const { sheet, plant, dryRun, create } = req.body || {};
     const sheets = JSON.parse(fs.readFileSync(SHEET, 'utf8'));
     const sh = sheets.find(s => s.name.trim() === String(sheet || '').trim());
     if (!sh) return res.status(400).json({ error: 'No existe esa hoja.' });
@@ -370,7 +371,17 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
       let cand = emps.filter(e => sameName(e.name, name));
       if (cand.length !== 1 && num) { const byNum = emps.filter(e => e.number === num); if (byNum.length === 1) cand = byNum; }
       if (cand.length > 1 && num) cand = cand.filter(e => e.number === num);
-      if (cand.length !== 1) { if (isInactive(row)) out.inactiveRows++; else (cand.length ? out.ambiguous : out.unmatched).push(`${num ? num + ' ' : ''}${title(name)}`); continue; }
+      if (cand.length !== 1) {
+        if (cand.length === 0 && create && !dryRun) { // no folder: create the person from the sheet row
+          const id = crypto.createHash('sha1').update(`sheet|${norm(plant)}|${num}|${norm(name)}`).digest('hex').slice(0, 24);
+          if (!state.employees[id]) {
+            state.employees[id] = { id, name: title(name), site: plant, number: num, status: isInactive(row) ? 'baja' : 'activo', position: '', phone: '', emerg: '', notes: '',
+              birthday: '', hire: '', curp: '', rfc: '', nss: '', address: '', extra: {}, trainings: [], docs: [], src: { sheet: sh.name.trim(), row: row.r }, createdAt: new Date().toISOString() };
+            out.created = (out.created || 0) + 1; if (isInactive(row)) out.createdBajas = (out.createdBajas || 0) + 1;
+          }
+          cand = [state.employees[id]];
+        } else { if (isInactive(row)) out.inactiveRows++; else (cand.length ? out.ambiguous : out.unmatched).push(`${num ? num + ' ' : ''}${title(name)}`); continue; }
+      }
       const e = cand[0];
       if (seen.has(e.id)) continue; // keep the first (active) row
       seen.add(e.id); out.matched++;
@@ -379,6 +390,7 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
       const nm = title(name); if (nm && tokens(nm).length >= tokens(e.name).length) e.name = nm;
       if (num) e.number = num;
       set('hire', toISODate(get(row, C.hire)));
+      if (e.status === 'baja') set('bajaDate', toISODate(get(row, C.baja)));
       set('curp', cellText(get(row, C.curp)).toUpperCase().replace(/\s/g, '').slice(0, 18));
       set('rfc', cellText(get(row, C.rfc)).toUpperCase().replace(/\s/g, '').slice(0, 13));
       set('nss', cellText(get(row, C.nss)).replace(/\s/g, '').slice(0, 20));
@@ -409,6 +421,137 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
     out.noSheetRow = emps.filter(e => !seen.has(e.id)).map(e => `${e.number ? e.number + ' ' : ''}${e.name}`);
     if (!dryRun) persist();
     res.json(out);
+  });
+
+  /* ---------- contracts folder: attach each contract to its employee, note the contract type ---------- */
+  const CONTRACT_PLANTS = { 'JUAREZ': ['Juárez', 'Auto Kabel Juárez'], 'AUTO KABEL': ['Auto Kabel Juárez'], 'GUADALAJARA': ['Guadalajara'], 'MONCLOVA': ['Monclova'],
+    'TIJUANA': ['Tijuana'], 'CHIHUAHUA': ['Jabil Chihuahua'], 'JABIL TORRES': ['Jabil Torres'], 'WISTRON': ['Wistron'], 'WINSTRON': ['Wistron'] };
+  app.post('/api/import/contracts', (req, res) => {
+    const { url } = req.body || {};
+    try { dropboxURL(url, true); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const ok = start('contracts', async () => {
+      const zipPath = path.join(WORK, 'contracts.zip');
+      log('Contratos: descargando…');
+      const size = await download(url, zipPath);
+      log(`Contratos: descargados (${(size / 1048576).toFixed(1)} MB).`);
+      const zip = await yauzl.openPromise(zipPath, { autoClose: false, lazyEntries: true, decodeStrings: false });
+      const entries = [];
+      for await (const e of zip.eachEntry()) { e.fileName = decodeName(e.fileName, e.generalPurposeBitFlag); if (!/\/$/.test(e.fileName)) entries.push(e); }
+      const folderName = norm(decodeURIComponent(new URL(url).pathname.split('/').pop() || ''));
+      const st = { attached: 0, templates: 0, unmatched: [], skipped: 0 };
+      const tplDir = path.join(DATA_DIR, 'templates'); fs.mkdirSync(tplDir, { recursive: true });
+      const all = Object.values(state.employees);
+      for (const e of entries) {
+        let parts = e.fileName.replace(/^\/+/, '').split('/');
+        if (parts.length > 1 && norm(parts[0]) === folderName) parts = parts.slice(1);
+        const file = parts[parts.length - 1], ext = path.extname(file).toLowerCase();
+        if (!MIME[ext] || /^~\$|^\./.test(file)) { st.skipped++; continue; }
+        const plantKey = Object.keys(CONTRACT_PLANTS).find(k => norm(parts[0]).includes(k));
+        if (parts.length === 1 || /FORMATO|PLANTILLA|MACHOTE|CARATULA|^CONTRATO[_ ]?(INDETERMINADO|TEMPORAL|CAPACITACION)/.test(norm(file))) {
+          if (parts.length <= 2) { // company templates, kept for generating contracts later
+            await pipeline(await zip.openReadStreamPromise(e), fs.createWriteStream(path.join(tplDir, file.replace(/[\/\\]/g, '_'))));
+            st.templates++; continue;
+          }
+        }
+        const kind = parts.slice(0, -1).map(norm).join(' ');
+        const type = /TEMPORAL/.test(kind) ? 'Temporal' : /INDETERMINADO|PLANTA\b/.test(kind) ? 'Indeterminado' : /CAPACITA/.test(kind + norm(file)) ? 'Capacitación inicial' : /PRUEBA/.test(kind + norm(file)) ? 'Periodo de prueba' : '';
+        const label = norm(path.basename(file, ext)).replace(/\b(CONTRATO|INDETERMINADO|TEMPORAL(ES)?|FIRMADO|ESCANEADO|COPIA|GPO|AVE|GRUPO)\b/g, ' ').replace(/\s+/g, ' ').trim();
+        const sub = parts.length > 2 ? parts[parts.length - 2] : '';
+        const { number } = parseFolder(label);
+        const pool = plantKey ? all.filter(x => CONTRACT_PLANTS[plantKey].includes(x.site)) : all;
+        let cand = pool.filter(x => sameName(x.name, parseFolder(label).name) || (sub && sameName(x.name, parseFolder(sub).name)));
+        if (cand.length !== 1 && number) { const n = pool.filter(x => x.number === number); if (n.length === 1) cand = n; }
+        if (cand.length !== 1) { st.unmatched.push(parts.join('/')); continue; }
+        const emp = cand[0];
+        if ((emp.docs || []).some(d => d.srcPath === e.fileName)) { st.skipped++; continue; }
+        const stored = crypto.randomUUID() + ext;
+        await pipeline(await zip.openReadStreamPromise(e), fs.createWriteStream(path.join(UPLOAD_DIR, stored)));
+        emp.docs = (emp.docs || []).concat({ id: crypto.randomBytes(10).toString('hex'), type: 'Contrato', fileName: file.slice(0, 160), size: e.uncompressedSize,
+          mime: MIME[ext], stored, srcPath: e.fileName, uploadedAt: new Date().toISOString(), contractType: type });
+        if (type && !emp.contractType) emp.contractType = type;
+        st.attached++;
+      }
+      zip.close(); fs.rmSync(zipPath, { force: true }); persist();
+      log(`Contratos: ${st.attached} asignados, ${st.templates} formatos guardados, ${st.unmatched.length} sin empleado.`);
+      return st;
+    });
+    res.status(ok ? 202 : 409).json(ok ? { ok: true } : { error: 'Ya hay una importación en curso.' });
+  });
+
+  /* ---------- read every document and fill what's still empty ---------- */
+  const X = require('./extract');
+  const TEXT = path.join(WORK, 'text'); fs.mkdirSync(TEXT, { recursive: true });
+  const NEED = ['curp', 'rfc', 'nss', 'birthday', 'address', 'phone'];
+  const OCR_TYPES = /INE|CURP|RFC|NSS|Alta IMSS|Acta de nacimiento|Solicitud|Expediente completo|Comprobante de domicilio|Otro/;
+  const placeholderName = e => !e.name || /^\d*\s*-?\s*(baja)?\s*$/i.test(e.name) || /^baja\b/i.test(e.name);
+  async function textOf(d, useOcr) {
+    const cache = path.join(TEXT, d.id + (useOcr ? '.ocr' : '.txt'));
+    if (fs.existsSync(cache)) return fs.readFileSync(cache, 'utf8');
+    const f = path.join(UPLOAD_DIR, d.stored);
+    if (!fs.existsSync(f)) return '';
+    let t = '';
+    try {
+      if (!useOcr) {
+        if (d.mime === 'application/pdf') t = (await X.pdfText(f, 8)).text;
+        else if (/wordprocessingml/.test(d.mime || '')) t = await X.docxText(f);
+      } else {
+        if (d.mime === 'application/pdf') { for (const img of await X.pdfPageImages(f, 2, 2)) t += (await X.ocr(img)) + '\n'; }
+        else if (/^image\/(png|jpeg|webp)/.test(d.mime || '')) t = await X.ocr(fs.readFileSync(f));
+      }
+    } catch (err) { log(`No se pudo leer ${d.fileName}: ${err.message.slice(0, 80)}`); }
+    fs.writeFileSync(cache, t);
+    return t;
+  }
+  function applyFound(e, found, st, src) {
+    if (!found.belongs) { if (found.hasIds) st.otherPerson = (st.otherPerson || 0) + 1; return; }
+    for (const k of NEED.concat(['name'])) {
+      const v = found[k]; if (!v) continue;
+      if (k === 'name') { if (placeholderName(e)) { e.name = title(v); st.filled.name = (st.filled.name || 0) + 1; } continue; }
+      if (!e[k]) { e[k] = v; st.filled[k] = (st.filled[k] || 0) + 1; (e.filledFrom = e.filledFrom || {})[k] = src; }
+    }
+  }
+  app.post('/api/import/extract', (req, res) => {
+    const useOcr = !!(req.body && req.body.ocr);
+    const ok = start(useOcr ? 'ocr' : 'extract', async () => {
+      const emps = Object.values(state.employees);
+      const st = { filled: {}, docsRead: 0, withText: 0, ocrPages: 0 };
+      const todo = useOcr ? emps.filter(e => placeholderName(e) || NEED.some(k => !e[k])) : emps;
+      job.progress = { done: 0, total: todo.length };
+      log(useOcr ? `OCR: ${todo.length} empleados con datos faltantes.` : `Leyendo texto de los documentos de ${todo.length} empleados…`);
+      for (const e of todo) {
+        let docs = (e.docs || []).filter(d => d.mime);
+        if (useOcr) {
+          docs = docs.filter(d => OCR_TYPES.test(d.type) && /pdf|image\/(png|jpeg|webp)/.test(d.mime))
+            .filter(d => { const c = path.join(TEXT, d.id + '.txt'); return !fs.existsSync(c) || fs.readFileSync(c, 'utf8').trim().length < 80; })
+            .sort((a, b) => ['CURP', 'INE', 'RFC / Constancia fiscal', 'Alta IMSS', 'Acta de nacimiento', 'Solicitud / CV', 'Expediente completo'].indexOf(a.type) - ['CURP', 'INE', 'RFC / Constancia fiscal', 'Alta IMSS', 'Acta de nacimiento', 'Solicitud / CV', 'Expediente completo'].indexOf(b.type))
+            .slice(0, 6);
+        }
+        for (const d of docs) {
+          if (useOcr && !placeholderName(e) && NEED.every(k => e[k])) break;
+          const t = await textOf(d, useOcr);
+          st.docsRead++; if (t.trim().length > 40) st.withText++;
+          if (useOcr) st.ocrPages += d.mime === 'application/pdf' ? 2 : 1;
+          applyFound(e, X.parse(t, placeholderName(e) ? {} : e), st, `${d.type}: ${d.fileName}`);
+        }
+        if (!e.birthday && e.curp) { e.birthday = birthdayFromCurp(e.curp); if (e.birthday) st.filled.birthday = (st.filled.birthday || 0) + 1; }
+        job.progress.done++;
+        if (job.progress.done % 20 === 0) { persist(); log(`${job.progress.done}/${todo.length} · completados: ${JSON.stringify(st.filled)}`); }
+      }
+      if (useOcr) await X.stopOcr();
+      persist();
+      log(`Listo: ${st.docsRead} documentos leídos, completados ${JSON.stringify(st.filled)}`);
+      return st;
+    });
+    res.status(ok ? 202 : 409).json(ok ? { ok: true } : { error: 'Ya hay una importación en curso.' });
+  });
+
+  /* ---------- fill report: who is still missing what ---------- */
+  app.get('/api/import/gaps', (req, res) => {
+    const fields = ['number', 'curp', 'rfc', 'nss', 'birthday', 'hire', 'position', 'phone', 'emerg', 'address'];
+    const act = Object.values(state.employees).filter(e => e.status !== 'baja' && !/no es empleado/.test(e.name));
+    const miss = Object.fromEntries(fields.map(f => [f, act.filter(e => !e[f]).length]));
+    res.json({ active: act.length, bajas: Object.values(state.employees).filter(e => e.status === 'baja').length, missing: miss,
+      byPlant: Object.fromEntries([...new Set(act.map(e => e.site))].map(p => [p, act.filter(e => e.site === p).length])) });
   });
 
   /* ---------- summary for checking the import ---------- */
