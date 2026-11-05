@@ -319,7 +319,7 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
 
   /* ---------- apply one plant's sheet, detecting its columns automatically ---------- */
   // Sensitive columns that are never copied: chronic illnesses, bank details.
-  const SKIP = /DIABETES|HIPERTENS|ENFERMEDAD|CRONIC|CUENTA|CLABE|BANCO|TARJETA DE NOMINA/;
+  const SKIP = /DIABETES|HIPERTENS|ENFERMEDAD|CRONIC|CUENTA|CLABE|BANCO|TARJETA DE NOMINA|SUELDO|SALARIO|BONO|NETO|PERCEPCION/;
   function layout(sh) {
     const idx = sh.rows.slice(0, 8).findIndex(r => r.v.some(c => /\bCURP\b/.test(norm(c))));
     if (idx < 0) throw new Error(`No encontré los encabezados en la hoja ${sh.name}.`);
@@ -337,7 +337,7 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
       headerRow: sh.rows[idx].r, H,
       col: {
         number: f(/NO\.? ?EMPLEADO|^NO\.?$|NUM\w* (DE )?EMP/), active: f(/(^| )ACTIVO$/), hire: f(/INGRESO/), baja: f(/BAJA/),
-        nss: f(/(^| )NSS$|SEGURO SOCIAL/), name: (H.find(h => /(^|\/ )(EMPLEADO|NOMBRE( COMPLETO)?( DEL EMPLEADO)?)$/.test(h.label) && !/NO\.? ?EMPLEADO|NUM/.test(h.label)) || {}).i, position: f(/PUESTO/), shift: f(/TURNO/),
+        nss: f(/(^| )NSS$|SEGURO SOCIAL/), name: (H.find(h => /(^|\/ )(EMPLEADO|NOMBRE( COMPLETO)?( (DEL )?EMPLEADO)?)$/.test(h.label) && !/NO\.? ?EMPLEADO|NUM/.test(h.label)) || {}).i, position: f(/PUESTO/), shift: f(/TURNO/),
         curp: f(/(^| )CURP$/), rfc: f(/(^| )RFC$/), phone: f(/TELEFONO|CELULAR/), email: f(/CORREO/),
         emerg: f(/CONTACTO DE EMERGENCIA/), kin: f(/PARENTESCO/), emergPhone: f(/(^| )NUMERO$/), birthday: f(/NACIMIENTO|CUMPLE/),
         labDone: f(/LABORATORIOS? \/ EXPEDIDOS|LABORATORIOS? EXPEDIDOS/), labExp: f(/LABORATORIOS? \/ VENCIMIENTO|LABORATORIOS? VENCIMIENTO/),
