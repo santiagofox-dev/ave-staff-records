@@ -138,8 +138,18 @@ function parse(textRaw, emp) {
     mun = g(/Nombre del Municipio o Demarcacion Territorial:\s*(.+?)\s+Nombre de la Entidad/i), ent = g(/Nombre de la Entidad Federativa:\s*(.+?)\s+Entre Calle/i);
   if (via && cp) out.address = [`${via} ${ext}`.trim(), col && `Col. ${col}`, cp && `C.P. ${cp}`, mun, ent].filter(Boolean).join(', ').slice(0, 200);
   else {
-    const dom = text.match(/DOMICILIO[:\s]+([^\n]{12,120})/i);
-    if (dom && /\d/.test(dom[1]) && !/FISCAL|REGISTRADO/i.test(dom[1])) out.address = dom[1].replace(/\s+/g, ' ').trim();
+    // Only an address stated for the worker ("EL TRABAJADOR … con domicilio en …"), never the company's offices.
+    for (const m of flat.matchAll(/domicilio(?: particular)?(?: ubicado)?(?: en| el ubicado en)?[:\s]+(?=(.{12,200}))/gi)) {
+      const before = flat.slice(Math.max(0, m.index - 220), m.index);
+      if (/oficina|empresa|patr[oó]n|sociedad|raz[oó]n social|fiscal|registrado|la sucursal|planta/i.test(before.slice(-90))) continue;
+      if (!/trabajador|empleado|\bsr\.?\b|\bsra\.?\b|\bel c\.|\bla c\.|yo,|mi domicilio|nombre/i.test(before)) continue;
+      if (!/\d/.test(m[1])) continue;
+      let v = m[1];
+      const cut1 = v.search(/;|,\s*(?:de nacionalidad|con R\.?F\.?C|con CURP|quien|mayor de edad|estado civil|a quien)|\s+y\s+(?:que|quien)\b/i); if (cut1 > 0) v = v.slice(0, cut1);
+      const cut2 = v.search(/\.\s+[A-ZÑ]{2,}\b/); if (cut2 > 0) v = v.slice(0, cut2);
+      if (v.length < 12) continue;
+      out.address = v.replace(/\s+/g, ' ').replace(/[,.\s]+$/, '').trim().slice(0, 200); break;
+    }
   }
   // Phone (Mexican 10 digits) near a phone label
   const tel = U.match(/(?:TELEFONO|\bTEL\b\.?|CELULAR|\bCEL\b\.?|MOVIL|WHATSAPP)[^\d\n]{0,20}(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})\b/);

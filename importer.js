@@ -550,6 +550,26 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
     res.status(ok ? 202 : 409).json(ok ? { ok: true } : { error: 'Ya hay una importación en curso.' });
   });
 
+  // Undo values filled from documents (e.g. after improving a rule), so a new pass can refill them.
+  app.post('/api/import/clear-filled', (req, res) => {
+    const field = String((req.body || {}).field || '');
+    if (!['address', 'phone', 'nss', 'rfc', 'curp', 'name'].includes(field)) return res.status(400).json({ error: 'Campo no válido.' });
+    const keepSat = !!(req.body || {}).keepSat;
+    let n = 0;
+    for (const e of Object.values(state.employees)) {
+      if (!e.filledFrom || !e.filledFrom[field]) continue;
+      if (keepSat && field === 'address' && /C\.P\. \d{5}/.test(e.address || '') && /RFC|Constancia/i.test(e.filledFrom.address)) continue;
+      e[field] = ''; delete e.filledFrom[field]; n++;
+    }
+    // an address shared by several people is an office or plant, not a home
+    if (field === 'address') {
+      const count = {}; Object.values(state.employees).forEach(e => { if (e.address) count[norm(e.address)] = (count[norm(e.address)] || 0) + 1; });
+      for (const e of Object.values(state.employees)) if (e.address && count[norm(e.address)] > 2 && e.filledFrom && e.filledFrom.address) { e.address = ''; delete e.filledFrom.address; n++; }
+    }
+    persist();
+    res.json({ cleared: n });
+  });
+
   /* ---------- fill report: who is still missing what ---------- */
   app.get('/api/import/gaps', (req, res) => {
     const fields = ['number', 'curp', 'rfc', 'nss', 'birthday', 'hire', 'position', 'phone', 'emerg', 'address'];
