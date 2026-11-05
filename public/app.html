@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Expedientes de Personal AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/styles.css?v=2">
+<link rel="stylesheet" href="/static/styles.css?v=3">
 </head>
 <body>
 <div class="wrap">
@@ -35,7 +35,8 @@
       <div class="panel-head">
         <h2>Plantilla</h2>
         <div class="toolbar">
-          <input class="search" id="q" type="search" placeholder="Buscar por nombre, puesto o sitio" aria-label="Buscar empleados">
+          <select class="plant-pick" id="plant" aria-label="Planta"><option value="">Todas las plantas</option></select>
+          <input class="search" id="q" type="search" placeholder="Buscar por nombre, número, puesto o CURP" aria-label="Buscar empleados">
           <div class="seg" role="group" aria-label="Filtro">
             <button id="fAll" aria-pressed="true">Todos</button>
             <button id="fAttn" aria-pressed="false">Necesita atención</button>
@@ -80,6 +81,7 @@
   </div>
 </div>
 
+<datalist id="plantNames"></datalist>
 <datalist id="trainingNames">
   <option value="DC-3 Constancia de habilidades (STPS)">
   <option value="NOM-251 Manejo higiénico de alimentos">
@@ -108,14 +110,19 @@
       <h3>Datos generales</h3>
       <div class="fields">
         <div class="field full"><label for="p_name">Nombre completo *</label><input id="p_name" required autocomplete="off"></div>
+        <div class="field"><label for="p_number">No. de empleado</label><input id="p_number" autocomplete="off"></div>
+        <div class="field"><label for="p_site">Planta</label><input id="p_site" list="plantNames" placeholder="Juárez, Jabil Torres…"></div>
         <div class="field"><label for="p_position">Puesto</label><input id="p_position" placeholder="Cocinero, Higienista…"></div>
-        <div class="field"><label for="p_site">Sitio / planta</label><input id="p_site" placeholder="JABIL Juárez…"></div>
+        <div class="field"><label for="p_curp">CURP</label><input id="p_curp" maxlength="18" autocomplete="off" style="text-transform:uppercase"></div>
+        <div class="field"><label for="p_rfc">RFC</label><input id="p_rfc" maxlength="13" autocomplete="off" style="text-transform:uppercase"></div>
+        <div class="field"><label for="p_nss">NSS</label><input id="p_nss" maxlength="20" autocomplete="off"></div>
         <div class="field"><label for="p_birthday">Fecha de cumpleaños</label><input id="p_birthday" type="date"></div>
         <div class="field"><label for="p_hire">Fecha de ingreso</label><input id="p_hire" type="date"></div>
         <div class="field"><label for="p_phone">Teléfono</label><input id="p_phone" type="tel"></div>
         <div class="field"><label for="p_emerg">Contacto de emergencia</label><input id="p_emerg" placeholder="Nombre y teléfono"></div>
         <div class="field full"><label for="p_notes">Notas</label><textarea id="p_notes"></textarea></div>
       </div>
+      <details class="extra" id="extraBox" hidden><summary>Datos de la hoja EXPEDIENTES</summary><dl id="extraList"></dl></details>
       <div class="actions">
         <button type="button" class="btn danger" id="delEmp">Eliminar empleado</button>
         <button type="submit" class="btn primary" id="saveProfile">Guardar datos</button>
@@ -141,8 +148,9 @@
         <div class="field"><label for="u_type">Tipo de documento</label>
           <select id="u_type">
             <option>INE</option><option>CURP</option><option>RFC / Constancia fiscal</option><option>NSS (IMSS)</option>
-            <option>Acta de nacimiento</option><option>Comprobante de domicilio</option><option>Contrato</option>
-            <option>Certificado médico</option><option>Constancia DC-3</option><option>Otro</option>
+            <option>Alta IMSS</option><option>Acta de nacimiento</option><option>Comprobante de domicilio</option>
+            <option>Contrato</option><option>Laboratorios</option><option>Certificado médico</option><option>Constancia DC-3</option>
+            <option>Acta administrativa</option><option>Expediente completo</option><option>Otro</option>
           </select></div>
         <div class="field"><label for="u_file">Archivo</label><input id="u_file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"></div>
         <button class="btn" type="submit" id="upBtn">Subir</button>
@@ -172,6 +180,6 @@
 </dialog>
 
 <div class="toast" id="toast" hidden></div>
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@ services:
     disk:
       name: ave-data
       mountPath: /var/data
-      sizeGB: 1
+      sizeGB: 5
     envVars:
       - key: NODE_ENV
         value: production

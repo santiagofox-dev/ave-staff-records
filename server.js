@@ -167,6 +167,9 @@ app.put('/api/employees/:id', (req, res) => {
     position: S(b.position, 120), site: S(b.site, 120), phone: S(b.phone, 40),
     emerg: S(b.emerg, 160), notes: S(b.notes, 2000),
     birthday: D(b.birthday), hire: D(b.hire),
+    number: S(b.number, 20), curp: S(b.curp, 18).toUpperCase(), rfc: S(b.rfc, 13).toUpperCase(), nss: S(b.nss, 20),
+    extra: prev && prev.extra ? prev.extra : {},
+    src: prev ? prev.src : undefined,
     trainings,
     docs: prev ? prev.docs : [],
     createdAt: prev ? prev.createdAt : new Date().toISOString(),
@@ -188,6 +191,7 @@ app.delete('/api/employees/:id', (req, res) => {
 
 /* ---- documents ---- */
 const TYPES = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+const VIEWABLE = new Set(Object.values(TYPES));
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -243,8 +247,8 @@ app.get('/files/:docId', (req, res) => {
   for (const e of Object.values(state.employees)) {
     const d = (e.docs || []).find(x => x.id === req.params.docId);
     if (d) {
-      res.set('Content-Type', d.mime);
-      res.set('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(d.fileName)}`);
+      res.set('Content-Type', d.mime || 'application/octet-stream');
+      res.set('Content-Disposition', `${VIEWABLE.has(d.mime) ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(d.fileName)}`);
       return res.sendFile(path.join(UPLOAD_DIR, d.stored), err => { if (err && !res.headersSent) res.status(404).send('No se encontró el archivo.'); });
     }
   }
@@ -263,6 +267,9 @@ app.get('/reports/calendar.pdf', (req, res) => {
   const m = /^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month || '') ? req.query.month : reports.todayISO().slice(0, 7);
   reports.calendar(res, empList(), m);
 });
+
+/* ---- Dropbox import (admin only, runs as a background job) ---- */
+require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
 
 app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'Ocurrió un error en el servidor.' }); });
 

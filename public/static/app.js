@@ -3,7 +3,8 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const LOC = 'es-MX';
-let employees = [], loaded = false, filter = 'all', openId = null, isNew = false;
+let employees = [], loaded = false, filter = 'all', openId = null, isNew = false, plantSel = '';
+try { plantSel = localStorage.getItem('ave-plant') || ''; } catch (e) {}
 let win = 60; try { const v = localStorage.getItem('ave-win'); if (v) win = +v || 60; } catch (e) {}
 $('#win').value = String(win);
 
@@ -93,6 +94,7 @@ function render() {
     <span class="d">${x.b.days === 0 ? 'HOY' : x.b.days + ' d'}</span></button>`).join('')
     : `<div class="empty">${t ? 'No hay cumpleaños en los próximos 30 días.' : 'Agrega la fecha de cumpleaños en el expediente para recibir avisos aquí.'}</div>`;
 
+  renderPlants();
   renderRoster();
   if (openId && !isNew) renderFileLists();
 }
@@ -103,30 +105,50 @@ function renderRoster() {
     return;
   }
   const q = $('#q').value.trim().toLowerCase();
-  let list = employees.filter(e => !q || [e.name, e.position, e.site].some(v => (v || '').toLowerCase().includes(q)));
+  let list = employees.filter(e => (!plantSel || (e.site || '') === plantSel) && (!q || [e.name, e.number, e.position, e.site, e.curp].some(v => (v || '').toLowerCase().includes(q))));
   if (filter === 'attn') list = list.filter(e => ['bad', 'warn'].includes(eStatus(e).key));
   const rank = { bad: 0, warn: 1, none: 2, ok: 3 };
-  list.sort((a, b) => filter === 'attn' ? (rank[eStatus(a).key] - rank[eStatus(b).key]) : (a.name || '').localeCompare(b.name || '', LOC));
+  const byNum = (a, b) => (parseInt(a.number, 10) || 1e9) - (parseInt(b.number, 10) || 1e9) || (a.name || '').localeCompare(b.name || '', LOC);
+  list.sort((a, b) => filter === 'attn' ? (rank[eStatus(a).key] - rank[eStatus(b).key]) : byNum(a, b));
   if (!list.length) { el.innerHTML = `<div class="empty">${filter === 'attn' ? 'Nadie necesita atención por ahora.' : 'Ningún empleado coincide con la búsqueda.'}</div>`; return; }
-  el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">Sitio</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños</span><span class="c-docs">Docs</span></div>` +
-    list.map(e => {
+  const groups = new Map();
+  for (const e of list) { const k = e.site || 'Sin planta'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
+  const order = [...groups.keys()].sort((a, b) => plantRank(a) - plantRank(b) || a.localeCompare(b, LOC));
+  el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños</span><span class="c-docs">Docs</span></div>` +
+    order.map(k => `<div class="group-head">${esc(k)}<span>${groups.get(k).length} empleado${groups.get(k).length === 1 ? '' : 's'}</span></div>` + groups.get(k).map(rowHTML).join('')).join('');
+}
+const PLANT_ORDER = ['Auto Kabel Juárez', 'Juárez', 'Guadalajara', 'Monclova', 'Tijuana', 'Jabil Chihuahua', 'Winstron', 'Jabil Torres'];
+const plantRank = p => { const i = PLANT_ORDER.indexOf(p); return i < 0 ? 99 : i; };
+function renderPlants() {
+  const counts = {}; employees.forEach(e => { const k = e.site || 'Sin planta'; counts[k] = (counts[k] || 0) + 1; });
+  const names = Object.keys(counts).sort((a, b) => plantRank(a) - plantRank(b) || a.localeCompare(b, LOC));
+  if (plantSel && !counts[plantSel]) plantSel = '';
+  $('#plant').innerHTML = `<option value="">Todas las plantas (${employees.length})</option>` + names.map(n => `<option value="${esc(n === 'Sin planta' ? '' : n)}"${n === plantSel ? ' selected' : ''}>${esc(n)} (${counts[n]})</option>`).join('');
+  $('#plantNames').innerHTML = [...new Set([...PLANT_ORDER, ...names.filter(n => n !== 'Sin planta')])].map(n => `<option value="${esc(n)}">`).join('');
+}
+function rowHTML(e) {
+  {
       const s = eStatus(e), b = nextBirthday(e);
       return `<button class="row" data-open="${esc(e.id)}">
       <span><span class="name">${esc(e.name)}</span><br><span class="sub">${esc(e.position || '—')}</span></span>
-      <span class="c-site sub">${esc(e.site || '—')}</span>
+      <span class="c-site sub mono">${esc(e.number || '—')}</span>
       <span><span class="chip ${s.key}">${esc(s.label)}</span></span>
       <span class="c-bday">${b ? (b.days <= 30 ? `<span class="chip bday">${fmtShort(b.date)} · ${bdayLabel(b)}</span>` : `<span class="mono muted">${fmtShort(b.date)}</span>`) : '<span class="muted">—</span>'}</span>
       <span class="c-docs mono muted">${(e.docs || []).length}</span></button>`;
-    }).join('');
+  }
 }
 
 /* ---------- expediente ---------- */
-const P = ['name', 'position', 'site', 'birthday', 'hire', 'phone', 'emerg', 'notes'];
+const P = ['name', 'number', 'position', 'site', 'curp', 'rfc', 'nss', 'birthday', 'hire', 'phone', 'emerg', 'notes'];
 function setLocked(v) { $('#trainCard').classList.toggle('locked', v); $('#docCard').classList.toggle('locked', v); }
 function openFile(id) {
   const e = id ? getEmp(id) : null; isNew = !e;
   openId = e ? e.id : newId();
   P.forEach(k => $('#p_' + k).value = e ? (e[k] || '') : '');
+  if (!e && plantSel) $('#p_site').value = plantSel;
+  const ex = e && e.extra ? Object.entries(e.extra) : [];
+  $('#extraBox').hidden = !ex.length;
+  $('#extraList').innerHTML = ex.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
   $('#dName').textContent = e ? e.name : 'Nuevo empleado';
   $('#dSub').textContent = e ? [e.position, e.site].filter(Boolean).join(' · ') : 'Guarda los datos para poder agregar capacitaciones y documentos.';
   $('#delEmp').hidden = !e;
@@ -150,7 +172,7 @@ function renderFileLists() {
   }).join('') : `<div class="empty">Sin capacitaciones registradas. Agrega cada curso con su fecha de vencimiento para recibir avisos antes de que venza.</div>`;
   $('#docList').innerHTML = docs.length ? docs.slice().sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || '')).map(d => `<div class="item">
       <span><span class="t">${esc(d.type)}</span><br><span class="s">${esc(d.fileName)} · <span class="mono">${(d.size / 1048576).toFixed(d.size < 1048576 ? 2 : 1)} MB · ${fmt((d.uploadedAt || '').slice(0, 10))}</span></span></span>
-      <a href="/files/${esc(d.id)}" target="_blank" rel="noopener">Abrir</a>
+      <a href="/files/${esc(d.id)}" target="_blank" rel="noopener">${/pdf|image\/(png|jpeg|webp)/.test(d.mime || '') ? 'Abrir' : 'Descargar'}</a>
       <button class="btn sm danger" data-deldoc="${esc(d.id)}">Eliminar</button></div>`).join('')
     : `<div class="empty">Todavía no hay documentos. Sube escaneos o fotos de INE, CURP, NSS, contratos y constancias.</div>`;
   $('#trainList').querySelectorAll('[data-deltrain]').forEach(b => armed(b, 'Confirmar', async () => {
@@ -225,6 +247,7 @@ $('#pwDlg').addEventListener('click', ev => { if (ev.target === ev.currentTarget
 $('#dlg').addEventListener('close', () => { openId = null; isNew = false; });
 $('#addBtn').addEventListener('click', () => openFile(null));
 $('#q').addEventListener('input', renderRoster);
+$('#plant').addEventListener('change', () => { plantSel = $('#plant').value; try { localStorage.setItem('ave-plant', plantSel); } catch (e) {} renderRoster(); });
 $('#fAll').addEventListener('click', () => { filter = 'all'; $('#fAll').setAttribute('aria-pressed', 'true'); $('#fAttn').setAttribute('aria-pressed', 'false'); renderRoster(); });
 $('#fAttn').addEventListener('click', () => { filter = 'attn'; $('#fAttn').setAttribute('aria-pressed', 'true'); $('#fAll').setAttribute('aria-pressed', 'false'); renderRoster(); });
 function syncReports() {
