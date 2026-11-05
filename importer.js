@@ -372,7 +372,12 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
       if (cand.length !== 1 && num) { const byNum = emps.filter(e => e.number === num); if (byNum.length === 1) cand = byNum; }
       if (cand.length > 1 && num) cand = cand.filter(e => e.number === num);
       if (cand.length !== 1) {
-        if (cand.length === 0 && create && !dryRun) { // no folder: create the person from the sheet row
+        if (cand.length === 0 && !dryRun) { // a former employee whose folder is in EXPEDIENTES BAJAS: link it to this plant
+          const bj = Object.values(state.employees).filter(x => x.site === 'Expedientes bajas' && sameName(x.name, name));
+          if (bj.length === 1) { bj[0].site = plant; bj[0].status = 'baja'; cand = bj; out.bajasLinked = (out.bajasLinked || 0) + 1; }
+        }
+        if (cand.length === 1) { /* linked above */ }
+        else if (cand.length === 0 && create && !dryRun) { // no folder: create the person from the sheet row
           const id = crypto.createHash('sha1').update(`sheet|${norm(plant)}|${num}|${norm(name)}`).digest('hex').slice(0, 24);
           if (!state.employees[id]) {
             state.employees[id] = { id, name: title(name), site: plant, number: num, status: isInactive(row) ? 'baja' : 'activo', position: '', phone: '', emerg: '', notes: '',
