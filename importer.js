@@ -543,6 +543,11 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
         if (job.progress.done % 20 === 0) { persist(); log(`${job.progress.done}/${todo.length} · completados: ${JSON.stringify(st.filled)}`); }
       }
       if (useOcr) await X.stopOcr();
+      // an address shared by several people is an office or plant, not a home
+      const cnt = {}; Object.values(state.employees).forEach(e => { if (e.address) cnt[norm(e.address)] = (cnt[norm(e.address)] || 0) + 1; });
+      let dropped = 0;
+      for (const e of Object.values(state.employees)) if (e.address && cnt[norm(e.address)] > 2 && e.filledFrom && e.filledFrom.address) { e.address = ''; delete e.filledFrom.address; dropped++; }
+      if (dropped) { st.filled.address = Math.max(0, (st.filled.address || 0) - dropped); log(`Quitados ${dropped} domicilios repetidos (oficina o planta).`); }
       persist();
       log(`Listo: ${st.docsRead} documentos leídos, completados ${JSON.stringify(st.filled)}`);
       return st;

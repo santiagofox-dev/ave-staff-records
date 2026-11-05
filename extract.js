@@ -143,9 +143,9 @@ function parse(textRaw, emp) {
       const before = flat.slice(Math.max(0, m.index - 220), m.index);
       if (/oficina|empresa|patr[oó]n|sociedad|raz[oó]n social|fiscal|registrado|la sucursal|planta/i.test(before.slice(-90))) continue;
       if (!/trabajador|empleado|\bsr\.?\b|\bsra\.?\b|\bel c\.|\bla c\.|yo,|mi domicilio|nombre/i.test(before)) continue;
-      if (!/\d/.test(m[1])) continue;
+      if (!/\d/.test(m[1]) || /^\W*(de sus|de la|del?)\s+(oficina|empresa|patr|sucursal|planta|negocio)|^.{0,40}oficinas/i.test(m[1])) continue;
       let v = m[1];
-      const cut1 = v.search(/;|,\s*(?:de nacionalidad|con R\.?F\.?C|con CURP|quien|mayor de edad|estado civil|a quien)|\s+y\s+(?:que|quien)\b/i); if (cut1 > 0) v = v.slice(0, cut1);
+      const cut1 = v.search(/;|,?\s*seg[uú]n consta|,\s*(?:de nacionalidad|con R\.?F\.?C|con CURP|quien|mayor de edad|estado civil|a quien)|\s+y\s+(?:que|quien)\b/i); if (cut1 > 0) v = v.slice(0, cut1);
       const cut2 = v.search(/\.\s+[A-ZÑ]{2,}\b/); if (cut2 > 0) v = v.slice(0, cut2);
       if (v.length < 12) continue;
       out.address = v.replace(/\s+/g, ' ').replace(/[,.\s]+$/, '').trim().slice(0, 200); break;
