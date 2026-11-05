@@ -106,7 +106,7 @@ app.use(cookieSession({
 const authed = req => req.session && req.session.ok && req.session.ver === state.auth.ver;
 function requireAuth(req, res, next) {
   if (authed(req)) return next();
-  if (req.path.startsWith('/api/') || req.path.startsWith('/files/') || req.path.startsWith('/reports/')) return res.status(401).json({ error: 'Sign in again.' });
+  if (req.path.startsWith('/api/') || req.path.startsWith('/files/') || req.path.startsWith('/reports/')) return res.status(401).json({ error: 'Vuelve a iniciar sesión.' });
   return res.redirect('/login');
 }
 
@@ -119,9 +119,9 @@ app.get('/login', (req, res) => {
 });
 app.post('/api/login', (req, res) => {
   const ip = req.ip;
-  if (lockedOut(ip)) return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
+  if (lockedOut(ip)) return res.status(429).json({ error: 'Demasiados intentos fallidos. Inténtalo de nuevo en 15 minutos.' });
   const { username, password } = req.body || {};
-  if (!checkLogin(username, password)) { recordFail(ip); return res.status(401).json({ error: 'Wrong username or password.' }); }
+  if (!checkLogin(username, password)) { recordFail(ip); return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); }
   attempts.delete(ip);
   req.session = { ok: true, ver: state.auth.ver };
   res.json({ ok: true });
@@ -136,8 +136,8 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html
 
 app.post('/api/password', (req, res) => {
   const { current, next: nextPw } = req.body || {};
-  if (!checkLogin(state.auth.user, current)) return res.status(400).json({ error: 'Your current password is not correct.' });
-  if (typeof nextPw !== 'string' || nextPw.length < 10) return res.status(400).json({ error: 'Use at least 10 characters for the new password.' });
+  if (!checkLogin(state.auth.user, current)) return res.status(400).json({ error: 'La contraseña actual no es correcta.' });
+  if (typeof nextPw !== 'string' || nextPw.length < 10) return res.status(400).json({ error: 'La contraseña nueva debe tener al menos 10 caracteres.' });
   setPassword(state.auth.user, nextPw);
   req.session = { ok: true, ver: state.auth.ver }; // other devices are signed out
   res.json({ ok: true });
@@ -153,10 +153,10 @@ app.get('/api/employees', (req, res) => res.json(Object.values(state.employees).
 
 app.put('/api/employees/:id', (req, res) => {
   const id = req.params.id;
-  if (!ID.test(id)) return res.status(400).json({ error: 'Invalid employee id.' });
+  if (!ID.test(id)) return res.status(400).json({ error: 'Identificador de empleado no válido.' });
   const b = req.body || {};
   const name = S(b.name, 120);
-  if (!name) return res.status(400).json({ error: 'Enter the employee’s full name.' });
+  if (!name) return res.status(400).json({ error: 'Escribe el nombre completo del empleado.' });
   const prev = state.employees[id];
   const trainings = Array.isArray(b.trainings) ? b.trainings.slice(0, 100).map(t => ({
     id: (t && typeof t.id === 'string' && ID.test(t.id)) ? t.id : crypto.randomBytes(6).toString('hex'),
@@ -197,19 +197,19 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (TYPES[ext]) return cb(null, true);
-    cb(Object.assign(new Error('Upload a PDF or a photo (JPG, PNG). Save Word files as PDF first.'), { status: 400 }));
+    cb(Object.assign(new Error('Sube un PDF o una foto (JPG, PNG). Los archivos de Word guárdalos primero como PDF.'), { status: 400 }));
   },
 });
 
 app.post('/api/employees/:id/docs', (req, res) => {
   const e = state.employees[req.params.id];
-  if (!e) return res.status(404).json({ error: 'Save the employee profile first.' });
+  if (!e) return res.status(404).json({ error: 'Guarda primero los datos del empleado.' });
   upload.single('file')(req, res, err => {
     if (err) {
-      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'That file is over 20 MB. Scan it at a lower resolution and try again.' : err.message;
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'El archivo pesa más de 20 MB. Escanéalo con menor resolución e inténtalo de nuevo.' : err.message;
       return res.status(400).json({ error: msg });
     }
-    if (!req.file) return res.status(400).json({ error: 'Choose a file to upload.' });
+    if (!req.file) return res.status(400).json({ error: 'Elige un archivo para subir.' });
     const ext = path.extname(req.file.originalname).toLowerCase();
     const doc = {
       id: crypto.randomBytes(10).toString('hex'),
@@ -229,7 +229,7 @@ app.post('/api/employees/:id/docs', (req, res) => {
 
 app.delete('/api/employees/:id/docs/:docId', (req, res) => {
   const e = state.employees[req.params.id];
-  if (!e) return res.status(404).json({ error: 'Employee not found.' });
+  if (!e) return res.status(404).json({ error: 'No se encontró el empleado.' });
   const d = (e.docs || []).find(x => x.id === req.params.docId);
   if (d) {
     fs.rm(path.join(UPLOAD_DIR, d.stored), { force: true }, () => {});
@@ -245,10 +245,10 @@ app.get('/files/:docId', (req, res) => {
     if (d) {
       res.set('Content-Type', d.mime);
       res.set('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(d.fileName)}`);
-      return res.sendFile(path.join(UPLOAD_DIR, d.stored), err => { if (err && !res.headersSent) res.status(404).send('File missing.'); });
+      return res.sendFile(path.join(UPLOAD_DIR, d.stored), err => { if (err && !res.headersSent) res.status(404).send('No se encontró el archivo.'); });
     }
   }
-  res.status(404).send('File not found.');
+  res.status(404).send('No se encontró el archivo.');
 });
 
 /* ---- downloadable reports ---- */
@@ -264,6 +264,6 @@ app.get('/reports/calendar.pdf', (req, res) => {
   reports.calendar(res, empList(), m);
 });
 
-app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'Something went wrong on the server.' }); });
+app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'Ocurrió un error en el servidor.' }); });
 
 app.listen(PORT, () => console.log(`AVE Staff Records on port ${PORT}, data in ${DATA_DIR}`));

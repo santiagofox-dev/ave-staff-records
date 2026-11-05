@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="es-MX">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<title>AVE Staff Records</title>
+<title>Expedientes de Personal AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -13,65 +13,65 @@
   <header class="top">
     <div>
       <div class="eyebrow">Grupo AVE · Personal</div>
-      <h1>Staff Records</h1>
-      <div class="muted">Employee files, safety training expiry and birthdays.</div>
+      <h1>Expedientes de Personal</h1>
+      <div class="muted">Expedientes, vencimiento de capacitaciones y cumpleaños.</div>
     </div>
     <div class="head-actions">
-      <button class="btn quiet" id="pwBtn">Change password</button>
-      <button class="btn quiet" id="outBtn">Sign out</button>
-      <button class="btn primary" id="addBtn">+ Add employee</button>
+      <button class="btn quiet" id="pwBtn">Cambiar contraseña</button>
+      <button class="btn quiet" id="outBtn">Cerrar sesión</button>
+      <button class="btn primary" id="addBtn">+ Agregar empleado</button>
     </div>
   </header>
 
-  <section class="stats" aria-label="Summary">
-    <div class="stat"><b id="sTotal">–</b><span>Employees</span></div>
-    <div class="stat bad"><b id="sExpired">–</b><span>Trainings expired</span></div>
-    <div class="stat warn"><b id="sExpiring">–</b><span id="sExpiringL">Expiring soon</span></div>
-    <div class="stat bday"><b id="sBday">–</b><span>Birthdays next 30 days</span></div>
+  <section class="stats" aria-label="Resumen">
+    <div class="stat"><b id="sTotal">–</b><span>Empleados</span></div>
+    <div class="stat bad"><b id="sExpired">–</b><span>Capacitaciones vencidas</span></div>
+    <div class="stat warn"><b id="sExpiring">–</b><span id="sExpiringL">Por vencer</span></div>
+    <div class="stat bday"><b id="sBday">–</b><span>Cumpleaños en 30 días</span></div>
   </section>
 
   <div class="grid">
     <section class="panel">
       <div class="panel-head">
-        <h2>Roster</h2>
+        <h2>Plantilla</h2>
         <div class="toolbar">
-          <input class="search" id="q" type="search" placeholder="Search name, position or site" aria-label="Search employees">
-          <div class="seg" role="group" aria-label="Filter">
-            <button id="fAll" aria-pressed="true">All</button>
-            <button id="fAttn" aria-pressed="false">Needs attention</button>
+          <input class="search" id="q" type="search" placeholder="Buscar por nombre, puesto o sitio" aria-label="Buscar empleados">
+          <div class="seg" role="group" aria-label="Filtro">
+            <button id="fAll" aria-pressed="true">Todos</button>
+            <button id="fAttn" aria-pressed="false">Necesita atención</button>
           </div>
         </div>
       </div>
-      <div class="roster" id="roster"><div class="state muted">Loading records…</div></div>
+      <div class="roster" id="roster"><div class="state muted">Cargando expedientes…</div></div>
     </section>
 
     <aside class="side">
       <section class="panel">
         <div class="panel-head">
-          <h2>Safety training</h2>
-          <label class="window">Warn me
-            <select id="win" aria-label="Warning window">
-              <option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option>
-            </select> ahead</label>
+          <h2>Capacitaciones</h2>
+          <label class="window">Avisar con
+            <select id="win" aria-label="Días de aviso">
+              <option value="30">30 días</option><option value="60">60 días</option><option value="90">90 días</option>
+            </select></label>
         </div>
         <div class="alerts" id="trainAlerts"></div>
       </section>
       <section class="panel">
-        <h2>Upcoming birthdays</h2>
+        <h2>Próximos cumpleaños</h2>
         <div class="alerts" id="bdayAlerts"></div>
       </section>
       <section class="panel">
-        <h2>Reports</h2>
+        <h2>Reportes</h2>
         <div class="reports">
           <a class="report" id="rWeekly" href="/reports/weekly.pdf" download>
-            <span><span class="t">Weekly report</span><br><span class="s" id="rWeeklyS">Expired, expiring soon and birthdays</span></span>
+            <span><span class="t">Reporte semanal</span><br><span class="s" id="rWeeklyS">Vencidas, por vencer y cumpleaños</span></span>
             <span class="dl">PDF ↓</span></a>
           <a class="report" href="/reports/past-due.pdf" download>
-            <span><span class="t">Past-due trainings</span><br><span class="s">Every expired course, most overdue first</span></span>
+            <span><span class="t">Capacitaciones vencidas</span><br><span class="s">Todos los cursos vencidos, del más atrasado al más reciente</span></span>
             <span class="dl">PDF ↓</span></a>
           <div class="report cal">
-            <span><span class="t">Monthly calendar</span><br><span class="s">Birthdays, expiries and anniversaries</span></span>
-            <span class="cal-pick"><label class="sr" for="rMonth">Month</label><input id="rMonth" type="month">
+            <span><span class="t">Calendario mensual</span><br><span class="s">Cumpleaños, vencimientos y aniversarios</span></span>
+            <span class="cal-pick"><label class="sr" for="rMonth">Mes</label><input id="rMonth" type="month">
               <a class="dl" id="rCal" href="/reports/calendar.pdf" download>PDF ↓</a></span>
           </div>
         </div>
@@ -97,57 +97,57 @@
   <div class="sheet">
     <div class="sheet-head">
       <div>
-        <div class="eyebrow">Employee file</div>
-        <h2 id="dName">New employee</h2>
+        <div class="eyebrow">Expediente</div>
+        <h2 id="dName">Nuevo empleado</h2>
         <div class="muted" id="dSub"></div>
       </div>
-      <button class="close" id="dClose" aria-label="Close">×</button>
+      <button class="close" id="dClose" aria-label="Cerrar">×</button>
     </div>
 
     <form class="card" id="profile" novalidate>
-      <h3>Profile</h3>
+      <h3>Datos generales</h3>
       <div class="fields">
-        <div class="field full"><label for="p_name">Full name *</label><input id="p_name" required autocomplete="off"></div>
-        <div class="field"><label for="p_position">Position</label><input id="p_position" placeholder="Cocinero, Higienista…"></div>
-        <div class="field"><label for="p_site">Site / plant</label><input id="p_site" placeholder="JABIL Juárez…"></div>
-        <div class="field"><label for="p_birthday">Birthday</label><input id="p_birthday" type="date"></div>
-        <div class="field"><label for="p_hire">Hire date</label><input id="p_hire" type="date"></div>
-        <div class="field"><label for="p_phone">Phone</label><input id="p_phone" type="tel"></div>
-        <div class="field"><label for="p_emerg">Emergency contact</label><input id="p_emerg" placeholder="Name and phone"></div>
-        <div class="field full"><label for="p_notes">Notes</label><textarea id="p_notes"></textarea></div>
+        <div class="field full"><label for="p_name">Nombre completo *</label><input id="p_name" required autocomplete="off"></div>
+        <div class="field"><label for="p_position">Puesto</label><input id="p_position" placeholder="Cocinero, Higienista…"></div>
+        <div class="field"><label for="p_site">Sitio / planta</label><input id="p_site" placeholder="JABIL Juárez…"></div>
+        <div class="field"><label for="p_birthday">Fecha de cumpleaños</label><input id="p_birthday" type="date"></div>
+        <div class="field"><label for="p_hire">Fecha de ingreso</label><input id="p_hire" type="date"></div>
+        <div class="field"><label for="p_phone">Teléfono</label><input id="p_phone" type="tel"></div>
+        <div class="field"><label for="p_emerg">Contacto de emergencia</label><input id="p_emerg" placeholder="Nombre y teléfono"></div>
+        <div class="field full"><label for="p_notes">Notas</label><textarea id="p_notes"></textarea></div>
       </div>
       <div class="actions">
-        <button type="button" class="btn danger" id="delEmp">Delete employee</button>
-        <button type="submit" class="btn primary" id="saveProfile">Save profile</button>
+        <button type="button" class="btn danger" id="delEmp">Eliminar empleado</button>
+        <button type="submit" class="btn primary" id="saveProfile">Guardar datos</button>
       </div>
     </form>
 
     <section class="card" id="trainCard">
-      <h3>Safety trainings</h3>
+      <h3>Capacitaciones de seguridad</h3>
       <div class="list" id="trainList"></div>
       <form class="addrow" id="trainForm" novalidate>
-        <div class="field n"><label for="t_name">Training</label><input id="t_name" list="trainingNames" placeholder="Pick or type a course"></div>
-        <div class="field"><label for="t_done">Completed</label><input id="t_done" type="date"></div>
-        <div class="field"><label for="t_exp">Expires</label><input id="t_exp" type="date"></div>
-        <button class="btn" type="submit">Add</button>
+        <div class="field n"><label for="t_name">Capacitación</label><input id="t_name" list="trainingNames" placeholder="Elige o escribe un curso"></div>
+        <div class="field"><label for="t_done">Realizada</label><input id="t_done" type="date"></div>
+        <div class="field"><label for="t_exp">Vence</label><input id="t_exp" type="date"></div>
+        <button class="btn" type="submit">Agregar</button>
       </form>
-      <div class="note">To renew a course, add it again with the same name and new dates. The old record is replaced.</div>
+      <div class="note">Para renovar un curso, agrégalo otra vez con el mismo nombre y las nuevas fechas. Reemplaza al registro anterior.</div>
     </section>
 
     <section class="card" id="docCard">
-      <h3>Documents</h3>
+      <h3>Documentos</h3>
       <div class="list" id="docList"></div>
       <form class="addrow docs" id="docForm" novalidate>
-        <div class="field"><label for="u_type">Document type</label>
+        <div class="field"><label for="u_type">Tipo de documento</label>
           <select id="u_type">
             <option>INE</option><option>CURP</option><option>RFC / Constancia fiscal</option><option>NSS (IMSS)</option>
             <option>Acta de nacimiento</option><option>Comprobante de domicilio</option><option>Contrato</option>
             <option>Certificado médico</option><option>Constancia DC-3</option><option>Otro</option>
           </select></div>
-        <div class="field"><label for="u_file">File</label><input id="u_file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"></div>
-        <button class="btn" type="submit" id="upBtn">Upload</button>
+        <div class="field"><label for="u_file">Archivo</label><input id="u_file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"></div>
+        <button class="btn" type="submit" id="upBtn">Subir</button>
       </form>
-      <div class="note">PDF or photo (JPG, PNG), up to 20 MB each.</div>
+      <div class="note">PDF o foto (JPG, PNG), hasta 20 MB cada uno.</div>
     </section>
   </div>
 </dialog>
@@ -155,18 +155,18 @@
 <dialog id="pwDlg" aria-labelledby="pwTitle">
   <div class="sheet narrow">
     <div class="sheet-head">
-      <div><div class="eyebrow">Account</div><h2 id="pwTitle">Change password</h2></div>
-      <button class="close" id="pwClose" aria-label="Close">×</button>
+      <div><div class="eyebrow">Cuenta</div><h2 id="pwTitle">Cambiar contraseña</h2></div>
+      <button class="close" id="pwClose" aria-label="Cerrar">×</button>
     </div>
     <form class="card" id="pwForm" novalidate>
       <div class="fields one">
-        <div class="field"><label for="pw_cur">Current password</label><input id="pw_cur" type="password" autocomplete="current-password"></div>
-        <div class="field"><label for="pw_new">New password</label><input id="pw_new" type="password" autocomplete="new-password"></div>
-        <div class="field"><label for="pw_new2">Repeat new password</label><input id="pw_new2" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="pw_cur">Contraseña actual</label><input id="pw_cur" type="password" autocomplete="current-password"></div>
+        <div class="field"><label for="pw_new">Contraseña nueva</label><input id="pw_new" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="pw_new2">Repite la contraseña nueva</label><input id="pw_new2" type="password" autocomplete="new-password"></div>
       </div>
-      <div class="note">At least 10 characters. Other devices will be signed out.</div>
+      <div class="note">Mínimo 10 caracteres. Se cerrará la sesión en otros dispositivos.</div>
       <div class="err" id="pwErr" role="alert" hidden></div>
-      <div class="actions end"><button class="btn primary" type="submit">Save new password</button></div>
+      <div class="actions end"><button class="btn primary" type="submit">Guardar contraseña</button></div>
     </form>
   </div>
 </dialog>

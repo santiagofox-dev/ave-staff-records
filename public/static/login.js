@@ -3,7 +3,7 @@
   document.getElementById('u').focus();
   f.addEventListener('submit', async ev => {
     ev.preventDefault();
-    err.hidden = true; go.disabled = true; go.textContent = 'Signing in…';
+    err.hidden = true; go.disabled = true; go.textContent = 'Entrando…';
     try {
       const r = await fetch('/api/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -11,10 +11,10 @@
       });
       if (r.ok) { location.href = '/'; return; }
       const j = await r.json().catch(() => ({}));
-      err.textContent = j.error || 'Could not sign in.'; err.hidden = false;
+      err.textContent = j.error || 'No se pudo iniciar sesión.'; err.hidden = false;
       document.getElementById('p').value = ''; document.getElementById('p').focus();
     } catch (e) {
-      err.textContent = 'No connection to the server. Check your internet and try again.'; err.hidden = false;
-    } finally { go.disabled = false; go.textContent = 'Sign in'; }
+      err.textContent = 'Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.'; err.hidden = false;
+    } finally { go.disabled = false; go.textContent = 'Iniciar sesión'; }
   });
 })();
