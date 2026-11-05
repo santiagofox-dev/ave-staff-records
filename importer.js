@@ -317,6 +317,100 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
     res.json({ ...out, updated: out.updated.length });
   });
 
+  /* ---------- apply one plant's sheet, detecting its columns automatically ---------- */
+  // Sensitive columns that are never copied: chronic illnesses, bank details.
+  const SKIP = /DIABETES|HIPERTENS|ENFERMEDAD|CRONIC|CUENTA|CLABE|BANCO|TARJETA DE NOMINA/;
+  function layout(sh) {
+    const idx = sh.rows.slice(0, 8).findIndex(r => r.v.some(c => /\bCURP\b/.test(norm(c))));
+    if (idx < 0) throw new Error(`No encontré los encabezados en la hoja ${sh.name}.`);
+    const h2 = sh.rows[idx].v, h1 = idx > 0 ? sh.rows[idx - 1].v : [];
+    const n = Math.max(h1.length, h2.length), H = [];
+    let group = '';
+    for (let i = 0; i < n; i++) {
+      const g = norm(h1[i]); if (g && !/LISTA DE EMPLEADOS|GRUPO FRONTERA|GRUPO AVE/.test(g)) group = g; else if (g) group = '';
+      H.push({ i, label: [group, norm(h2[i])].filter(Boolean).join(' / '), raw: String(h2[i] || h1[i] || '').replace(/\s+/g, ' ').trim() });
+    }
+    const f = re => (H.find(h => re.test(h.label)) || {}).i;
+    const enf = H.findIndex(h => /ENFERMEDAD|CRONIC/.test(norm(h1[h.i])));
+    const enfEnd = enf >= 0 ? (H.findIndex((h, k) => k > enf && norm(h1[h.i]) && !/ENFERMEDAD|CRONIC/.test(norm(h1[h.i]))) || n) : -1;
+    return {
+      headerRow: sh.rows[idx].r, H,
+      col: {
+        number: f(/NO\.? ?EMPLEADO|^NO\.?$|NUM\w* (DE )?EMP/), active: f(/(^| )ACTIVO$/), hire: f(/INGRESO/), baja: f(/BAJA/),
+        nss: f(/(^| )NSS$|SEGURO SOCIAL/), name: (H.find(h => /(^|\/ )(EMPLEADO|NOMBRE( COMPLETO)?( DEL EMPLEADO)?)$/.test(h.label) && !/NO\.? ?EMPLEADO|NUM/.test(h.label)) || {}).i, position: f(/PUESTO/), shift: f(/TURNO/),
+        curp: f(/(^| )CURP$/), rfc: f(/(^| )RFC$/), phone: f(/TELEFONO|CELULAR/), email: f(/CORREO/),
+        emerg: f(/CONTACTO DE EMERGENCIA/), kin: f(/PARENTESCO/), emergPhone: f(/(^| )NUMERO$/), birthday: f(/NACIMIENTO|CUMPLE/),
+        labDone: f(/LABORATORIOS? \/ EXPEDIDOS|LABORATORIOS? EXPEDIDOS/), labExp: f(/LABORATORIOS? \/ VENCIMIENTO|LABORATORIOS? VENCIMIENTO/),
+        dc3: f(/DC ?3 ?\/? ?VENC|VENCIMIENTO DC ?3/),
+      },
+      skip: new Set(H.filter(h => SKIP.test(h.label) || (enf >= 0 && h.i >= enf && h.i < (enfEnd > 0 ? enfEnd : enf + 3))).map(h => h.i)),
+    };
+  }
+
+  app.post('/api/import/apply-auto', (req, res) => {
+    if (!fs.existsSync(SHEET)) return res.status(404).json({ error: 'Primero descarga la hoja.' });
+    const { sheet, plant, dryRun } = req.body || {};
+    const sheets = JSON.parse(fs.readFileSync(SHEET, 'utf8'));
+    const sh = sheets.find(s => s.name.trim() === String(sheet || '').trim());
+    if (!sh) return res.status(400).json({ error: 'No existe esa hoja.' });
+    let L; try { L = layout(sh); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const C = L.col, get = (row, i) => (i == null ? '' : row.v[i]);
+    const emps = Object.values(state.employees).filter(e => e.site === plant);
+    const out = { sheet: sh.name.trim(), plant, headerRow: L.headerRow, columns: Object.fromEntries(Object.entries(C).filter(([, v]) => v != null).map(([k, v]) => [k, L.H[v].raw])),
+      skippedColumns: [...L.skip].map(i => L.H[i].raw), rows: 0, inactiveRows: 0, matched: 0, unmatched: [], ambiguous: [], noSheetRow: [] };
+    const seen = new Set();
+    const rows = sh.rows.filter(r => r.r > L.headerRow && cellText(get(r, C.name)));
+    // active rows first so a rehire's current row wins
+    const isInactive = r => /BAJA|INACTIV|^NO$/.test(norm(get(r, C.active))) || !!toISODate(get(r, C.baja));
+    rows.sort((a, b) => isInactive(a) - isInactive(b));
+    for (const row of rows) {
+      out.rows++;
+      const name = cellText(get(row, C.name));
+      const num = String(cellText(get(row, C.number)) || '').replace(/\.0+$/, '').trim();
+      let cand = emps.filter(e => sameName(e.name, name));
+      if (cand.length !== 1 && num) { const byNum = emps.filter(e => e.number === num); if (byNum.length === 1) cand = byNum; }
+      if (cand.length > 1 && num) cand = cand.filter(e => e.number === num);
+      if (cand.length !== 1) { if (isInactive(row)) out.inactiveRows++; else (cand.length ? out.ambiguous : out.unmatched).push(`${num ? num + ' ' : ''}${title(name)}`); continue; }
+      const e = cand[0];
+      if (seen.has(e.id)) continue; // keep the first (active) row
+      seen.add(e.id); out.matched++;
+      if (dryRun) continue;
+      const set = (k, v) => { if (v) e[k] = v; };
+      const nm = title(name); if (nm && tokens(nm).length >= tokens(e.name).length) e.name = nm;
+      if (num) e.number = num;
+      set('hire', toISODate(get(row, C.hire)));
+      set('curp', cellText(get(row, C.curp)).toUpperCase().replace(/\s/g, '').slice(0, 18));
+      set('rfc', cellText(get(row, C.rfc)).toUpperCase().replace(/\s/g, '').slice(0, 13));
+      set('nss', cellText(get(row, C.nss)).replace(/\s/g, '').slice(0, 20));
+      set('position', title(cellText(get(row, C.position))).slice(0, 120));
+      set('phone', cellText(get(row, C.phone)).slice(0, 40));
+      const em = [cellText(get(row, C.emerg)), cellText(get(row, C.kin)) && `(${cellText(get(row, C.kin)).toLowerCase()})`, cellText(get(row, C.emergPhone))].filter(Boolean).join(' ');
+      set('emerg', em.slice(0, 160));
+      set('birthday', toISODate(get(row, C.birthday)) || birthdayFromCurp(e.curp) || e.birthday);
+      // lab tests → tracked expiry item
+      const ld = toISODate(get(row, C.labDone)), le = toISODate(get(row, C.labExp));
+      if (le) {
+        e.trainings = (e.trainings || []).filter(t => norm(t.name) !== 'LABORATORIOS');
+        e.trainings.push({ id: crypto.randomBytes(6).toString('hex'), name: 'Laboratorios', done: ld, expires: le });
+      }
+      const dc3e = toISODate(get(row, C.dc3));
+      if (dc3e && !(e.trainings || []).some(t => /DC-?3/.test(t.name))) (e.trainings = e.trainings || []).push({ id: crypto.randomBytes(6).toString('hex'), name: 'DC-3 Constancia de habilidades (STPS)', done: '', expires: dc3e });
+      const used = new Set(Object.values(C).filter(v => v != null));
+      used.delete(C.shift); used.delete(C.email);
+      e.extra = {};
+      for (const h of L.H) {
+        if (used.has(h.i) || L.skip.has(h.i) || !h.raw || /DIAS VENCIDOS/.test(h.label)) continue;
+        const raw = get(row, h.i);
+        let v = /FECHA|VENC|EXPED|CONTRATO|CURSO/.test(h.label) ? (toISODate(raw) || cellText(raw)) : cellText(raw);
+        if (v) e.extra[(h.label.includes(' / ') ? title(h.label.split(' / ')[0]) + ': ' : '') + h.raw.slice(0, 50)] = String(v).slice(0, 200);
+      }
+      e.updatedAt = new Date().toISOString();
+    }
+    out.noSheetRow = emps.filter(e => !seen.has(e.id)).map(e => `${e.number ? e.number + ' ' : ''}${e.name}`);
+    if (!dryRun) persist();
+    res.json(out);
+  });
+
   /* ---------- summary for checking the import ---------- */
   app.get('/api/import/summary', (req, res) => {
     const by = {};

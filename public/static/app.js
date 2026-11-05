@@ -117,7 +117,7 @@ function renderRoster() {
   el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños</span><span class="c-docs">Docs</span></div>` +
     order.map(k => `<div class="group-head">${esc(k)}<span>${groups.get(k).length} empleado${groups.get(k).length === 1 ? '' : 's'}</span></div>` + groups.get(k).map(rowHTML).join('')).join('');
 }
-const PLANT_ORDER = ['Auto Kabel Juárez', 'Juárez', 'Guadalajara', 'Monclova', 'Tijuana', 'Jabil Chihuahua', 'Winstron', 'Jabil Torres'];
+const PLANT_ORDER = ['Auto Kabel Juárez', 'Juárez', 'Guadalajara', 'Monclova', 'Tijuana', 'Jabil Chihuahua', 'Wistron', 'Jabil Torres'];
 const plantRank = p => { const i = PLANT_ORDER.indexOf(p); return i < 0 ? 99 : i; };
 function renderPlants() {
   const counts = {}; employees.forEach(e => { const k = e.site || 'Sin planta'; counts[k] = (counts[k] || 0) + 1; });
