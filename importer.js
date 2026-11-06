@@ -493,14 +493,14 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
     const cache = path.join(TEXT, d.id + (useOcr ? '.ocr' : '.txt'));
     if (fs.existsSync(cache)) return fs.readFileSync(cache, 'utf8');
     const f = path.join(UPLOAD_DIR, d.stored);
-    if (!fs.existsSync(f)) return '';
+    if (!fs.existsSync(f) || fs.statSync(f).size === 0) { fs.writeFileSync(cache, ''); return ''; }
     let t = '';
     try {
       if (!useOcr) {
         if (d.mime === 'application/pdf') t = (await X.pdfText(f, 8)).text;
         else if (/wordprocessingml/.test(d.mime || '')) t = await X.docxText(f);
       } else {
-        if (d.mime === 'application/pdf') { for (const img of await X.pdfPageImages(f, 2, 2)) t += (await X.ocr(img)) + '\n'; }
+        if (d.mime === 'application/pdf') { for (const img of await X.pdfPageImages(f, 2, 1.6)) t += (await X.ocr(img)) + '\n'; }
         else if (/^image\/(png|jpeg|webp)/.test(d.mime || '')) t = await X.ocr(fs.readFileSync(f));
       }
     } catch (err) { log(`No se pudo leer ${d.fileName}: ${err.message.slice(0, 80)}`); }
@@ -515,9 +515,26 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
       if (!e[k]) { e[k] = v; st.filled[k] = (st.filled[k] || 0) + 1; (e.filledFrom = e.filledFrom || {})[k] = src; }
     }
   }
+  // OCR survives restarts: a marker says it's unfinished, and the server picks it up again on boot.
+  const OCR_MARK = path.join(WORK, 'ocr-state.json');
+  const readMark = () => { try { return JSON.parse(fs.readFileSync(OCR_MARK, 'utf8')); } catch { return null; } };
+  setTimeout(() => {
+    let m = readMark();
+    // an OCR run that started before this marker existed left partial results; treat it as unfinished
+    if (!m && fs.readdirSync(TEXT).some(f => f.endsWith('.ocr'))) m = { pending: true, resumes: 0, startedAt: 'earlier run' };
+    if (m && m.pending && (m.resumes || 0) < 6) {
+      fs.writeFileSync(OCR_MARK, JSON.stringify({ ...m, resumes: (m.resumes || 0) + 1 }));
+      if (start('ocr', () => runExtract(true))) log(`OCR reanudado tras reinicio (intento ${(m.resumes || 0) + 1}).`);
+    }
+  }, 20000);
   app.post('/api/import/extract', (req, res) => {
     const useOcr = !!(req.body && req.body.ocr);
-    const ok = start(useOcr ? 'ocr' : 'extract', async () => {
+    if (useOcr) fs.writeFileSync(OCR_MARK, JSON.stringify({ pending: true, resumes: 0, startedAt: new Date().toISOString() }));
+    const ok = start(useOcr ? 'ocr' : 'extract', () => runExtract(useOcr));
+    res.status(ok ? 202 : 409).json(ok ? { ok: true } : { error: 'Ya hay una importación en curso.' });
+  });
+  async function runExtract(useOcr) {
+    {
       const emps = Object.values(state.employees);
       const st = { filled: {}, docsRead: 0, withText: 0, ocrPages: 0 };
       const todo = useOcr ? emps.filter(e => placeholderName(e) || NEED.some(k => !e[k])) : emps;
@@ -549,11 +566,11 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
       for (const e of Object.values(state.employees)) if (e.address && cnt[norm(e.address)] > 2 && e.filledFrom && e.filledFrom.address) { e.address = ''; delete e.filledFrom.address; dropped++; }
       if (dropped) { st.filled.address = Math.max(0, (st.filled.address || 0) - dropped); log(`Quitados ${dropped} domicilios repetidos (oficina o planta).`); }
       persist();
+      if (useOcr) fs.writeFileSync(OCR_MARK, JSON.stringify({ pending: false, finishedAt: new Date().toISOString(), result: st }));
       log(`Listo: ${st.docsRead} documentos leídos, completados ${JSON.stringify(st.filled)}`);
       return st;
-    });
-    res.status(ok ? 202 : 409).json(ok ? { ok: true } : { error: 'Ya hay una importación en curso.' });
-  });
+    }
+  }
 
   // Undo values filled from documents (e.g. after improving a rule), so a new pass can refill them.
   app.post('/api/import/clear-filled', (req, res) => {

@@ -31,7 +31,7 @@ async function pdfPageImages(file, maxPages = 2, scale = 2) {
     for (let i = 1; i <= Math.min(doc.numPages, maxPages); i++) {
       const page = await doc.getPage(i);
       let vp = page.getViewport({ scale });
-      if (vp.width * vp.height > 9e6) vp = page.getViewport({ scale: scale * Math.sqrt(9e6 / (vp.width * vp.height)) });
+      if (vp.width * vp.height > 5e6) vp = page.getViewport({ scale: scale * Math.sqrt(5e6 / (vp.width * vp.height)) });
       const { canvas, context } = doc.canvasFactory.create(Math.ceil(vp.width), Math.ceil(vp.height));
       await page.render({ canvasContext: context, viewport: vp, canvas }).promise;
       imgs.push(canvas.toBuffer('image/png'));
@@ -58,13 +58,17 @@ async function docxText(file) {
 }
 
 /* ---------- OCR (one Spanish worker, created on demand) ---------- */
-let worker = null;
+let worker = null, uses = 0;
 async function ocr(buf) {
+  // Tesseract's memory grows with use; start a fresh worker every 20 pages to stay under the server's limit.
+  if (worker && uses >= 20) { await worker.terminate(); worker = null; }
   if (!worker) {
+    uses = 0;
     const { createWorker } = require('tesseract.js');
     const langPath = path.dirname(require.resolve('@tesseract.js-data/spa/4.0.0/spa.traineddata.gz'));
     worker = await createWorker('spa', 1, { langPath, gzip: true, cacheMethod: 'none', logger: () => {} });
   }
+  uses++;
   const { data } = await worker.recognize(buf);
   return data.text || '';
 }
