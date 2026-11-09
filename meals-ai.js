@@ -7,8 +7,7 @@ const hasKey = () => !!process.env.ANTHROPIC_API_KEY;
 
 const PROMPT = `Eres un lector de hojas de registro de comidas de un comedor industrial. La foto muestra una hoja impresa titulada "INGRESOS <fecha>" con columnas "#", "NOMBRE" y una columna por día (por ejemplo 2-Nov, 3-Nov … 6-Nov). El personal de cocina marca a mano cada comida.
 
-Devuelve SOLO un objeto JSON válido, sin texto antes ni después y sin bloques de código, con esta forma exacta:
-{"sheet_title": string, "day_columns": [string, ...], "rows": [{"row_number": number|null, "name_as_written": string, "marks": {"<día>": true|false, ...}, "uncertain_cells": [string, ...], "note": string}]}
+Registra la hoja llamando a la herramienta "registrar_hoja" (una sola vez, con todos los renglones).
 
 Reglas:
 - "day_columns" son los encabezados de día tal como están impresos (ej. "2-Nov"). En "marks" usa exactamente esas mismas claves, una por cada día, en cada renglón.
@@ -21,12 +20,35 @@ Reglas:
 - Si no estás seguro de si una celda tiene marca, o de a qué renglón pertenece, pon tu mejor lectura y agrega el día a "uncertain_cells".
 - "note": vacío "" salvo que haya algo que el revisor deba saber (marca fuera de la tabla, nombre ilegible, renglón tachado, continúa en otra foto, etc.).`;
 
-function parseJson(text) {
-  let t = String(text || '').trim();
-  t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-  const a = t.indexOf('{'), b = t.lastIndexOf('}');
-  if (a < 0 || b < a) throw new Error('La respuesta no contiene JSON.');
-  const j = JSON.parse(t.slice(a, b + 1));
+// The answer arrives as tool input (already an object). Plain text with JSON is still accepted as a fallback.
+const TOOL = {
+  name: 'registrar_hoja',
+  description: 'Registra el contenido leído de una hoja INGRESOS.',
+  input_schema: {
+    type: 'object', required: ['sheet_title', 'day_columns', 'rows'],
+    properties: {
+      sheet_title: { type: 'string' },
+      day_columns: { type: 'array', items: { type: 'string' }, description: 'Encabezados de día tal como están impresos, en orden.' },
+      rows: { type: 'array', items: { type: 'object', required: ['row_number', 'name_as_written', 'marks', 'uncertain_cells', 'note'], properties: {
+        row_number: { type: ['integer', 'null'] },
+        name_as_written: { type: 'string' },
+        marks: { type: 'object', additionalProperties: { type: 'boolean' }, description: 'Una clave por cada valor de day_columns.' },
+        uncertain_cells: { type: 'array', items: { type: 'string' } },
+        note: { type: 'string' },
+      } } },
+    },
+  },
+};
+
+function parseJson(input) {
+  let j = input;
+  if (typeof input !== 'object' || input === null) {
+    let t = String(input || '').trim();
+    t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+    const a = t.indexOf('{'), b = t.lastIndexOf('}');
+    if (a < 0 || b < a) throw new Error('La respuesta no contiene JSON.');
+    j = JSON.parse(t.slice(a, b + 1));
+  }
   if (!Array.isArray(j.day_columns) || !Array.isArray(j.rows)) throw new Error('Faltan day_columns o rows.');
   j.rows = j.rows.filter(r => r && typeof r.name_as_written === 'string' && r.name_as_written.trim()).map(r => ({
     row_number: Number.isFinite(+r.row_number) && r.row_number !== null ? +r.row_number : null,
@@ -53,7 +75,8 @@ async function callClaude(b64, extra) {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: MODEL(), max_tokens: 8000,
+      model: MODEL(), max_tokens: 16000,
+      tools: [TOOL], tool_choice: { type: 'tool', name: TOOL.name },
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
         { type: 'text', text: PROMPT + (extra || '') },
@@ -62,7 +85,9 @@ async function callClaude(b64, extra) {
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`API de Claude: ${(j.error && j.error.message) || r.status}`);
-  return { text: (j.content || []).filter(c => c.type === 'text').map(c => c.text).join(''), usage: j.usage || {} };
+  if (j.stop_reason === 'max_tokens') throw new Error('La respuesta se cortó (hoja muy larga). Divide la foto en dos.');
+  const tool = (j.content || []).find(c => c.type === 'tool_use');
+  return { text: tool ? tool.input : (j.content || []).filter(c => c.type === 'text').map(c => c.text).join(''), usage: j.usage || {} };
 }
 
 /** Reads one photo. Retries once if the JSON doesn't parse. */
@@ -73,7 +98,7 @@ async function readSheetPhoto(file) {
   try { first = await callClaude(b64); return { ...parseJson(first.text), usage: first.usage }; }
   catch (e) {
     if (/API de Claude/.test(e.message) && !/overloaded|529|rate/i.test(e.message)) throw e;
-    const second = await callClaude(b64, '\n\nIMPORTANTE: tu respuesta anterior no fue JSON válido. Responde únicamente con el objeto JSON.');
+    const second = await callClaude(b64, '\n\nIMPORTANTE: tu respuesta anterior no se pudo leer. Llama a registrar_hoja con todos los renglones.');
     return { ...parseJson(second.text), usage: second.usage, retried: true };
   }
 }
