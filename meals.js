@@ -159,7 +159,7 @@ module.exports = function (app, { DATA_DIR, getUser }) {
       // review points
       const flags = [];
       for (const r of review) if (r.uncertain.length && Object.keys(r.marks).length) flags.push(`Celdas inciertas: ${r.nameAsWritten} (${r.source} #${r.row}) — ${r.uncertain.join(', ')}`);
-      for (const p of rec.people.filter(p => !p.id)) flags.push(`SIN ID: ${p.written} — ${p.total} comida${p.total === 1 ? '' : 's'} (no agregada${p.total === 1 ? '' : 's'} a DELPHI)`);
+      for (const p of rec.people.filter(p => !p.id && p.total > 0)) flags.push(`SIN ID: ${p.written} — ${p.total} comida${p.total === 1 ? '' : 's'} (no agregada${p.total === 1 ? '' : 's'} a DELPHI)`);
       const usedIds = rec.people.filter(p => p.id && p.total).map(p => p.id);
       for (const id of M.unusualIds(run.roster.map(r => r.id)).filter(id => usedIds.includes(id))) flags.push(`ID fuera del patrón del lote: ${id} (${byId[id].name}) — confirmar`);
       for (const c of rec.cruce.filter(c => c.enLista)) flags.push(`NO REGISTRADOS: ${c.codigo} ${c.nombre} — ${c.dayKey} ${M.hhmm(c.hora)} — ${c.accion}`);
