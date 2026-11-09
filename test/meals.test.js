@@ -168,3 +168,23 @@ test('two reads: agreed marks stay, disagreements become uncertain and unticked'
   assert.equal(m.rows[2].name_as_written, 'NUEVO');
   assert.deepEqual(m.rows[2].uncertain_cells, ['2-Nov']);
 });
+
+test('confidence: sure cells, disputed/uncertain cells, fuzzy names and reviews', () => {
+  const C = require('../public/static/meals-conf');
+  const D = ['2-Nov', '3-Nov'];
+  const rows = [
+    { key: 0, photo: 1, row: 1, nameAsWritten: 'ANA', id: '1', matchKind: 'exact', marks: { '2-Nov': true, '3-Nov': true }, uncertain: [], disputed: [] },
+    { key: 1, photo: 1, row: 2, nameAsWritten: 'LUIS', id: '2', matchKind: 'exact', marks: { '2-Nov': true, '3-Nov': false }, uncertain: [], disputed: ['3-Nov'] },
+    { key: 2, photo: 2, row: 1, nameAsWritten: 'ISAC', id: '3', matchKind: 'fuzzy', matchScore: 93, marks: { '2-Nov': true, '3-Nov': false }, uncertain: [], disputed: [] },
+  ];
+  let a = C.assess(rows, D, {});
+  assert.equal(a.total, 5);            // 2 + (1 ticked + 1 disputed) + 1
+  assert.equal(a.sure, 3);             // Ana x2, Luis 2-Nov
+  assert.equal(a.pct, 60);
+  assert.equal(a.items.length, 2);     // Luis 3-Nov, Isac name
+  assert.equal(a.perPhoto[2].pct, 0);
+  rows[1].reviewed = { days: ['3-Nov'] }; rows[2].reviewed = { name: true };
+  a = C.assess(rows, D, {});
+  assert.equal(a.pct, 100);
+  assert.equal(a.items.length, 0);
+});

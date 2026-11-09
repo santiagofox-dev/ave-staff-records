@@ -122,7 +122,7 @@ function mergeReads(a, b) {
     const differ = [];
     for (const d of days) { const x = !!r.marks[d], y = !!o.marks[bd[d]]; marks[d] = x && y; if (x !== y) { unc.add(d); differ.push(d); } }
     const note = [r.note || o.note, differ.length ? `Las dos lecturas no coinciden en: ${differ.join(', ')} (revisar con la foto).` : ''].filter(Boolean).join(' ');
-    return { ...r, marks, uncertain_cells: days.filter(d => unc.has(d)), note };
+    return { ...r, marks, uncertain_cells: days.filter(d => unc.has(d)), disputed_cells: differ, note };
   });
   b.rows.forEach((r, k) => { if (!used.has(k)) rows.push({ ...r, marks: Object.fromEntries(days.map(d => [d, false])), uncertain_cells: b.day_columns.filter(d => r.marks[d]).map(d => days[b.day_columns.indexOf(d)]).filter(Boolean), note: [r.note, 'Solo una de dos lecturas encontró este renglón.'].filter(Boolean).join(' ') }); });
   return { sheet_title: a.sheet_title || b.sheet_title, day_columns: days, rows };

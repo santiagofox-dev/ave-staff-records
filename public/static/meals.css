@@ -57,3 +57,28 @@
 @media (max-width:1000px){.review{grid-template-columns:minmax(0,1fr)}.viewer{position:static}}
 @media (max-width:640px){.upgrid{grid-template-columns:minmax(0,1fr)}}
 a.btn{text-decoration:none}
+.confbox{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border:1px solid var(--line);border-left-width:6px;border-radius:var(--r);padding:10px 14px;background:var(--surface);margin:10px 0}
+.confbox .big{font-family:var(--f-display);font-size:34px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.confbox>div:nth-child(2){flex:1;min-width:200px}
+.confbox.hi{border-left-color:var(--ok)}.confbox.hi .big{color:var(--ok)}
+.confbox.mid{border-left-color:var(--warn)}.confbox.mid .big{color:var(--warn)}
+.confbox.lo{border-left-color:var(--bad)}.confbox.lo .big{color:var(--bad)}
+.pend{font-weight:700;padding:4px 10px;border-radius:99px;font-size:13px}
+.pend.lo{background:var(--bad-bg);color:var(--bad)}.pend.hi{background:var(--ok-bg);color:var(--ok)}
+.pc.hi{color:var(--ok)}.pc.mid{color:var(--warn)}.pc.lo{color:var(--bad)}
+.tabs button[aria-pressed="true"] .pc{color:inherit}
+.todobox{border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;margin-bottom:12px;background:var(--surface)}
+.todobox summary{cursor:pointer;font-weight:700}
+.todo{list-style:decimal;margin:8px 0 0;padding-left:26px;max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.todo .ti{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.todo .go{flex:1;text-align:left;border:0;background:transparent;padding:3px 4px;border-radius:4px;font-size:13px;color:var(--fg);cursor:pointer}
+.todo .go:hover,.todo .go:focus-visible{background:var(--sunk);text-decoration:underline}
+.todo .ok{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:2px 8px;font-size:12px;white-space:nowrap;cursor:pointer}
+.todo .ok:hover{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.todo .none{list-style:none;margin-left:-26px;color:var(--muted);font-size:13px}
+.todo .ti.name .go::before{content:"Nombre · ";font-weight:700}
+.todo .ti.id .go::before{content:"ID · ";font-weight:700}
+.mgrid td.d.rv{background:var(--ok-bg);outline:2px solid var(--ok);outline-offset:-2px}
+.lg.rv{background:var(--ok-bg);outline:2px solid var(--ok);outline-offset:-2px}
+.mgrid tr.flash td{animation:flash 1.6s ease-out}
+@keyframes flash{0%{background:var(--warn-bg)}100%{background:transparent}}

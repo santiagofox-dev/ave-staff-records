@@ -358,7 +358,7 @@ function reconcile(review, noReg, roster, dayKeys) {
 }
 
 /* ---------------- summary workbook ---------------- */
-async function buildSummary(file, { label, dayKeys, people, cruce, delphiStats, flags }) {
+async function buildSummary(file, { label, dayKeys, people, cruce, delphiStats, flags, confidence }) {
   const wb = new ExcelJS.Workbook();
   const font = { name: 'Arial', size: 10 }, bold = { name: 'Arial', size: 10, bold: true };
   const blue = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE } }, yellow = { type: 'pattern', pattern: 'solid', fgColor: { argb: YELLOW } };
@@ -391,6 +391,11 @@ async function buildSummary(file, { label, dayKeys, people, cruce, delphiStats, 
   // Resumen
   const R = (r, c) => res.getRow(r).getCell(c);
   res.getCell('A1').value = `Resumen comidas nuevos ingresos ${label}`; res.getCell('A1').font = { name: 'Arial', size: 13, bold: true };
+  if (confidence) {
+    const c = res.getCell('A2');
+    c.value = `Confianza de la lectura (IA): ${confidence.read}% · Confianza al generar (después de revisar): ${confidence.final}% · Puntos sin revisar: ${confidence.pending}`;
+    c.font = { name: 'Arial', size: 10, bold: confidence.pending > 0, color: { argb: confidence.pending > 0 ? 'FFC00000' : 'FF375623' } };
+  }
   const h1 = ['Día', 'Comidas totales', 'Con ID (agregadas a DELPHI)', 'Sin ID (no agregadas)', 'Empleados que comieron'];
   res.getRow(3).values = h1; res.getRow(3).eachCell(c => { c.font = bold; c.fill = head; });
   const idCol = `'Detalle por empleado'!$A$${first}:$A$${Math.max(last, first)}`;

@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const M = require('./meals-core');
+const Conf = require('./public/static/meals-conf');
 const AI = require('./meals-ai');
 
 module.exports = function (app, { DATA_DIR, getUser }) {
@@ -107,11 +108,11 @@ module.exports = function (app, { DATA_DIR, getUser }) {
         if (k) map[label] = k; else unknownDays.add(label);
       }
       for (const r of ph.rows || []) {
-        const marks = {}, uncertain = [];
-        for (const [label, k] of Object.entries(map)) { if (r.marks[label]) marks[k] = true; if (r.uncertain_cells.includes(label)) uncertain.push(k); }
+        const marks = {}, uncertain = [], disputed = [];
+        for (const [label, k] of Object.entries(map)) { if (r.marks[label]) marks[k] = true; if (r.uncertain_cells.includes(label)) uncertain.push(k); if ((r.disputed_cells || []).includes(label)) disputed.push(k); }
         const match = M.matchName(r.name_as_written, run.roster);
-        out.push({ source: `Foto ${ph.n}`, photo: ph.n, row: r.row_number, nameAsWritten: r.name_as_written, marks, uncertain, note: r.note,
-          id: match.id, matchKind: match.kind, matchScore: match.score, alternatives: match.alternatives });
+        out.push({ source: `Foto ${ph.n}`, photo: ph.n, row: r.row_number, nameAsWritten: r.name_as_written, marks, uncertain, disputed, note: r.note,
+          id: match.id, officialName: match.id ? (run.roster.find(x => x.id === match.id) || {}).name : null, matchKind: match.kind, matchScore: match.score, alternatives: match.alternatives });
       }
     }
     return { rows: out, unknownDays: [...unknownDays] };
@@ -120,10 +121,12 @@ module.exports = function (app, { DATA_DIR, getUser }) {
     const { roster, noReg, ...rest } = run;
     const sug = run.status === 'read' || run.status === 'generated' ? suggestions(run) : null;
     const rosterIds = new Set(roster.map(r => r.id));
-    return { ...rest, rosterSize: roster.length, noRegSize: noReg.length,
+    const unusualIds = M.unusualIds(roster.map(r => r.id));
+    const confidence = sug ? Conf.assess(sug.rows, run.days, { unusualIds }) : null;
+    return { ...rest, confidence, rosterSize: roster.length, noRegSize: noReg.length,
       noRegMatches: noReg.filter(s => rosterIds.has(String(s.codigo))).length,
       roster: roster.map(r => ({ id: r.id, name: r.name, type: r.type })),
-      unusualIds: M.unusualIds(roster.map(r => r.id)), suggestions: sug, usage: (run.photos || []).reduce((a, p) => ({ in: a.in + ((p.usage || {}).input_tokens || 0), out: a.out + ((p.usage || {}).output_tokens || 0) }), { in: 0, out: 0 }) };
+      unusualIds, suggestions: sug, usage: (run.photos || []).reduce((a, p) => ({ in: a.in + ((p.usage || {}).input_tokens || 0), out: a.out + ((p.usage || {}).output_tokens || 0) }), { in: 0, out: 0 }) };
   }
   app.get('/api/meals/runs/:id', (req, res) => { const run = load(req.params.id); if (!run) return res.status(404).json({ error: 'No existe esa conciliación.' }); res.json(publicRun(run)); });
   app.get('/api/meals/runs/:id/photo/:n', (req, res) => {
@@ -149,6 +152,15 @@ module.exports = function (app, { DATA_DIR, getUser }) {
         type: id ? byId[id].type : '', marks, uncertain: (r.uncertain || []).filter(d => run.days.includes(d)), notes: String(r.note || '').slice(0, 300),
         matchNote: r.matchKind === 'fuzzy' && id ? `Coincidencia aproximada aceptada: "${name}" → ${byId[id].name}` : (r.matchKind === 'manual' && id ? `Asignado a mano: "${name}" → ${byId[id].name}` : '') });
     }
+    // Confidence: of the AI read (no review) and of what is being generated (after the user's review)
+    const unusualIds = M.unusualIds(run.roster.map(r => r.id));
+    const readConf = Conf.assess(suggestions(run).rows, run.days, { unusualIds });
+    const clean = rowsIn.slice(0, 2000).map(r => ({ source: String(r.source || 'Manual').slice(0, 30), photo: Number.isFinite(+r.photo) ? +r.photo : null, row: r.row ?? '',
+      nameAsWritten: String(r.nameAsWritten || '').slice(0, 120), id: r.id && byId[String(r.id)] ? String(r.id) : null, officialName: r.id && byId[String(r.id)] ? byId[String(r.id)].name : null,
+      marks: Object.fromEntries(run.days.map(d => [d, !!(r.marks && r.marks[d])])), uncertain: (r.uncertain || []).filter(d => run.days.includes(d)), disputed: (r.disputed || []).filter(d => run.days.includes(d)),
+      matchKind: r.matchKind, matchScore: r.matchScore, reviewed: { days: ((r.reviewed || {}).days || []).filter(d => run.days.includes(d)), name: !!(r.reviewed || {}).name, id: !!(r.reviewed || {}).id } }));
+    const finalConf = Conf.assess(clean, run.days, { unusualIds });
+    const confidence = { read: readConf.pct, final: finalConf.pct, pending: finalConf.items.length, pendingItems: finalConf.items.map(Conf.itemText) };
     try {
       const rec = M.reconcile(review, run.noReg, run.roster, run.days);
       const dir = runDir(run.id);
@@ -157,26 +169,25 @@ module.exports = function (app, { DATA_DIR, getUser }) {
       const delphiOut = `${run.files.delphi.base} (actualizado).xlsx`;
       await dwb.xlsx.writeFile(path.join(dir, 'out-delphi.xlsx'));
       // review points
-      const flags = [];
-      for (const r of review) if (r.uncertain.length && Object.keys(r.marks).length) flags.push(`Celdas inciertas: ${r.nameAsWritten} (${r.source} #${r.row}) — ${r.uncertain.join(', ')}`);
+      const flags = confidence.pendingItems.map(t => `SIN REVISAR: ${t}`);
       for (const p of rec.people.filter(p => !p.id && p.total > 0)) flags.push(`SIN ID: ${p.written} — ${p.total} comida${p.total === 1 ? '' : 's'} (no agregada${p.total === 1 ? '' : 's'} a DELPHI)`);
       const usedIds = rec.people.filter(p => p.id && p.total).map(p => p.id);
       for (const id of M.unusualIds(run.roster.map(r => r.id)).filter(id => usedIds.includes(id))) flags.push(`ID fuera del patrón del lote: ${id} (${byId[id].name}) — confirmar`);
       for (const c of rec.cruce.filter(c => c.enLista)) flags.push(`NO REGISTRADOS: ${c.codigo} ${c.nombre} — ${c.dayKey} ${M.hhmm(c.hora)} — ${c.accion}`);
       for (const r of review.filter(x => x.matchNote)) flags.push(r.matchNote);
       const sumName = `Resumen comidas nuevos ingresos ${run.label}.xlsx`;
-      await M.buildSummary(path.join(dir, 'out-summary.xlsx'), { label: run.label, dayKeys: run.days, people: rec.people, cruce: rec.cruce, delphiStats: stats, flags });
+      await M.buildSummary(path.join(dir, 'out-summary.xlsx'), { label: run.label, dayKeys: run.days, people: rec.people, cruce: rec.cruce, delphiStats: stats, flags, confidence });
       const totals = {
         meals: rec.people.reduce((s, p) => s + p.total, 0), added: rec.meals.length,
         sinId: rec.people.filter(p => !p.id).reduce((s, p) => s + p.total, 0), employees: rec.people.filter(p => p.total > 0).length,
-        noRegAdded: rec.cruce.filter(c => c.accion === 'Agregado a DELPHI').length, netoOriginal: stats.netoOriginal, neto: stats.neto, days: stats.days,
+        noRegAdded: rec.cruce.filter(c => c.accion === 'Agregado a DELPHI').length, confRead: confidence.read, confFinal: confidence.final, pending: confidence.pending, netoOriginal: stats.netoOriginal, neto: stats.neto, days: stats.days,
       };
       run.status = 'generated'; run.review = rowsIn; run.totals = totals; run.outputs = { delphi: delphiOut, summary: sumName }; run.generatedAt = new Date().toISOString();
       save(run);
       const h = history().filter(x => x.id !== run.id);
       h.push({ id: run.id, at: run.generatedAt, by: getUser(req), label: run.label, ...totals, days: undefined, files: run.outputs });
       fs.writeFileSync(HIST, JSON.stringify(h));
-      res.json({ totals, outputs: run.outputs, flags });
+      res.json({ totals, outputs: run.outputs, flags, confidence });
     } catch (e) { console.error(e); res.status(400).json({ error: e.message }); }
   });
   function express_json_guard(req, res, next) { next(); }
