@@ -53,7 +53,7 @@ async function callClaude(b64, extra) {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: MODEL(), max_tokens: 8000, temperature: 0,
+      model: MODEL(), max_tokens: 8000,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
         { type: 'text', text: PROMPT + (extra || '') },

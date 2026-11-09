@@ -52,7 +52,7 @@ module.exports = function (app, { DATA_DIR, getUser }) {
         const noReg = await M.readNoRegistrados(f.noreg[0].path);
         const dwb = await M.loadWorkbook(f.delphi[0].path);
         const { blocks } = M.readDelphi(dwb.getWorksheet('Hoja1') || dwb.worksheets[0]);
-        const delphiName = f.delphi[0].originalname.replace(/\.xlsx$/i, '');
+        const delphiName = f.delphi[0].originalname.replace(/\.xlsx$/i, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
         const m = delphiName.match(/DELPHI\s*-\s*(.+?)\s*-\s*Detallado/i);
         const run = {
           id: req.runId, createdAt: new Date().toISOString(), by: getUser(req), status: 'uploaded',
