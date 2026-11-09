@@ -69,7 +69,7 @@ function buildReview() {
   rows = run.suggestions.rows.map((r, i) => ({ ...r, key: i, origId: r.id }));
   const flags = [];
   if (run.suggestions.unknownDays.length) flags.push(['bad', `Columnas de día que no están en el reporte DELPHI (no se cuentan): ${run.suggestions.unknownDays.join(', ')}`]);
-  for (const p of run.photos) if (p.error) flags.push(['bad', `Foto ${p.n}: ${p.error}`]); else if (p.sheet_title) flags.push(['ok', `Foto ${p.n}: “${p.sheet_title}” · ${p.rows.length} renglones${p.retried ? ' (se reintentó)' : ''}`]);
+  for (const p of run.photos) { if (p.error) flags.push(['bad', `Foto ${p.n}: ${p.error}`]); else { if (p.warning) flags.push(['bad', `Foto ${p.n}: ${p.warning}`]); if (p.sheet_title) flags.push(['ok', `Foto ${p.n}: “${p.sheet_title}” · ${p.rows.length} renglones${p.retried ? ' (se reintentó)' : ''}`]); } }
   const unc = rows.filter(r => r.uncertain.length).length; if (unc) flags.push(['', `${unc} renglón(es) con celdas inciertas, marcadas en amarillo. Compáralas con la foto.`]);
   const fz = rows.filter(r => r.matchKind === 'fuzzy').length; if (fz) flags.push(['', `${fz} nombre(s) con coincidencia aproximada. Confirma o cambia el nombre en la lista.`]);
   const no = rows.filter(r => !r.id).length; if (no) flags.push(['bad', `${no} nombre(s) sin ID. Elige el nombre correcto o déjalos como SIN ID (no se agregan a DELPHI).`]);

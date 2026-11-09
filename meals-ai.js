@@ -75,6 +75,7 @@ async function prepareImage(file) {
 async function callClaude(b64, extra) {
   const r = await fetch((process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages', {
     method: 'POST',
+    signal: AbortSignal.timeout(10 * 60 * 1000),
     headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
       model: MODEL(), max_tokens: 16000,
@@ -135,7 +136,11 @@ async function readSheetPhoto(file) {
   if (x.status === 'rejected' && y.status === 'rejected') throw x.reason;
   const ok = [x, y].filter(p => p.status === 'fulfilled').map(p => p.value);
   const usage = ok.reduce((u, r) => ({ input_tokens: u.input_tokens + (r.usage.input_tokens || 0), output_tokens: u.output_tokens + (r.usage.output_tokens || 0) }), { input_tokens: 0, output_tokens: 0 });
-  if (ok.length === 1) return { ...ok[0], usage, single: true };
+  if (ok.length === 1) {
+    const why = [x, y].find(p => p.status === 'rejected').reason;
+    console.error('Comidas: one of two reads failed:', why && why.message);
+    return { ...ok[0], usage, single: true, warning: `Solo se pudo hacer una lectura (${why && why.message}); revisa esta foto con más cuidado.` };
+  }
   return { ...mergeReads(ok[0], ok[1]), usage, retried: ok.some(r => r.retried) };
 }
 
