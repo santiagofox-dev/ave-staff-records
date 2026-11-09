@@ -157,9 +157,16 @@ function showResult(out) {
 async function loadHistory() {
   try {
     const h = await api('GET', '/api/meals/history');
-    $('#hist').innerHTML = h.length ? `<table class="hist"><thead><tr><th>Semana</th><th>Generado</th><th>Por</th><th>Agregadas</th><th>Sin ID</th><th>Empleados</th><th>Neto</th><th></th></tr></thead><tbody>${h.map(x => `<tr><td>${esc(x.label)}</td><td>${new Date(x.at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}</td><td>${esc(x.by)}</td><td>${x.added}</td><td>${x.sinId}</td><td>${x.employees}</td><td>${x.neto}</td><td><a href="/api/meals/runs/${esc(x.id)}/file/delphi">DELPHI</a> · <a href="/api/meals/runs/${esc(x.id)}/file/summary">Resumen</a></td></tr>`).join('')}</tbody></table>` : 'Todavía no hay conciliaciones.';
+    $('#hist').innerHTML = h.length ? `<table class="hist"><thead><tr><th>Semana</th><th>Generado</th><th>Por</th><th>Agregadas</th><th>Sin ID</th><th>Empleados</th><th>Neto</th><th></th></tr></thead><tbody>${h.map(x => `<tr><td>${esc(x.label)}</td><td>${new Date(x.at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}</td><td>${esc(x.by)}</td><td>${x.added}</td><td>${x.sinId}</td><td>${x.employees}</td><td>${x.neto}</td><td><a href="/api/meals/runs/${esc(x.id)}/file/delphi">DELPHI</a> · <a href="/api/meals/runs/${esc(x.id)}/file/summary">Resumen</a> · <button class="x" data-delrun="${esc(x.id)}" title="Eliminar conciliación" aria-label="Eliminar conciliación">Eliminar</button></td></tr>`).join('')}</tbody></table>` : 'Todavía no hay conciliaciones.';
   } catch (e) { $('#hist').textContent = e.message; }
 }
+
+$('#hist').addEventListener('click', async e => {
+  const b = e.target.closest('[data-delrun]'); if (!b) return;
+  if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Seguro? Clic otra vez'; return; }
+  try { await api('DELETE', `/api/meals/runs/${b.dataset.delrun}`); toast('Conciliación eliminada.'); if (run && run.id === b.dataset.delrun) { history.replaceState(null, '', location.pathname); location.reload(); } else loadHistory(); }
+  catch (err) { toast(err.message); }
+});
 
 (async () => {
   try { const c = await api('GET', '/api/meals/config'); $('#keyWarn').hidden = c.hasKey; } catch (e) {}

@@ -181,6 +181,16 @@ module.exports = function (app, { DATA_DIR, getUser }) {
   });
   function express_json_guard(req, res, next) { next(); }
 
+  // Delete a run (its files and its history entry)
+  app.delete('/api/meals/runs/:id', (req, res) => {
+    const id = String(req.params.id);
+    if (!/^[a-f0-9]{16}$/.test(id)) return res.status(400).json({ error: 'Identificador no válido.' });
+    if (reading.has(id)) return res.status(409).json({ error: 'Esa conciliación todavía se está leyendo.' });
+    fs.rmSync(runDir(id), { recursive: true, force: true });
+    fs.writeFileSync(HIST, JSON.stringify(history().filter(x => x.id !== id)));
+    res.json({ ok: true });
+  });
+
   app.get('/api/meals/runs/:id/file/:which', (req, res) => {
     const run = load(req.params.id);
     if (!run || !run.outputs) return res.status(404).send('Aún no se ha generado.');
