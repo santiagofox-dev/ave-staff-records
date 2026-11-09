@@ -22,3 +22,5 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         sync: false          # you type this in the Render dashboard; it is never stored in the code
+      - key: ANTHROPIC_API_KEY
+        sync: false          # Claude API key for reading the meal-sheet photos (Comidas de Nuevos Ingresos)

@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Expedientes de Personal AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/styles.css?v=5">
+<link rel="stylesheet" href="/static/styles.css?v=6">
 </head>
 <body>
 <div class="wrap">
@@ -17,6 +17,7 @@
       <div class="muted">Expedientes, vencimiento de capacitaciones y cumpleaños.</div>
     </div>
     <div class="head-actions">
+      <a class="btn quiet" href="/comidas">Comidas nuevos ingresos</a>
       <button class="btn quiet" id="pwBtn">Cambiar contraseña</button>
       <button class="btn quiet" id="outBtn">Cerrar sesión</button>
       <button class="btn primary" id="addBtn">+ Agregar empleado</button>
@@ -113,8 +114,8 @@
         <div class="field"><label for="p_number">No. de empleado</label><input id="p_number" autocomplete="off"></div>
         <div class="field"><label for="p_site">Planta</label><input id="p_site" list="plantNames" placeholder="Juárez, Jabil Torres…"></div>
         <div class="field"><label for="p_position">Puesto</label><input id="p_position" placeholder="Cocinero, Higienista…"></div>
-        <div class="field"><label for="p_curp">CURP</label><input id="p_curp" maxlength="18" autocomplete="off" style="text-transform:uppercase"></div>
-        <div class="field"><label for="p_rfc">RFC</label><input id="p_rfc" maxlength="13" autocomplete="off" style="text-transform:uppercase"></div>
+        <div class="field"><label for="p_curp">CURP</label><input id="p_curp" maxlength="18" autocomplete="off" class="upper"></div>
+        <div class="field"><label for="p_rfc">RFC</label><input id="p_rfc" maxlength="13" autocomplete="off" class="upper"></div>
         <div class="field"><label for="p_nss">NSS</label><input id="p_nss" maxlength="20" autocomplete="off"></div>
         <div class="field"><label for="p_contractType">Tipo de contrato</label><select id="p_contractType"><option value="">—</option><option>Indeterminado</option><option>Temporal</option><option>Periodo de prueba</option><option>Capacitación inicial</option></select></div>
         <div class="field full"><label for="p_address">Domicilio</label><input id="p_address" maxlength="200"></div>

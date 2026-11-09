@@ -97,7 +97,7 @@ app.use((req, res, next) => {
   if (PROD) res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
 });
-app.use(express.json({ limit: '200kb' }));
+app.use(express.json({ limit: '2mb' }));
 app.use(cookieSession({
   name: 'ave_s', keys: [SESSION_SECRET], maxAge: 12 * 60 * 60 * 1000,
   httpOnly: true, sameSite: 'strict', secure: PROD,
@@ -130,7 +130,7 @@ app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true 
 
 /* everything below needs a login */
 app.use(requireAuth);
-app.use(['/api', '/files', '/reports'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use(['/api', '/files', '/reports', '/comidas'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
 
@@ -273,6 +273,9 @@ app.get('/reports/calendar.pdf', (req, res) => {
 
 /* ---- Dropbox import (admin only, runs as a background job) ---- */
 require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
+
+/* ---- Comidas de Nuevos Ingresos (DELPHI) ---- */
+require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
 
 app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'Ocurrió un error en el servidor.' }); });
 
