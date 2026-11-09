@@ -153,3 +153,18 @@ test('photo JSON parsing tolerates code fences and fills missing marks', () => {
   assert.deepEqual(j.rows[0].uncertain_cells, ['3-Nov']);
   assert.throws(() => AI.parseJson('no json here'));
 });
+
+test('two reads: agreed marks stay, disagreements become uncertain and unticked', () => {
+  const AI = require('../meals-ai');
+  const D = ['2-Nov', '3-Nov'];
+  const row = (n, name, m, u = []) => ({ row_number: n, name_as_written: name, marks: { '2-Nov': m[0], '3-Nov': m[1] }, uncertain_cells: u, note: '' });
+  const a = { sheet_title: 'X', day_columns: D, rows: [row(1, 'ANA LOPEZ', [true, true]), row(2, 'LUIS PEREZ', [false, true])] };
+  const b = { sheet_title: 'X', day_columns: D, rows: [row(1, 'ANA LÓPEZ', [true, false]), row(2, 'LUIS PEREZ', [false, true]), row(null, 'NUEVO', [true, false])] };
+  const m = AI.mergeReads(a, b);
+  assert.deepEqual(m.rows[0].marks, { '2-Nov': true, '3-Nov': false });
+  assert.deepEqual(m.rows[0].uncertain_cells, ['3-Nov']);
+  assert.deepEqual(m.rows[1].marks, { '2-Nov': false, '3-Nov': true });
+  assert.deepEqual(m.rows[1].uncertain_cells, []);
+  assert.equal(m.rows[2].name_as_written, 'NUEVO');
+  assert.deepEqual(m.rows[2].uncertain_cells, ['2-Nov']);
+});
