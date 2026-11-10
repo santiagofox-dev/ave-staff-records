@@ -1,510 +1,309 @@
-/**
- * GRUPO AVE - LANDING PAGE INTERACTIVE ENGINE
- * Plain JS (ES6+) - Clean, CSP Compliant, No External JS Dependencies
- */
+/* Grupo AVE — gpoave.com interactions. Plain JS, no dependencies, CSP-safe (no inline styles in markup). */
+(function () {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-document.addEventListener('DOMContentLoaded', () => {
+  /* ---------------- Language (Spanish is the markup; English lives here) ---------------- */
+  const EN = {
+    'nav.process': 'How we work', 'nav.tech': 'Technology', 'nav.services': 'Services', 'nav.coverage': 'Coverage', 'nav.portal': 'Portal', 'nav.cta': "Let's talk",
+    'hero.eyebrow': 'Industrial cafeterias · Northern Mexico',
+    'hero.t1': 'Fuel for', 'hero.t2': 'every shift.',
+    'hero.sub': "We run industrial cafeterias for Mexico's most demanding plants. Nutritionist-designed menus, certified food safety and an operation you can see in real time.",
+    'hero.cta1': 'Request a proposal', 'hero.cta2': 'See how we work', 'hero.stat': 'meals a day',
+    'logos.title': 'Plants that trust Grupo AVE',
+    'man.kicker': '01 — Our idea',
+    'man.text': "A cafeteria isn't an operating expense. It's the energy, health and morale of every person on your production line. That's why we design it the way a plant is designed: with engineering, data and zero improvisation.",
+    'metric.lbl': 'meals served every day', 'metric.sub': 'in manufacturing plants across Chihuahua, Coahuila, Jalisco and Baja California, every shift, every day.',
+    'proc.kicker': '02 — How we work', 'proc.title1': 'Cook & Chill.', 'proc.title2': 'Safety at scale.',
+    'proc.s1t': 'Precision cooking', 'proc.s1d': 'Intelligent ovens hold exact humidity, flavor and core temperature for every dish.',
+    'proc.s2t': 'Blast chilling', 'proc.s2d': 'Immediate cooling halts bacterial growth and ensures maximum food safety.',
+    'proc.s3t': 'Regeneration', 'proc.s3d': 'Precise reheating restores the exact temperature and texture right at the moment of service.',
+    'bento.kicker': '03 — What we do', 'bento.title': 'Food planned like a production line.',
+    'bento.a.tag': 'Nutrition', 'bento.a.t': 'Nutritionist-designed menus', 'bento.a.d': 'Balanced to sustain full shifts. Vegetarian, vegan and diabetic-friendly options every day.',
+    'bento.b.tag': 'Smart kitchen', 'bento.b.t': 'Connected UNOX ovens', 'bento.b.d': 'One oven replaces up to four gas units and cuts energy use.',
+    'bento.c.tag': 'Spaces', 'bento.c.t': 'Dining halls people want to go to', 'bento.c.d': 'We turn the cafeteria from a service into a real employee benefit.',
+    'tech.kicker': '04 — Technology', 'tech.title': 'Full transparency, in real time.',
+    'tech.lead': 'Every critical task is logged with photo evidence. Your team can review the cafeteria operation anytime, from any device.',
+    'tech.c1': 'Digital hygiene and FIFO inventory', 'tech.c2': 'Mandatory photo evidence on critical tasks', 'tech.c3': 'Direct access for the client',
+    'tech.dashTitle': 'Operations dashboard · example', 'tech.shift': 'Current shift', 'tech.status': 'Operation on track',
+    'tech.r1': 'Hot line temperature logged', 'tech.r2': 'Area cleaning photo uploaded', 'tech.r3': 'FIFO inventory verified', 'tech.r4': "Today's menu published",
+    'svc.kicker': '05 — Services', 'svc.title': 'More than a cafeteria.',
+    'svc.1t': 'Industrial cafeteria', 'svc.1d': 'Breakfast, lunch and dinner tuned to every shift, with a daily healthy line.',
+    'svc.2t': 'Available 24/7', 'svc.2d': 'Coffee shop and snack bar, traditional vending, artisanal pizza and ready-to-heat complete meals.',
+    'svc.3t': 'Corporate events', 'svc.3d': 'Box lunches, coffee breaks, plated service, buffets, food trucks and cocktails for your plant.',
+    'svc.4t': 'Order & Pick Up app', 'svc.4d': 'Digital ordering, custom bowls and an interactive weekly menu for all staff.',
+    'certs.lbl': 'Certified to operate in the most demanding plants', 'certs.rc': 'USD 1M liability insurance',
+    'ba.kicker': '06 — Transformation', 'ba.title': 'From a cafeteria people tolerate to one they enjoy.', 'ba.before': 'Before', 'ba.after': 'Grupo AVE standard',
+    'cov.kicker': '07 — Coverage', 'cov.title': 'Where industry is.',
+    'ct.kicker': '08 — Contact', 'ct.title': "Let's talk about your plant.", 'ct.lead': 'We visit your plant, understand your shifts and bring you a proposal built around them.', 'ct.wa': 'WhatsApp',
+    'f.name': 'Name', 'f.company': 'Company / plant', 'f.city': 'City', 'f.count': 'Daily diners (approx.)', 'f.msg': 'What do you need?', 'f.submit': 'Send request',
+    'f.note': 'Your email app will open with the message ready for santiago.fox@gpoave.com',
+    'foot.privacy': 'Privacy notice', 'foot.rights': 'All rights reserved.', 'foot.map': 'Map',
+  };
+  const ES = {};
+  $$('[data-i18n]').forEach(el => { ES[el.dataset.i18n] = el.textContent; });
+  let lang = 'es';
+  try { const s = localStorage.getItem('ave_lang'); if (s === 'en' || s === 'es') lang = s; } catch (e) {}
 
-    // --------------------------------------------------------------------------
-    // 1. BILINGUAL DICTIONARY & I18N ENGINE (ES/EN) WITH LOCALSTORAGE TRY/CATCH
-    // --------------------------------------------------------------------------
-    const i18n = {
-        es: {
-            'nav.about': 'Nosotros',
-            'nav.tech': 'Tecnología',
-            'nav.services': 'Servicios',
-            'nav.certs': 'Calidad',
-            'nav.coverage': 'Cobertura',
-            'nav.portal': 'Portal',
-            'nav.proposal': 'Solicitar propuesta',
+  function setLang(l) {
+    lang = l;
+    try { localStorage.setItem('ave_lang', l); } catch (e) {}
+    document.documentElement.lang = l;
+    const dict = l === 'en' ? EN : ES;
+    $$('[data-i18n]').forEach(el => { const v = dict[el.dataset.i18n]; if (v != null) el.textContent = v; });
+    $$('#lang span').forEach(s => s.classList.toggle('on', s.dataset.l === l));
+    splitManifesto(); onScroll();
+  }
+  $('#lang').addEventListener('click', () => setLang(lang === 'es' ? 'en' : 'es'));
 
-            'hero.badge': 'Comedores industriales para maquiladoras',
-            'hero.title': 'Ingeniería en bienestar para colaboradores a través de tecnología y nutrición.',
-            'hero.subhead': 'Convertimos el comedor de su planta en un beneficio real para sus colaboradores: menús balanceados diseñados por nutriólogos, inocuidad certificada y operación transparente en tiempo real.',
-            'hero.ctaPrimary': 'Solicitar propuesta',
-            'hero.ctaSecondary': 'Ver cómo trabajamos',
+  /* ---------------- Nav ---------------- */
+  const nav = $('#nav'), burger = $('#burger'), links = $('#links');
+  burger.addEventListener('click', () => {
+    const open = burger.getAttribute('aria-expanded') !== 'true';
+    burger.setAttribute('aria-expanded', String(open)); links.classList.toggle('open', open); nav.classList.toggle('solid', open || scrollY > 24);
+  });
+  $$('a', links).forEach(a => a.addEventListener('click', () => { burger.setAttribute('aria-expanded', 'false'); links.classList.remove('open'); }));
 
-            'logos.title': 'Confían en nosotros',
-
-            'numbers.serviciosLabel': 'servicios diarios',
-            'numbers.serviciosSub': 'JABIL ≈2,950 · APTIV ≈4,300 · Versigent ≈4,300',
-            'numbers.recetasLabel': 'recetas diseñadas',
-            'numbers.recetasSub': 'Diseñadas por nutriólogos',
-            'numbers.estadosLabel': 'estados activos',
-            'numbers.estadosSub': 'Chihuahua, Coahuila, Jalisco, Baja California',
-            'numbers.gasLabel': 'menos consumo de gas',
-            'numbers.gasSub': 'Con hornos inteligentes UNOX',
-            'numbers.seguroLabel': 'seguro de responsabilidad civil',
-            'numbers.seguroSub': 'Cobertura operativa integral',
-            'numbers.aniosLabel': 'fundada',
-            'numbers.aniosSub': 'Más de ocho años operando comedores industriales',
-
-            'whatwedo.subtitle': 'Propuesta Gastronómica',
-            'whatwedo.title': 'Alimentación balanceada adaptada al ritmo de su planta',
-            'whatwedo.c1Title': 'Menús Nutricionales Balanceados',
-            'whatwedo.c1Desc': 'Menús diseñados por nutriólogos y balanceados calóricamente para sostener el desempeño físico y la energía del personal.',
-            'whatwedo.c2Title': 'Desayuno, comida y cena en todos los turnos',
-            'whatwedo.c2Desc': 'Servicio completo optimizado para los horarios de cada turno de la planta.',
-            'whatwedo.c3Title': 'Opciones Vegetarianas, Veganas y Diabéticas',
-            'whatwedo.c3Desc': 'Alternativas vegetarianas, veganas y aptas para diabéticos, siempre disponibles.',
-            'whatwedo.c4Title': 'Línea Saludable Diaria',
-            'whatwedo.c4Desc': 'Un platillo saludable y rotativo disponible todos los días.',
-
-            'tech.subtitle': 'Innovación en Cocina Industrial',
-            'tech.title': 'Tecnología operativa de vanguardia',
-            'tech.dashBadge': 'Monitoreo en Tiempo Real',
-            'tech.dashTitle': 'Dashboard Operativo de Planta',
-            'tech.dashDesc': 'Seguimiento digital de los estándares de higiene y del inventario PEPS (primeras entradas, primeras salidas), con evidencia fotográfica obligatoria en cada tarea crítica. Su equipo tiene acceso en tiempo real para verificar la ejecución.',
-            'tech.statusLive': 'Ejemplo · Turno 1 en curso',
-            'tech.task1': 'Temperatura de línea caliente registrada',
-            'tech.task2': 'Foto de limpieza de área cargada',
-            'tech.unoxBadge': 'Eficiencia Energética',
-            'tech.unoxTitle': 'Hornos Inteligentes UNOX',
-            'tech.unoxDesc': 'Un solo horno UNOX reemplaza hasta cuatro equipos de gas tradicionales (freír, rostizar, vapor). Su tecnología SMART.Energy detecta hornos vacíos o poca carga y reduce el consumo automáticamente.',
-            'tech.unoxStat1': 'Equipos de gas reemplazados',
-            'tech.unoxStat2': 'Uso intensivo promedio',
-
-            'tech.cncTitle': 'Proceso Cook & Chill en 3 Etapas',
-            'tech.cncSub': 'Seguridad a escala: cada platillo pasa por el mismo proceso controlado.',
-            'tech.cncStep1Title': 'Cocción de precisión',
-            'tech.cncStep1Desc': 'Hornos inteligentes que mantienen con precisión la humedad, el sabor y la temperatura interna objetivo.',
-            'tech.cncStep2Title': 'Abatimiento rápido',
-            'tech.cncStep2Desc': 'Enfriamiento inmediato que detiene el crecimiento bacteriano y asegura la máxima inocuidad.',
-            'tech.cncStep3Title': 'Regeneración',
-            'tech.cncStep3Desc': 'Recalentamiento preciso que devuelve la temperatura y textura exactas al momento del servicio.',
-
-            'digital.subtitle': 'Experiencia Digital para Comensales',
-            'digital.title': 'Order & Pick Up App + Menú Interactivo',
-            'digital.desc': 'Herramientas digitales que hacen más ágil el tiempo de comida de sus colaboradores.',
-            'digital.f1': 'App “Order & Pick Up”: pedidos digitales, bowls personalizados y pago integrado.',
-            'digital.f2': 'Menú semanal interactivo: el personal ve y programa sus opciones con anticipación.',
-            'digital.f3': 'Disponible para las líneas de servicio tradicionales.',
-            'digital.widgetTitle': 'Selector de Menú Semanal',
-            'digital.widgetLive': 'Menú de ejemplo',
-
-            'beyond.subtitle': 'Servicios Complementarios',
-            'beyond.title': 'Más allá del comedor industrial',
-            'beyond.vendingTitle': 'Disponibilidad 24/7',
-            'beyond.v1': 'Coffee shop y barra de snacks con bebidas preparadas y snacks frescos.',
-            'beyond.v2': 'Vending tradicional: bebidas frías y snacks para todos los turnos.',
-            'beyond.v3': 'Vending de pizza artesanal horneada al momento.',
-            'beyond.v4': 'Smart vending de platillos congelados completos, listos para calentar.',
-            'beyond.eventsTitle': 'Eventos corporativos',
-            'beyond.e1': 'Box lunch y coffee breaks.',
-            'beyond.e2': 'Servicio emplatado de 3 a 4 tiempos para cenas ejecutivas.',
-            'beyond.e3': 'Buffets corporativos, food trucks y estaciones especiales.',
-            'beyond.e4': 'Coctelería y canapés para eventos de networking.',
-
-            'slider.subtitle': 'Transformación de Espacios',
-            'slider.title': 'Transformamos el comedor',
-            'slider.after': 'EL ESTÁNDAR GRUPO AVE',
-            'slider.before': 'ANTES',
-            'slider.caption': '"Elevamos el comedor de un servicio a un beneficio real para el empleado."',
-
-            'certs.subtitle': 'Cumplimiento Legal y Normativo',
-            'certs.title': 'Certificaciones y cumplimiento total',
-            'certs.hDesc': 'Manejo higiénico y seguro de alimentos certificado.',
-            'certs.nomDesc': 'Cumplimiento operativo total con las normas sanitarias nacionales.',
-            'certs.isoDesc': 'Sistema de gestión de calidad con certificación internacional.',
-            'certs.tifDesc': 'Uso exclusivo de proveedores de cárnicos con inspección federal.',
-            'certs.repseDesc': 'Registro vigente para servicios especializados: cumplimiento legal total.',
-            'certs.rcTitle': 'Seguro Responsabilidad Civil',
-            'certs.rcDesc': 'Póliza de USD $1,000,000 con cobertura operativa integral.',
-
-            'map.subtitle': 'Presencia Regional',
-            'map.title': '4 Estados con Operación Activa',
-
-            'contact.subtitle': 'Contacto Directo',
-            'contact.title': 'Solicite una propuesta o visita a su planta',
-            'contact.desc': 'Atención personalizada para gerentes de planta, recursos humanos y compras de la industria manufacturera.',
-            'contact.wa': 'Enviar mensaje por WhatsApp',
-
-            'form.name': 'Nombre completo *',
-            'form.company': 'Empresa / Maquiladora *',
-            'form.city': 'Ciudad de la Planta *',
-            'form.headcount': 'Comensales Diarios Aprox. *',
-            'form.message': 'Mensaje o requerimiento *',
-            'form.submit': 'Enviar solicitud de propuesta',
-            'form.note': 'Su cliente de correo predeterminado se abrirá con el correo dirigido a santiago.fox@gpoave.com',
-
-            'footer.privacy': 'Aviso de Privacidad',
-            'footer.rights': 'Todos los derechos reservados.'
-        },
-        en: {
-            'nav.about': 'About Us',
-            'nav.tech': 'Technology',
-            'nav.services': 'Services',
-            'nav.certs': 'Quality',
-            'nav.coverage': 'Coverage',
-            'nav.portal': 'Portal',
-            'nav.proposal': 'Request proposal',
-
-            'hero.badge': 'Industrial cafeterias for manufacturing plants',
-            'hero.title': 'Engineering employee wellbeing through technology and nutrition.',
-            'hero.subhead': 'We turn your plant cafeteria into a real benefit for your workforce: nutritionist-designed balanced menus, certified food safety and real-time operational transparency.',
-            'hero.ctaPrimary': 'Request proposal',
-            'hero.ctaSecondary': 'See how we work',
-
-            'logos.title': 'Trusted by industry leaders',
-
-            'numbers.serviciosLabel': 'daily meals served',
-            'numbers.serviciosSub': 'JABIL ≈2,950 · APTIV ≈4,300 · Versigent ≈4,300',
-            'numbers.recetasLabel': 'designed recipes',
-            'numbers.recetasSub': 'Designed by nutritionists',
-            'numbers.estadosLabel': 'active states',
-            'numbers.estadosSub': 'Chihuahua, Coahuila, Jalisco, Baja California',
-            'numbers.gasLabel': 'less gas consumption',
-            'numbers.gasSub': 'With UNOX smart ovens',
-            'numbers.seguroLabel': 'civil liability insurance',
-            'numbers.seguroSub': 'Comprehensive operational coverage',
-            'numbers.aniosLabel': 'founded',
-            'numbers.aniosSub': 'Over eight years operating industrial cafeterias',
-
-            'whatwedo.subtitle': 'Gastronomic Offering',
-            'whatwedo.title': 'Balanced nutrition tailored to your plant operations',
-            'whatwedo.c1Title': 'Balanced Nutritional Menus',
-            'whatwedo.c1Desc': 'Nutritionist-designed, calorically balanced menus that sustain physical performance and worker energy.',
-            'whatwedo.c2Title': 'Breakfast, lunch and dinner for every shift',
-            'whatwedo.c2Desc': 'Full service optimized for every shift schedule in your plant.',
-            'whatwedo.c3Title': 'Vegetarian, Vegan & Diabetic-Friendly',
-            'whatwedo.c3Desc': 'Vegetarian, vegan and diabetic-friendly alternatives, always available.',
-            'whatwedo.c4Title': 'Daily Healthy Line',
-            'whatwedo.c4Desc': 'A dedicated, rotating healthy dish available every single day.',
-
-            'tech.subtitle': 'Industrial Kitchen Innovation',
-            'tech.title': 'Cutting-edge operational technology',
-            'tech.dashBadge': 'Real-Time Monitoring',
-            'tech.dashTitle': 'Plant Operations Dashboard',
-            'tech.dashDesc': 'Digital tracking of hygiene standards and FIFO inventory, with mandatory photo evidence for every critical task. Your team gets real-time access to verify execution.',
-            'tech.statusLive': 'Example · Shift 1 in progress',
-            'tech.task1': 'Hot line temperature logged',
-            'tech.task2': 'Area cleaning photo uploaded',
-            'tech.unoxBadge': 'Energy Efficiency',
-            'tech.unoxTitle': 'UNOX Smart Ovens',
-            'tech.unoxDesc': 'One UNOX oven replaces up to four traditional gas units (frying, roasting, steaming). SMART.Energy technology detects empty ovens or low loads and throttles power automatically.',
-            'tech.unoxStat1': 'Gas units replaced',
-            'tech.unoxStat2': 'Average intensive use',
-
-            'tech.cncTitle': '3-Step Cook & Chill Process',
-            'tech.cncSub': 'Safety at scale: every dish goes through the same controlled process.',
-            'tech.cncStep1Title': 'Precision cooking',
-            'tech.cncStep1Desc': 'Intelligent ovens hold precise humidity, flavor and core temperature targets.',
-            'tech.cncStep2Title': 'Blast chilling',
-            'tech.cncStep2Desc': 'Rapid cooling immediately halts bacterial growth, ensuring maximum food safety.',
-            'tech.cncStep3Title': 'Regeneration',
-            'tech.cncStep3Desc': 'Precise reheating restores the exact temperature and texture right at the moment of service.',
-
-            'digital.subtitle': 'Diner Digital Experience',
-            'digital.title': 'Order & Pick Up App + Interactive Menu',
-            'digital.desc': 'Digital tools that make mealtime faster and easier for your workforce.',
-            'digital.f1': '“Order & Pick Up” app: digital ordering, custom bowls and seamless payment.',
-            'digital.f2': 'Interactive weekly menu: staff preview and schedule their options in advance.',
-            'digital.f3': 'Available for traditional service lines too.',
-            'digital.widgetTitle': 'Weekly Menu Selector',
-            'digital.widgetLive': 'Sample menu',
-
-            'beyond.subtitle': 'Complementary Services',
-            'beyond.title': 'Beyond the industrial cafeteria',
-            'beyond.vendingTitle': '24/7 availability',
-            'beyond.v1': 'Coffee shop & snack bar with crafted beverages and fresh snacks.',
-            'beyond.v2': 'Traditional vending: cold drinks and quick snacks for every shift.',
-            'beyond.v3': 'Hot, freshly baked artisanal pizza vending.',
-            'beyond.v4': 'Smart vending of complete ready-to-heat frozen meals.',
-            'beyond.eventsTitle': 'Corporate events',
-            'beyond.e1': 'Box lunches & coffee breaks.',
-            'beyond.e2': 'Plated 3–4 course service for executive dinners.',
-            'beyond.e3': 'Corporate buffets, food trucks and specialty stations.',
-            'beyond.e4': 'Cocktails & canapés for networking events.',
-
-            'slider.subtitle': 'Space Transformation',
-            'slider.title': 'We transform the dining hall',
-            'slider.after': 'THE GRUPO AVE STANDARD',
-            'slider.before': 'BEFORE',
-            'slider.caption': '"We elevate the cafeteria from a basic service to a true employee benefit."',
-
-            'certs.subtitle': 'Legal & Regulatory Compliance',
-            'certs.title': 'Certifications & total compliance',
-            'certs.hDesc': 'Certified hygienic and safe food handling.',
-            'certs.nomDesc': 'Full operational compliance with national sanitary standards.',
-            'certs.isoDesc': 'Internationally certified quality management system.',
-            'certs.tifDesc': 'Exclusive use of federally inspected meat suppliers.',
-            'certs.repseDesc': 'Active specialized-services registration: full legal compliance.',
-            'certs.rcTitle': 'Civil Liability Insurance',
-            'certs.rcDesc': 'USD $1,000,000 policy with comprehensive operational coverage.',
-
-            'map.subtitle': 'Regional Footprint',
-            'map.title': '4 States with Active Operations',
-
-            'contact.subtitle': 'Direct Contact',
-            'contact.title': 'Request a proposal or plant visit',
-            'contact.desc': 'Personalized attention for plant managers, HR, and purchasing leads in manufacturing.',
-            'contact.wa': 'Send WhatsApp Message',
-
-            'form.name': 'Full Name *',
-            'form.company': 'Company / Plant *',
-            'form.city': 'Plant City *',
-            'form.headcount': 'Approx. Daily Headcount *',
-            'form.message': 'Message or Requirements *',
-            'form.submit': 'Submit Proposal Request',
-            'form.note': 'Your default email app will open pre-addressed to santiago.fox@gpoave.com',
-
-            'footer.privacy': 'Privacy Notice',
-            'footer.rights': 'All rights reserved.'
-        }
-    };
-
-    let currentLang = 'es';
-    try {
-        const storedLang = localStorage.getItem('ave_lang');
-        if (storedLang && (storedLang === 'es' || storedLang === 'en')) {
-            currentLang = storedLang;
-        }
-    } catch (e) {
-        console.warn('localStorage not accessible, defaulting to ES');
+  /* ---------------- Heat field (WebGL) ---------------- */
+  const FRAG = `precision highp float;
+uniform vec2 R; uniform float T; uniform vec2 M; uniform float I; uniform float L;
+float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float n(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1.,0.)),u.x),mix(h(i+vec2(0.,1.)),h(i+vec2(1.,1.)),u.x),u.y);}
+float fbm(vec2 p){float v=0.,a=.5;mat2 r=mat2(.8,.6,-.6,.8);for(int i=0;i<5;i++){v+=a*n(p);p=r*p*2.02;a*=.5;}return v;}
+void main(){
+  vec2 uv=gl_FragCoord.xy/R; vec2 p=(gl_FragCoord.xy-.5*R)/R.y;
+  p+=(M-.5)*.12; float t=T*.055;
+  vec2 q=vec2(fbm(p*1.3+vec2(0.,t)),fbm(p*1.3+vec2(5.2,1.3)-t));
+  vec2 w=vec2(fbm(p*1.3+2.9*q+vec2(1.7,9.2)+t*1.3),fbm(p*1.3+2.9*q+vec2(8.3,2.8)-t*1.1));
+  float f=fbm(p*1.5+3.3*w);
+  vec3 ink=vec3(.043,.047,.055),deep=vec3(.32,.055,.02),brand=vec3(1.,.24,.08),ember=vec3(1.,.54,.3),cream=vec3(1.,.87,.76);
+  float k=smoothstep(.22,.92,f);
+  vec3 c=mix(ink,deep,smoothstep(.0,.42,k));
+  c=mix(c,brand,smoothstep(.42,.74,k));
+  c=mix(c,ember,smoothstep(.74,.9,k));
+  c=mix(c,cream,smoothstep(.9,1.,k)*.55);
+  float d=abs(fract(f*11.)-.5);
+  c+=smoothstep(.455,.5,d)*L*(.25+k)*vec3(1.,.62,.45);
+  float mask=mix(.12,1.,smoothstep(.05,.95,uv.x))*mix(.35,1.,smoothstep(.0,.45,uv.y));
+  c=mix(ink,c,clamp(mask*I,0.,1.));
+  c+=(h(gl_FragCoord.xy+fract(T))-.5)*.03;
+  gl_FragColor=vec4(c,1.);
+}`;
+  function heat(canvas, opts) {
+    if (!canvas) return;
+    let gl;
+    try { gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power' }); } catch (e) {}
+    if (!gl) return; // CSS gradient stays as the fallback
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER, 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(pr);
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) return;
+    gl.useProgram(pr);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const U = k => gl.getUniformLocation(pr, k);
+    const uR = U('R'), uT = U('T'), uM = U('M'), uI = U('I'), uL = U('L');
+    gl.uniform1f(uI, opts.intensity); gl.uniform1f(uL, opts.lines);
+    const scale = opts.scale || 0.5;
+    let w = 0, h = 0, visible = true, raf = 0, mx = 0.5, my = 0.5, tx = 0.5, ty = 0.5;
+    const t0 = performance.now() - 40000 * Math.random();
+    function size() {
+      const r = canvas.getBoundingClientRect();
+      w = Math.max(2, Math.round(r.width * scale)); h = Math.max(2, Math.round(r.height * scale));
+      canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); gl.uniform2f(uR, w, h);
     }
-
-    function setLanguage(lang) {
-        currentLang = lang;
-        try {
-            localStorage.setItem('ave_lang', lang);
-        } catch (e) {
-            // Ignore if blocked by CSP / privacy settings
-        }
-
-        document.documentElement.lang = lang;
-        const langIndicator = document.getElementById('lang-indicator');
-        if (langIndicator) langIndicator.textContent = lang === 'es' ? 'ES / EN' : 'EN / ES';
-
-        document.querySelectorAll('[data-i18n]').forEach(el => {
-            const key = el.getAttribute('data-i18n');
-            if (i18n[lang] && i18n[lang][key]) {
-                el.textContent = i18n[lang][key];
-            }
-        });
-
-        // Refresh dynamic menu text
-        updateMenuWidget(currentDay);
+    function frame(now) {
+      mx += (tx - mx) * 0.04; my += (ty - my) * 0.04;
+      gl.uniform1f(uT, (now - t0) / 1000); gl.uniform2f(uM, mx, my);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      if (!reduce && visible && !document.hidden) raf = requestAnimationFrame(frame); else raf = 0;
     }
+    const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+    size(); frame(performance.now());
+    addEventListener('resize', () => { size(); if (reduce) frame(performance.now()); }, { passive: true });
+    if ('IntersectionObserver' in window) new IntersectionObserver(e => { visible = e[0].isIntersecting; if (visible && !reduce) kick(); }).observe(canvas);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !reduce) kick(); });
+    if (opts.mouse) addEventListener('pointermove', e => { tx = e.clientX / innerWidth; ty = 1 - e.clientY / innerHeight; }, { passive: true });
+    if (!reduce) kick();
+  }
+  heat($('#heat'), { intensity: 1, lines: 1, mouse: true, scale: 0.5 });
+  heat($('#heat2'), { intensity: 0.8, lines: 0.6, scale: 0.4 });
 
-    const langBtn = document.getElementById('lang-toggle-btn');
-    if (langBtn) {
-        langBtn.addEventListener('click', () => {
-            setLanguage(currentLang === 'es' ? 'en' : 'es');
-        });
-    }
+  /* ---------------- Logo marquee: second copy for the seamless loop ---------------- */
+  // (duplicated in markup; nothing to do here)
 
-
-
-    // --------------------------------------------------------------------------
-    // 2. MOBILE NAVIGATION TOGGLE
-    // --------------------------------------------------------------------------
-    const mobileBtn = document.getElementById('mobile-toggle-btn');
-    const mainNav = document.getElementById('main-nav');
-
-    if (mobileBtn && mainNav) {
-        mobileBtn.addEventListener('click', () => {
-            const expanded = mobileBtn.getAttribute('aria-expanded') === 'true';
-            mobileBtn.setAttribute('aria-expanded', !expanded);
-            mainNav.classList.toggle('active');
-        });
-
-        // Close mobile nav on link click
-        mainNav.querySelectorAll('a').forEach(link => {
-            link.addEventListener('click', () => {
-                mainNav.classList.remove('active');
-                mobileBtn.setAttribute('aria-expanded', 'false');
-            });
-        });
-    }
-
-
-    // --------------------------------------------------------------------------
-    // 3. NUMBERS COUNT-UP ANIMATION (INTERSECTION OBSERVER)
-    // --------------------------------------------------------------------------
-    const numberCards = document.querySelectorAll('.number-val');
-    let animatedNumbers = false;
-
-    function countUp(el) {
-        if (el.hasAttribute('data-no-count')) return;
-        const target = parseInt(el.getAttribute('data-target'), 10);
-        const prefix = el.getAttribute('data-prefix') || '';
-        const suffix = el.getAttribute('data-suffix') || '';
-        const duration = 2000;
-        const start = 0;
-        const startTime = performance.now();
-
-        function update(now) {
-            const elapsed = now - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            // Ease out quad
-            const current = Math.floor(progress * (2 - progress) * target);
-            el.textContent = prefix + current.toLocaleString('en-US') + suffix;
-
-            if (progress < 1) {
-                requestAnimationFrame(update);
-            } else {
-                el.textContent = prefix + target.toLocaleString('en-US') + suffix;
-            }
-        }
-
-        requestAnimationFrame(update);
-    }
-
-    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const numbersSection = document.getElementById('nosotros');
-    if (numbersSection && 'IntersectionObserver' in window && !reduceMotion) {
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting && !animatedNumbers) {
-                    animatedNumbers = true;
-                    numberCards.forEach(card => countUp(card));
-                }
-            });
-        }, { threshold: 0.2 });
-
-        observer.observe(numbersSection);
-    }
-
-
-    // --------------------------------------------------------------------------
-    // 4. COOK & CHILL STEP SEQUENCER ON SCROLL
-    // --------------------------------------------------------------------------
-    const cncSteps = document.querySelectorAll('.cnc-step');
-    let currentCncStep = 0, cncTimer = null, cncUserChose = false;
-    function showCncStep(i) {
-        currentCncStep = i;
-        cncSteps.forEach((s, k) => { s.classList.toggle('active', k === i); s.setAttribute('aria-pressed', String(k === i)); });
-    }
-    cncSteps.forEach((s, k) => s.addEventListener('click', () => { cncUserChose = true; clearInterval(cncTimer); showCncStep(k); }));
-    const cncBox = document.getElementById('como-trabajamos');
-    if (cncSteps.length && cncBox && 'IntersectionObserver' in window && !reduceMotion) {
-        // Walk through the three steps only while the section is on screen, until the visitor picks one
-        new IntersectionObserver(entries => entries.forEach(e => {
-            clearInterval(cncTimer);
-            if (e.isIntersecting && !cncUserChose) {
-                showCncStep(0);
-                cncTimer = setInterval(() => showCncStep((currentCncStep + 1) % cncSteps.length), 2500);
-            }
-        }), { threshold: 0.5 }).observe(cncBox);
-    }
-
-    // --------------------------------------------------------------------------
-    // 5. WEEKLY MENU SELECTOR DEMO WIDGET
-    // --------------------------------------------------------------------------
-    const menuData = {
-        mon: {
-            es: "<strong>Tradicional:</strong> Pechuga de pollo en crema de chipotle con arroz a la primavera.<br><strong>Saludable:</strong> Bowl de quinoa, verduras asadas y pechuga a la plancha.<br><strong>Postre:</strong> Gelatina de yogur y frutos rojos.",
-            en: "<strong>Traditional:</strong> Chicken breast in chipotle cream sauce with primavera rice.<br><strong>Healthy:</strong> Quinoa bowl with roasted vegetables & grilled chicken.<br><strong>Dessert:</strong> Yogurt & red berry parfait."
-        },
-        tue: {
-            es: "<strong>Tradicional:</strong> Carne deshebrada en salsa verde con frijoles refritos y nopales.<br><strong>Saludable:</strong> Filete de pescado al vapor con ensalada cítrica.<br><strong>Postre:</strong> Fruta de temporada en almíbar ligero.",
-            en: "<strong>Traditional:</strong> Shredded beef in green salsa with refried beans & cactus.<br><strong>Healthy:</strong> Steamed fish fillet with citrus salad.<br><strong>Dessert:</strong> Seasonal fruit in light syrup."
-        },
-        wed: {
-            es: "<strong>Tradicional:</strong> Lomo de cerdo en adobo artesanal con puré de papa.<br><strong>Saludable:</strong> Ensalada Chef con pechuga de pavo y aderezo bajo en grasa.<br><strong>Postre:</strong> Mousse de limón bajo en azúcar.",
-            en: "<strong>Traditional:</strong> Pork loin in artisanal adobo with mashed potatoes.<br><strong>Healthy:</strong> Chef salad with turkey breast & low-fat dressing.<br><strong>Dessert:</strong> Low-sugar lemon mousse."
-        },
-        thu: {
-            es: "<strong>Tradicional:</strong> Fajitas mixtas (res y pollo) con pimientos y tortillas integrales.<br><strong>Saludable:</strong> Wrap vegetariano de hummus y vegetales crujientes.<br><strong>Postre:</strong> Tapioca de coco.",
-            en: "<strong>Traditional:</strong> Mixed fajitas (beef & chicken) with peppers & whole wheat tortillas.<br><strong>Healthy:</strong> Vegetarian wrap with hummus & crunchy veggies.<br><strong>Dessert:</strong> Coconut tapioca."
-        },
-        fri: {
-            es: "<strong>Tradicional:</strong> Lasaña bolognesa casera con pan de ajo horneado.<br><strong>Saludable:</strong> Salmón a las finas hierbas con espárragos al vapor.<br><strong>Postre:</strong> Nieve artesanal de frutas.",
-            en: "<strong>Traditional:</strong> Homemade beef lasagna with garlic bread.<br><strong>Healthy:</strong> Herb-crusted salmon with steamed asparagus.<br><strong>Dessert:</strong> Artisanal fruit sorbet."
-        }
-    };
-
-    let currentDay = 'mon';
-    const dayBtns = document.querySelectorAll('.day-btn');
-    const menuDisplay = document.getElementById('menu-content-display');
-
-    function updateMenuWidget(day) {
-        currentDay = day;
-        dayBtns.forEach(btn => {
-            btn.classList.toggle('active', btn.getAttribute('data-day') === day);
-        });
-
-        if (menuDisplay && menuData[day]) {
-            menuDisplay.innerHTML = menuData[day][currentLang] || menuData[day]['es'];
-        }
-    }
-
-    dayBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const day = btn.getAttribute('data-day');
-            updateMenuWidget(day);
-        });
+  /* ---------------- Manifesto: words light up as you read ---------------- */
+  const man = $('#manifesto');
+  const HOT = /^(energía|salud|ánimo|ingeniería|energy|health|morale|engineering)[,.:]?$/i;
+  let words = [];
+  function splitManifesto() {
+    const txt = man.textContent.trim();
+    man.textContent = '';
+    words = txt.split(/\s+/).map((wd, i, a) => {
+      const s = document.createElement('span'); s.className = 'w'; s.textContent = wd + (i < a.length - 1 ? ' ' : '');
+      if (HOT.test(wd)) s.dataset.hot = '1';
+      man.appendChild(s); return s;
     });
+    if (reduce) words.forEach(s => s.classList.add('lit', ...(s.dataset.hot ? ['hot'] : [])));
+  }
 
-    // Initialize language (also fills the sample menu) once everything above exists
-    setLanguage(currentLang);
-
-
-    // --------------------------------------------------------------------------
-    // 6. BEFORE / AFTER DINING HALL SLIDER
-    // --------------------------------------------------------------------------
-    const baRange = document.getElementById('ba-range');
-    const baBeforeLayer = document.getElementById('ba-before-layer');
-    const baHandle = document.getElementById('ba-handle');
-
-    if (baRange && baBeforeLayer && baHandle) {
-        baRange.addEventListener('input', (e) => {
-            const val = e.target.value;
-            baBeforeLayer.style.clipPath = `inset(0 ${100 - val}% 0 0)`;
-            baHandle.style.left = `${val}%`;
-        });
+  /* ---------------- Process: pinned Cook & Chill ---------------- */
+  const track = $('#process-track'), steps = $$('.step'), dial = $('#dial'), prog = $('#dial-prog'), icons = $$('.dial-icon'), lbl = $('#dial-lbl'), ticksG = $('#ticks');
+  const NT = 60, ticks = [];
+  for (let i = 0; i < NT; i++) {
+    const a = (i / NT) * Math.PI * 2 - Math.PI / 2, r1 = 182, r2 = i % 5 ? 188 : 194;
+    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1', 200 + r1 * Math.cos(a)); l.setAttribute('y1', 200 + r1 * Math.sin(a));
+    l.setAttribute('x2', 200 + r2 * Math.cos(a)); l.setAttribute('y2', 200 + r2 * Math.sin(a));
+    ticksG.appendChild(l); ticks.push(l);
+  }
+  const LABELS = ['COOK', 'CHILL', 'REGEN'];
+  let curStep = -1;
+  function setStep(i, p) {
+    if (i !== curStep) {
+      curStep = i;
+      steps.forEach((s, k) => s.classList.toggle('is-on', k === i));
+      icons.forEach((g, k) => g.classList.toggle('is-on', k === i));
+      dial.classList.toggle('cold', i === 1);
+      lbl.textContent = LABELS[i];
     }
+    prog.style.strokeDashoffset = String(100 - Math.max(2, p * 100));
+    const on = Math.round(p * NT);
+    ticks.forEach((t, k) => t.classList.toggle('on', k < on));
+  }
+  const pinned = () => innerWidth > 860;
+  let autoStep = null;
+  function processScroll() {
+    if (!pinned()) return;
+    const r = track.getBoundingClientRect();
+    const total = r.height - innerHeight;
+    const p = Math.min(1, Math.max(0, -r.top / total));
+    setStep(Math.min(2, Math.floor(p * 3)), p);
+  }
+  function mobileProcess() {
+    if (pinned() || autoStep || reduce) return;
+    let i = 0, t = 0;
+    autoStep = setInterval(() => { if (pinned()) { clearInterval(autoStep); autoStep = null; return; } t = (t + 1) % 30; i = Math.floor(t / 10); setStep(i, (t + 1) / 30); }, 300);
+  }
+  setStep(0, 0.02);
 
+  /* ---------------- Metric count-up ---------------- */
+  const mv = $('#metric-val');
+  let counted = false;
+  function countUp() {
+    if (counted || reduce) return; counted = true;
+    const t0 = performance.now(), D = 1800;
+    (function f(now) { const k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 4); mv.textContent = Math.round(12000 * e).toLocaleString('en-US'); if (k < 1) requestAnimationFrame(f); })(t0);
+  }
 
-    // Coverage map: highlight a state from its city chips and vice versa
-    const statePaths = document.querySelectorAll('.mexico-map-svg .st.on');
-    const cityBtns = document.querySelectorAll('.city-badge[data-state]');
-    function hlState(id, on) {
-        statePaths.forEach(p => p.classList.toggle('hl', on && p.getAttribute('data-state') === id));
-        cityBtns.forEach(b => b.classList.toggle('hl', on && b.getAttribute('data-state') === id));
-    }
-    cityBtns.forEach(b => {
-        const id = b.getAttribute('data-state');
-        ['mouseenter', 'focus'].forEach(ev => b.addEventListener(ev, () => hlState(id, true)));
-        ['mouseleave', 'blur'].forEach(ev => b.addEventListener(ev, () => hlState(id, false)));
+  /* ---------------- Reveal (only for what starts below the fold) ---------------- */
+  const revealEls = $$('.kicker, .h2, .lead, .tile, .svc, .certs, .ba, .cities, .cov-map, .tech-visual, .form, .person, .checks, .metric-copy');
+  if ('IntersectionObserver' in window && !reduce) {
+    const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' });
+    revealEls.forEach((el, i) => {
+      if (el.getBoundingClientRect().top > innerHeight * 0.92) { el.classList.add('rv'); el.style.transitionDelay = (i % 4) * 70 + 'ms'; io.observe(el); }
     });
-    statePaths.forEach(p => {
-        const id = p.getAttribute('data-state');
-        p.addEventListener('mouseenter', () => hlState(id, true));
-        p.addEventListener('mouseleave', () => hlState(id, false));
+    new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) countUp(); }), { threshold: 0.4 }).observe($('#metric'));
+    new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) mobileProcess(); })).observe(track);
+  }
+
+  /* ---------------- Dashboard: live bars, new log rows, tilt ---------------- */
+  const bars = $('#bars');
+  const NB = 28, barEls = [];
+  for (let i = 0; i < NB; i++) { const b = document.createElement('i'); bars.appendChild(b); barEls.push(b); }
+  const level = i => 35 + 40 * Math.sin(i / 4) + 18 * Math.random();
+  function updBars(shift) { barEls.forEach((b, i) => { b.style.height = Math.max(8, Math.min(100, level(i + shift))) + '%'; }); }
+  let shift = 0; updBars(0);
+  const ROWS = [
+    ['Muestra de platillo registrada', 'Dish sample logged'], ['Temperatura de cámara fría verificada', 'Walk-in cooler temperature checked'],
+    ['Foto de línea de servicio cargada', 'Service line photo uploaded'], ['Abatidor: ciclo completado', 'Blast chiller: cycle complete'],
+    ['Encuesta de satisfacción recibida', 'Satisfaction survey received'], ['Limpieza de comedor confirmada', 'Dining hall cleaning confirmed'],
+  ];
+  const list = $('#dash-list');
+  let rowI = 0, clock = 7 * 60 + 18;
+  function addRow() {
+    clock += 4 + Math.floor(Math.random() * 9);
+    const li = document.createElement('li'); li.className = 'new';
+    const ok = document.createElement('span'); ok.className = 'ok';
+    const tx = document.createElement('span'); tx.textContent = ROWS[rowI % ROWS.length][lang === 'en' ? 1 : 0];
+    const tm = document.createElement('span'); tm.className = 'mono dim t'; tm.textContent = String(Math.floor(clock / 60) % 24).padStart(2, '0') + ':' + String(clock % 60).padStart(2, '0');
+    li.append(ok, tx, tm); list.prepend(li); rowI++;
+    while (list.children.length > 4) list.lastElementChild.remove();
+  }
+  let dashTimer = null;
+  const tilt = $('#tilt'), dash = $('.dash', tilt);
+  if ('IntersectionObserver' in window && !reduce) {
+    new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting && !dashTimer) dashTimer = setInterval(() => { shift += 1; updBars(shift); if (shift % 2 === 0) addRow(); }, 1600);
+      else if (!e.isIntersecting && dashTimer) { clearInterval(dashTimer); dashTimer = null; }
+    })).observe(tilt);
+  }
+  if (!reduce && matchMedia('(pointer: fine)').matches) {
+    tilt.addEventListener('pointermove', e => {
+      const r = tilt.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      dash.style.transform = `rotateY(${-14 + x * 12}deg) rotateX(${8 - y * 10}deg)`;
     });
+    tilt.addEventListener('pointerleave', () => { dash.style.transform = ''; });
+  }
 
-    // --------------------------------------------------------------------------
-    // 7. MAILTO CONTACT FORM GENERATOR (EXCLUSIVELY FOR SANTIAGO FOX)
-    // --------------------------------------------------------------------------
-    const contactForm = document.getElementById('contact-form');
-    if (contactForm) {
-        contactForm.addEventListener('submit', (e) => {
-            e.preventDefault();
+  /* ---------------- Before / after ---------------- */
+  const baR = $('#ba-range'), baB = $('#ba-before'), baH = $('#ba-handle');
+  baR.addEventListener('input', () => { const v = +baR.value; baB.style.clipPath = `inset(0 ${100 - v}% 0 0)`; baH.style.left = v + '%'; });
 
-            const name = document.getElementById('c-name').value.trim();
-            const company = document.getElementById('c-company').value.trim();
-            const city = document.getElementById('c-city').value.trim();
-            const headcount = document.getElementById('c-headcount').value.trim();
-            const message = document.getElementById('c-message').value.trim();
+  /* ---------------- Map pins + city highlight ---------------- */
+  const map = $('#map'), pins = $('#pins'), NS = 'http://www.w3.org/2000/svg';
+  const statePaths = $$('.st.on', map);
+  statePaths.forEach(p => {
+    const b = p.getBBox(), cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    const g = document.createElementNS(NS, 'g');
+    const ring = document.createElementNS(NS, 'circle'); ring.setAttribute('cx', cx); ring.setAttribute('cy', cy); ring.setAttribute('r', 6); ring.setAttribute('class', 'pin-ring');
+    const core = document.createElementNS(NS, 'circle'); core.setAttribute('cx', cx); core.setAttribute('cy', cy); core.setAttribute('r', 4); core.setAttribute('class', 'pin-core');
+    g.append(ring, core); pins.appendChild(g);
+  });
+  const cities = $$('#cities li');
+  function hl(id, on) {
+    statePaths.forEach(p => p.classList.toggle('hl', on && p.dataset.state === id));
+    cities.forEach(c => c.classList.toggle('hl', on && c.dataset.state === id));
+  }
+  cities.forEach(c => { c.addEventListener('mouseenter', () => hl(c.dataset.state, true)); c.addEventListener('mouseleave', () => hl(c.dataset.state, false)); });
+  statePaths.forEach(p => { p.addEventListener('mouseenter', () => hl(p.dataset.state, true)); p.addEventListener('mouseleave', () => hl(p.dataset.state, false)); });
 
-            const recipient = "santiago.fox@gpoave.com";
-            const subject = encodeURIComponent(`Solicitud de Propuesta Comedor Industrial - ${company}`);
-            
-            const bodyText = `Hola Santiago Fox,\n\nMe pongo en contacto a través de gpoave.com para solicitar información y una propuesta comercial de servicio de comedor industrial.\n\n` +
-                `--- DATOS DE LA PLANTA ---\n` +
-                `Nombre del Contacto: ${name}\n` +
-                `Empresa / Maquiladora: ${company}\n` +
-                `Ciudad de la Planta: ${city}\n` +
-                `Comensales Diarios Aprox.: ${headcount}\n\n` +
-                `--- MENSAJE Y REQUERIMIENTOS ---\n${message}\n\n` +
-                `Quedo en espera de su comunicación. Gracias.`;
-
-            const mailtoUrl = `mailto:${recipient}?subject=${subject}&body=${encodeURIComponent(bodyText)}`;
-
-            // Open user's default email program safely
-            window.location.href = mailtoUrl;
-        });
+  /* ---------------- Contact form → email ---------------- */
+  $('#form').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = id => $('#' + id).value.trim();
+    const err = $('#f-err');
+    if (!v('f-name') || !v('f-company') || !v('f-city')) {
+      err.textContent = lang === 'en' ? 'Please add your name, company and city so we can reach you.' : 'Escriba su nombre, empresa y ciudad para poder contactarle.';
+      err.hidden = false; return;
     }
+    err.hidden = true;
+    const subject = `Solicitud de propuesta – ${v('f-company')}`;
+    const body = `Hola Santiago,\n\nMe gustaría recibir una propuesta de comedor industrial.\n\nNombre: ${v('f-name')}\nEmpresa / planta: ${v('f-company')}\nCiudad: ${v('f-city')}\nComensales al día (aprox.): ${v('f-count') || '—'}\n\n${v('f-msg')}\n`;
+    location.href = `mailto:santiago.fox@gpoave.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  });
 
-});
+  /* ---------------- Scroll loop ---------------- */
+  let ticking = false;
+  function onScroll() {
+    nav.classList.toggle('solid', scrollY > 24 || links.classList.contains('open'));
+    processScroll();
+    if (words.length && !reduce) {
+      const r = man.getBoundingClientRect();
+      const p = Math.min(1, Math.max(0, (innerHeight * 0.85 - r.top) / (r.height + innerHeight * 0.35)));
+      const lit = Math.round(p * words.length);
+      words.forEach((s, i) => { const on = i < lit; s.classList.toggle('lit', on); s.classList.toggle('hot', on && !!s.dataset.hot); });
+    }
+    ticking = false;
+  }
+  addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+  addEventListener('resize', onScroll, { passive: true });
+
+  $('#year').textContent = new Date().getFullYear();
+  setLang(lang);
+})();
