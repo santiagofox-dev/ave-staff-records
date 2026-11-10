@@ -111,10 +111,16 @@ function requireAuth(req, res, next) {
 }
 
 app.get('/healthz', (req, res) => res.send('ok'));
+
+/* ---- Public website (gpoave.com landing page) ---- */
+const SITE_DIR = path.join(__dirname, 'public', 'site');
+app.get(['/', '/index.html'], (req, res) => res.sendFile(path.join(SITE_DIR, 'index.html')));
+app.get('/aviso-de-privacidad', (req, res) => res.sendFile(path.join(SITE_DIR, 'aviso-de-privacidad.html')));
+app.use(express.static(SITE_DIR, { index: false, maxAge: '1h' }));
 app.use('/static', express.static(path.join(__dirname, 'public', 'static'), { maxAge: '1h' }));
 
 app.get('/login', (req, res) => {
-  if (authed(req)) return res.redirect('/');
+  if (authed(req)) return res.redirect('/app');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 app.post('/api/login', (req, res) => {
@@ -132,7 +138,7 @@ app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true 
 app.use(requireAuth);
 app.use(['/api', '/files', '/reports', '/comidas'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
+app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
 
 app.post('/api/password', (req, res) => {
   const { current, next: nextPw } = req.body || {};
