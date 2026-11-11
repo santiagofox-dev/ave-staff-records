@@ -126,7 +126,7 @@ table.t{border-collapse:collapse;width:100%;font-size:13.5px}
 .progress .bar2{flex:1;height:8px;background:var(--sunk);border-radius:99px;overflow:hidden}
 .progress .bar2 i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
 
-.dlg{border:1px solid var(--line);border-radius:12px;padding:0;background:var(--surface);color:var(--fg);width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px)}
+.dlg{border:1px solid var(--line);border-radius:12px;padding:0;background:var(--surface);color:var(--fg);width:min(640px,calc(100vw - 32px));height:auto;max-height:calc(100vh - 40px);margin:auto;overflow:auto}
 .dlg::backdrop{background:var(--scrim)}
 .dlg form{display:flex;flex-direction:column;gap:14px;padding:20px}
 .dlg h2{font-size:21px}
