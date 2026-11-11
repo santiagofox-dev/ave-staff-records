@@ -10,6 +10,7 @@ const r2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const today = () => new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10); // Ciudad Juárez (UTC-7)
 const addDays = (d, n) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 const uid = () => crypto.randomBytes(6).toString('hex');
+const fixedAmounts = d => d.source === 'xml' || d.source === 'pdfcfdi'; // amounts come from a stamped CFDI
 const isDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 const TYPES = {
@@ -163,7 +164,7 @@ class Books {
     let subtotal = 0, discount = 0, tras = 0, ret = 0;
     for (const l of d.lines) {
       l.qty = Number(l.qty) || 0; l.price = Number(l.price) || 0; l.discount = r2(l.discount || 0);
-      if (d.source !== 'xml') {
+      if (!fixedAmounts(d)) {
         l.amount = r2(l.qty * l.price);
         const base = r2(l.amount - l.discount);
         l.taxes = (l.taxCodes || []).filter(k => TAX_PRESETS[k]).map(k => {
@@ -176,7 +177,7 @@ class Books {
     }
     d.subtotal = r2(subtotal); d.discount = r2(discount); d.traslados = r2(tras); d.retenciones = r2(ret);
     const calc = r2(subtotal - discount + tras - ret);
-    if (d.source !== 'xml' || !d.total) d.total = calc;
+    if (!fixedAmounts(d) || !d.total) d.total = calc;
     d.rate = Number(d.rate) || 1;
     d.totalMxn = r2(d.total * d.rate);
     return d;
@@ -211,7 +212,7 @@ class Books {
     const allowed = ['partnerId', 'date', 'due', 'ref', 'notes', 'currency', 'rate', 'metodoPago', 'formaPago', 'serie', 'folio'];
     for (const k of allowed) if (k in data) d[k] = data[k];
     if (Array.isArray(data.lines)) {
-      if (d.source === 'xml') {
+      if (fixedAmounts(d)) {
         // XML amounts are fixed by the CFDI; only the account (and description note) can change
         data.lines.forEach((l, i) => { if (d.lines[i] && l.account) d.lines[i].account = l.account; });
       } else {

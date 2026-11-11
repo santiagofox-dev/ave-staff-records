@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const yauzl = require('yauzl');
-const { parseCfdi, factsFromText } = require('./cfdi');
+const { parseCfdi, factsFromText, parsePrinted } = require('./cfdi');
 const { accountForClave, r2, uid, TYPES } = require('./core');
 
 async function unzip(buf) {
@@ -33,8 +33,10 @@ function storeFile(books, name, buf) {
   return { name, stored, kind: ext === '.xml' ? 'xml' : ext === '.pdf' ? 'pdf' : 'other', size: buf.length, sha: crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16) };
 }
 
-/* files: [{ name, buf }]; pdfText: async (path) => string */
-async function importFiles(books, files, user, pdfText) {
+/* files: [{ name, buf }]; pdf: { text: async path => string, layout: async path => string } (or a bare text function) */
+async function importFiles(books, files, user, pdf) {
+  const pdfText = typeof pdf === 'function' ? pdf : pdf && pdf.text;
+  const pdfLayout = pdf && typeof pdf === 'object' ? pdf.layout : null;
   const res = { created: [], payments: [], duplicates: [], skipped: [], errors: [], attached: [] };
   // expand zips
   let list = [];
@@ -120,17 +122,42 @@ async function importFiles(books, files, user, pdfText) {
 
   for (const f of pdfs) {
     let target = xmlBase[base(f.name)];
-    let facts = null;
-    if (!target && pdfText) {
+    let facts = null, printed = null;
+    if (!target && (pdfText || pdfLayout)) {
       const tmp = path.join(books.filesDir, 'tmp-' + uid() + '.pdf');
       fs.writeFileSync(tmp, f.buf);
-      try { facts = factsFromText(await pdfText(tmp)); } catch (e) { facts = null; } finally { try { fs.unlinkSync(tmp); } catch (e) {} }
+      try {
+        const lay = pdfLayout ? await pdfLayout(tmp) : '';
+        if (lay) { facts = factsFromText(lay); printed = parsePrinted(lay, company); }
+        else { const r = await pdfText(tmp); facts = factsFromText(r && typeof r === 'object' ? r.text : r); }
+      } catch (e) { facts = null; printed = null; } finally { try { fs.unlinkSync(tmp); } catch (e) {} }
       if (facts && facts.uuid) target = byUuid[facts.uuid] || books.db.docs.find(d => d.uuid === facts.uuid && d.state !== 'cancelled');
     }
     if (target) {
       const sha = crypto.createHash('sha1').update(f.buf).digest('hex').slice(0, 16);
       if (!(target.files || []).some(x => x.sha === sha)) { target.files.push(storeFile(books, f.name, f.buf)); }
       res.attached.push({ file: f.name, id: target.id });
+      continue;
+    }
+    // printed CFDI we could read completely: same as an XML import, flagged as read from the PDF
+    if (printed && printed.emisor.rfc && (printed.receptor.rfc === company || printed.emisor.rfc === company) && ['I', 'E'].includes(printed.tipo)) {
+      if (books.db.docs.find(d => d.uuid === printed.uuid && d.state !== 'cancelled')) { res.duplicates.push({ file: f.name, uuid: printed.uuid }); continue; }
+      const incoming = printed.emisor.rfc !== company, other = incoming ? printed.emisor : { rfc: printed.receptor.rfc, name: printed.receptor.name };
+      let partner = books.findPartnerByRfc(other.rfc, other.name);
+      if (!partner) partner = books.upsertPartner({ rfc: other.rfc, name: other.name || other.rfc, supplier: incoming, customer: !incoming, terms: 30, regimen: other.regimen || '' }, user);
+      const type = incoming ? (printed.tipo === 'E' ? 'in_refund' : 'in_invoice') : (printed.tipo === 'E' ? 'out_refund' : 'out_invoice');
+      const warnings = ['Leído del PDF (no venía el XML). Los importes cuadran con el total impreso; sube el XML cuando lo tengas para confirmarlo.', ...printed.notes];
+      const d = books.newDoc(type, {
+        partnerId: partner.id, date: printed.date || undefined, currency: printed.currency, rate: 1, uuid: printed.uuid, serie: printed.serie, folio: printed.folio,
+        metodoPago: printed.metodoPago, formaPago: printed.formaPago, source: 'pdfcfdi', warnings,
+        lines: printed.lines.map(l => ({ ...l, account: incoming ? (partner.account || books.A.expense) : books.A.sales })),
+        cfdi: { version: '4.0', uso: printed.receptor.uso, emisor: printed.emisor, receptor: printed.receptor, fechaTimbrado: '' },
+        files: [storeFile(books, f.name, f.buf)],
+      }, user);
+      d.total = printed.total; books.computeDoc(d);
+      d.due = books.defaultDue(d);
+      byUuid[printed.uuid] = d;
+      res.created.push({ file: f.name, id: d.id, type, partner: partner.name, total: d.total, currency: d.currency, date: d.date, fromPdf: true, ok: printed.ok });
       continue;
     }
     // PDF without its XML: keep it as a supplier draft so nothing gets lost

@@ -24,6 +24,39 @@ async function pdfText(file, maxPages = 6) {
   } finally { await doc.destroy(); }
 }
 
+/* Text with the page layout kept: items grouped into rows by position, columns separated by wide gaps.
+   Printed CFDI (CONTPAQi, etc.) is read from this. */
+async function pdfLayoutText(file, maxPages = 8) {
+  const doc = await openPdf(file);
+  const pages = [];
+  try {
+    for (let i = 1; i <= Math.min(doc.numPages, maxPages); i++) {
+      const p = await doc.getPage(i);
+      const tc = await p.getTextContent();
+      const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4], y: it.transform[5], w: it.width, h: Math.abs(it.transform[3]) || 8, s: it.str }));
+      items.sort((a, b) => b.y - a.y || a.x - b.x);
+      const rows = [];
+      for (const it of items) {
+        const r = rows.find(r => Math.abs(r.y - it.y) <= Math.max(2, it.h * 0.35));
+        if (r) r.items.push(it); else rows.push({ y: it.y, items: [it] });
+      }
+      rows.sort((a, b) => b.y - a.y);
+      const lines = rows.map(r => {
+        r.items.sort((a, b) => a.x - b.x);
+        let out = '', end = null;
+        for (const it of r.items) {
+          if (end != null) { const gap = it.x - end; out += gap > it.h * 0.9 ? '   ' : gap > it.h * 0.12 ? ' ' : ''; }
+          out += it.s; end = it.x + it.w;
+        }
+        return out.replace(/\s+$/, '');
+      });
+      pages.push(lines.join('\n'));
+      p.cleanup();
+    }
+    return pages.join('\n\f\n');
+  } finally { await doc.destroy(); }
+}
+
 async function pdfPageImages(file, maxPages = 2, scale = 2) {
   const doc = await openPdf(file);
   const imgs = [];
@@ -165,4 +198,4 @@ function parse(textRaw, emp) {
   return out;
 }
 
-module.exports = { pdfText, pdfPageImages, docxText, ocr, stopOcr, parse, curpBirth, curpFits, curpCheck };
+module.exports = { pdfText, pdfLayoutText, pdfPageImages, docxText, ocr, stopOcr, parse, curpBirth, curpFits, curpCheck };

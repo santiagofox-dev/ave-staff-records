@@ -121,3 +121,23 @@ test('foreign-currency invoice converts at the CFDI exchange rate', async () => 
   b.postDoc(d.id, 'u');
   assert.equal(b.trialBalance(null, null).totals.close, 0);
 });
+
+test('printed CFDI (PDF without XML) is read with its lines, IVA split and total', async () => {
+  const { parsePrinted } = require('../acc/cfdi');
+  const txt = ['I - Ingreso', 'Serie:   CHIA', 'Folio:   168080', 'Fecha:   06/Oct/2026', 'ABARROTES INSTITUCIONALES', 'AIN0112122R2', '601 - General de Ley Personas Morales',
+    'RFC:   GIF231017172   Moneda: Peso Mexicano', 'Uso CFDI:   G03 - Gastos en general', 'Cantidad   Unidad   Descripción   Valor unitario   Importe',
+    '7.00   H87 - Pieza   PASTA DE TOMATE DEL FUERTE BOLSA   182.53   1,277.74', '4/3 KG',
+    '2.00   XPK - Paquete   PAPEL ALUMINIO PRECORTADO   163.39   326.78', 'Importe con letra   1,604.52', 'Subtotal:', 'mil seiscientos   I.V.A.:   52.28',
+    'Forma de Pago:   03 - Transferencia electrónica de fondos   Retención I.S.R.:   0.00', 'Retención I.V.A.:   0.00', 'Descuentos:   0.00', 'Total:   $1,656.80',
+    'PUE - Pago en una sola exhibición', 'Folio Fiscal:   2B0EC3D0-D364-43A2-94FE-B8632779C5FB'].join('\n');
+  const c = parsePrinted(txt, CO);
+  assert.equal(c.ok, true); assert.equal(c.date, '2026-10-06'); assert.equal(c.emisor.rfc, 'AIN0112122R2'); assert.equal(c.lines.length, 2);
+  assert.equal(c.lines[0].description, 'PASTA DE TOMATE DEL FUERTE BOLSA 4/3 KG');
+  assert.equal(c.lines[0].taxes[0].amount, 0); assert.equal(c.lines[1].taxes[0].amount, 52.28);
+  const b = freshBooks();
+  const { importFiles: imp } = require('../acc/importer');
+  const r = await imp(b, [{ name: 'f.pdf', buf: Buffer.from('%PDF') }], 'u', { layout: async () => txt });
+  assert.equal(r.created.length, 1); assert.equal(r.created[0].fromPdf, true);
+  const d = b.doc(r.created[0].id); assert.equal(d.total, 1656.8); assert.equal(d.metodoPago, 'PUE');
+  b.postDoc(d.id, 'u'); assert.equal(b.trialBalance().totals.close, 0);
+});

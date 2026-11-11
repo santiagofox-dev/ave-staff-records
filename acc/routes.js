@@ -8,8 +8,8 @@ const { importFiles } = require('./importer');
 
 module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
   const books = new Books(path.join(DATA_DIR, 'acc'), { rfc });
-  let pdfText = null;
-  try { pdfText = require('../extract').pdfText; } catch (e) { pdfText = null; }
+  let pdf = null;
+  try { const x = require('../extract'); pdf = { text: x.pdfText, layout: x.pdfLayoutText }; } catch (e) { pdf = null; }
 
   const who = req => (req.user && (req.user.name || req.user.username)) || 'admin';
   const canEdit = req => req.user && (req.user.role === 'admin' || req.user.role === 'contador');
@@ -93,7 +93,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
       if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pasa de 30 MB.' : 'No se pudieron recibir los archivos.' });
       try {
         const files = (req.files || []).map(f => ({ name: Buffer.from(f.originalname, 'latin1').toString('utf8'), buf: f.buffer }));
-        const out = await importFiles(books, files, who(req), pdfText);
+        const out = await importFiles(books, files, who(req), pdf);
         books.save();
         res.json(out);
       } catch (e) { next(e); }

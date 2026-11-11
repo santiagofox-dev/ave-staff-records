@@ -272,9 +272,10 @@
     }
     dlg.close();
     await refreshMeta();
-    const pdfOnly = total.created.filter(c => c.pdfOnly).length;
+    const pdfOnly = total.created.filter(c => c.pdfOnly).length, fromPdf = total.created.filter(c => c.fromPdf).length;
     const lines = [
-      h('div', { class: 'msg ok' }, `${total.created.length - pdfOnly} documentos creados desde XML como borrador${total.payments.length ? `, ${total.payments.length} pagos registrados desde complementos` : ''}.`),
+      h('div', { class: 'msg ok' }, `${total.created.length - pdfOnly - fromPdf} documentos creados desde XML como borrador${total.payments.length ? `, ${total.payments.length} pagos registrados desde complementos` : ''}.`),
+      fromPdf ? h('div', { class: 'msg ok' }, `${fromPdf} facturas leídas del PDF impreso (sin XML) como borrador: conceptos, IVA y total completos.`) : null,
       pdfOnly ? h('div', { class: 'msg' }, `${pdfOnly} PDF sin su XML: quedaron como borrador para capturar a mano o subir el XML.`) : null,
       total.attached.length ? h('div', { class: 'msg info' }, `${total.attached.length} PDF adjuntados a su factura.`) : null,
       total.duplicates.length ? h('div', { class: 'msg info' }, `${total.duplicates.length} ya estaban registrados (se ignoraron).`) : null,
@@ -307,7 +308,7 @@
     const T = d.type, side = T.startsWith('in') ? 'ap' : 'ar'; last.side = side;
     const isRefund = T.endsWith('refund');
     const editable = canEdit() && d.state === 'draft';
-    const xml = d.source === 'xml';
+    const xml = d.source === 'xml' || d.source === 'pdfcfdi';
     const title = META.types[T];
     const kind = side === 'ap' ? 'supplier' : 'customer';
 
