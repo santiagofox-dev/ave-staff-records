@@ -251,22 +251,24 @@
   const pickFiles = () => { filePick.value = ''; filePick.click(); };
   filePick.addEventListener('change', () => importFiles([...filePick.files]));
   async function importFiles(files) {
-    files = files.filter(f => /\.(xml|pdf|zip)$/i.test(f.name));
-    if (!files.length) return toast('Elige archivos XML, PDF o ZIP.', true);
+    files = files.filter(f => /\.(xml|pdf|zip|xlsx)$/i.test(f.name));
+    if (!files.length) return toast('Elige archivos XML, PDF, ZIP o el Excel del SAT.', true);
     // XML first so PDFs find their invoice; batches keep each request small
+    const lists = files.filter(f => /\.xlsx$/i.test(f.name)); files = files.filter(f => !/\.xlsx$/i.test(f.name));
     files.sort((a, b) => (/\.pdf$/i.test(a.name) ? 1 : 0) - (/\.pdf$/i.test(b.name) ? 1 : 0));
     const batches = []; let cur = [], size = 0;
     for (const f of files) { if (cur.length && (cur.length >= 40 || size + f.size > 40e6)) { batches.push(cur); cur = []; size = 0; } cur.push(f); size += f.size; }
     if (cur.length) batches.push(cur);
     const bar = h('i'), txt = h('span', {}, `0 de ${files.length}`);
-    const total = { created: [], payments: [], duplicates: [], skipped: [], errors: [], attached: [] };
+    const total = { created: [], payments: [], duplicates: [], skipped: [], errors: [], attached: [], missing: [] };
     const box = clear($('#dlgBody'));
     add(box, [h('h2', {}, 'Importando…'), h('div', { class: 'progress' }, h('div', { class: 'bar2' }, bar), txt), h('p', { class: 'muted' }, 'No cierres esta página.')]);
     dlg.onclose = null; dlg.showModal();
     let done = 0;
+    if (!files.length && lists.length) batches.push([]);
     for (const b of batches) {
-      const fd2 = new FormData(); b.forEach(f => fd2.append('files', f, f.name));
-      try { const r = await api('POST', '/api/acc/import', fd2); for (const k in total) total[k].push(...(r[k] || [])); }
+      const fd2 = new FormData(); [...lists, ...b].forEach(f => fd2.append('files', f, f.name));
+      try { const r = await api('POST', '/api/acc/import', fd2); for (const k in total) if (k !== 'missing') total[k].push(...(r[k] || [])); total.missing = r.missing || total.missing; }
       catch (e) { total.errors.push({ file: b.map(f => f.name).join(', ').slice(0, 120), error: e.message }); }
       done += b.length; bar.style.width = (done / files.length * 100) + '%'; txt.textContent = `${done} de ${files.length}`;
     }
@@ -279,6 +281,8 @@
       pdfOnly ? h('div', { class: 'msg' }, `${pdfOnly} PDF sin su XML: quedaron como borrador para capturar a mano o subir el XML.`) : null,
       total.attached.length ? h('div', { class: 'msg info' }, `${total.attached.length} PDF adjuntados a su factura.`) : null,
       total.duplicates.length ? h('div', { class: 'msg info' }, `${total.duplicates.length} ya estaban registrados (se ignoraron).`) : null,
+      fromPdf ? h('div', { class: total.created.some(c => c.fromPdf && !c.ok) ? 'msg' : 'msg info' }, `${total.created.filter(c => c.fromPdf && c.ok).length} de ${fromPdf} leídas del PDF cuadran al centavo${lists.length ? ' con el Excel' : ''}; las demás quedan marcadas para revisar.`) : null,
+      total.missing.length ? h('div', { class: 'msg' }, `${total.missing.length} facturas del Excel no venían en archivos: `, total.missing.map(m => `${m.name || m.rfc} $${m.total} (${m.fecha})`).join('; '), '. Pide el PDF o XML al proveedor.') : null,
       ...total.skipped.map(s => h('div', { class: 'msg info' }, `${s.file}: ${s.reason}`)),
       ...total.errors.map(s => h('div', { class: 'msg bad' }, `${s.file}: ${s.error}`)),
     ];

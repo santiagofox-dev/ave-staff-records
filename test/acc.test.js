@@ -141,3 +141,18 @@ test('printed CFDI (PDF without XML) is read with its lines, IVA split and total
   const d = b.doc(r.created[0].id); assert.equal(d.total, 1656.8); assert.equal(d.metodoPago, 'PUE');
   b.postDoc(d.id, 'u'); assert.equal(b.trialBalance().totals.close, 0);
 });
+
+test('printed CFDI: issuer name glued to its RFC, IEPS left off the printout, PAC RFC ignored', () => {
+  const { parsePrinted, rfcValid } = require('../acc/cfdi');
+  assert.ok(rfcValid('DFL890915TE0')); assert.ok(!rfcValid('EDFL890915TE0'));
+  const txt = ['I - Ingreso', 'Folio:   9003176688', 'Fecha:   10/Nov/2026', 'Hora:   00:00:00', 'DISTRIBUIDORA FRUTAS Y LEGUMBRES EL', 'TIGREDFL890915TE0', '601 - General de Ley Personas Morales',
+    'Cliente: GRUPO INDUSTRIAL FRONTERIZO AVE 78', 'RFC:   GIF231017172', 'Cantidad   Unidad   Descripción   Valor unitario   Importe',
+    '15   H87 - Pieza   PAPIRRINGAS 40G   11.70   175.50', '1   plásticoX3H - Bidón de   CLORO   100.00   100.00', 'Importe con letra   275.50', 'I.V.A.:   0.00', 'Descuentos:   0.00',
+    'Total:   $289.54', 'Folio Fiscal:   1D940A1C-2B8D-4DFA-9ECF-79DE1BD86992', '||1.1|1D940A1C-2B8D-4DFA-9ECF-79DE1BD86992|2026-11-09T10:24:45|MAS0810247C0|'].join('\n');
+  const c = parsePrinted(txt, CO);
+  assert.equal(c.emisor.rfc, 'DFL890915TE0'); assert.equal(c.emisor.name, 'DISTRIBUIDORA FRUTAS Y LEGUMBRES EL TIGRE');
+  assert.equal(c.lines.length, 2); assert.equal(c.lines[1].description, 'CLORO');
+  assert.equal(c.ok, true);
+  const ieps = c.lines.map(l => (l.taxes.find(t => t.tax === 'IEPS') || {}).amount || 0);
+  assert.deepEqual(ieps, [14.04, 0]);
+});

@@ -107,6 +107,14 @@ function factsFromText(text) {
 
 /* Printed CFDI (the PDF "representación impresa"), read from layout text: lines separated by 3+ spaces between columns.
    Returns the same shape as parseCfdi plus `ok` (amounts add up) and `notes`, or null when it isn't a readable CFDI. */
+/* RFC check digit (homoclave verifier). Lets us split a name glued to the RFC: "…EL TIGREDFL890915TE0". */
+function rfcValid(rfc) {
+  const abc = '0123456789ABCDEFGHIJKLMN&OPQRSTUVWXYZ Ñ', r = rfc.length === 12 ? ' ' + rfc : rfc;
+  if (r.length !== 13) return false;
+  let sum = 0; for (let i = 0; i < 12; i++) { const v = abc.indexOf(r[i]); if (v < 0) return false; sum += v * (13 - i); }
+  const m = 11 - (sum % 11), d = m === 11 ? '0' : m === 10 ? 'A' : String(m);
+  return d === r[12];
+}
 const MONTHS = { ene: 1, jan: 1, feb: 2, mar: 3, abr: 4, apr: 4, may: 5, jun: 6, jul: 7, ago: 8, aug: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12, dec: 12 };
 function printedDate(t) {
   let m = t.match(/Fecha[^\n\d]{0,20}(\d{1,2})[\/\- ]([A-Za-zé]{3})[a-z]*[\/\- ](\d{4})/i);
@@ -123,48 +131,106 @@ function parsePrinted(text, companyRfc) {
   if (!uuid) return null;
   const L = t.split('\n').map(l => l.trim());
   const rfcRe = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
-  // issuer: the first stand-alone RFC line that isn't ours, name on the line above
+  // issuer: in the header block (before "Cliente:"), the RFC that isn't ours; long names wrap and can end glued to the RFC.
+  // Never take RFCs from the stamp's cadena original: that one is the PAC that certified the invoice.
   let emisor = null;
-  for (let i = 0; i < L.length; i++) if (rfcRe.test(L[i]) && L[i] !== companyRfc) { emisor = { rfc: L[i], name: (L[i - 1] || '').split(/\s{3,}/)[0].trim(), regimen: ((L[i + 1] || '').match(/^(\d{3}) - /) || [])[1] || '' }; break; }
-  if (!emisor) { const r = (t.toUpperCase().match(/\b[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}\b/g) || []).find(x => x !== companyRfc); if (r) emisor = { rfc: r, name: '', regimen: '' }; }
+  const headEnd = L.findIndex(l => /^(Cliente|Receptor)\b/i.test(l));
+  const head = L.slice(0, headEnd > 0 ? headEnd : 25);
+  for (let i = 0; i < head.length && !emisor; i++) {
+    let m = head[i].match(/([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3})\s*$/);
+    if (!m || m[1] === companyRfc || /^RFC/i.test(head[i])) continue;
+    // 4 letters = person, 3 = company; when glued to the name, keep the reading whose check digit is right
+    if (m[1].length === 13 && !rfcValid(m[1]) && rfcValid(m[1].slice(1)) && head[i].length > 13) m = [m[0].slice(1), m[1].slice(1)];
+    const parts = [];
+    for (let j = i - 1; j >= 0 && !/^(Serie|Folio|Fecha|Hora|[IEP] - |Lugar|Versi)/i.test(head[j]) && parts.length < 3; j--) parts.unshift(head[j].split(/\s{3,}/)[0]);
+    const before = head[i].slice(0, head[i].length - m[0].length).trim();
+    emisor = { rfc: m[1], name: [...parts, before].filter(Boolean).join(before && parts.length && !/\s$/.test(parts[parts.length - 1]) ? ' ' : ' ').replace(/\s+/g, ' ').trim(), regimen: ((head[i + 1] || '').match(/^(\d{3}) - /) || [])[1] || '' };
+  }
+  if (!emisor) {
+    const body = t.split(/Cadena original|\|\|1\.1\|/i)[0];
+    const r = (body.toUpperCase().match(/\b[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}\b/g) || []).find(x => x !== companyRfc);
+    if (r) emisor = { rfc: r, name: '', regimen: '' };
+  }
   const recRfc = (t.match(/RFC:?\s+([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3})/) || [])[1] || '';
   const tipo = (t.match(/\b([IEP]) - (Ingreso|Egreso|Pago)\b/) || [])[1] || 'I';
   const val = label => { const m = t.match(new RegExp(label + ':?\\s+\\$?\\s*([\\d,]+\\.\\d{2})', 'i')); return m ? n(m[1]) : null; };
   // concept lines
   const lines = []; let on = false;
-  const lineRe = /^(\d+(?:\.\d+)?)\s{3,}([A-Z0-9]{2,3}\s-\s[^\s].*?)\s{3,}(.+?)\s{3,}([\d,]+\.\d{2,6})\s{3,}([\d,]+\.\d{2})$/;
+  // the unit column can wrap ("Bidón de" / "plástico"), leaving its tail glued to the next line's unit code
+  const lineRe = /^(\d+(?:\.\d+)?)\s{3,}[a-záéíóúñ]*([A-Z0-9]{2,3}\s-\s[^\s].*?)\s{3,}(.+?)\s{3,}([\d,]+\.\d{2,6})\s{3,}([\d,]+\.\d{2})$/;
+  const looseRe = /^(\d+(?:\.\d+)?)\s{3,}[a-záéíóúñ]*(?:([A-Z0-9]{1,3})\s-\s)?(.+?)\s{3,}([\d,]+\.\d{2,6})\s{3,}([\d,]+\.\d{2})$/;
   for (const l of L) {
     if (/^Cantidad\s{3,}/i.test(l)) { on = true; continue; }
     if (!on) continue;
     if (/Importe con letra|^Subtotal|^Forma de Pago|Sello digital/i.test(l)) { on = false; continue; }
-    const m = l.match(lineRe);
-    if (m) { const qty = n(m[1]), amount = n(m[5]); lines.push({ qty, unidad: m[2].trim(), description: m[3].trim(), price: qty ? Math.round(amount / qty * 1e6) / 1e6 : n(m[4]), amount, discount: 0, clave: '', taxes: [] }); }
-    else if (lines.length && l && !/^\d+(\.\d+)?\s{3,}[A-Z0-9]{2,3} - /.test(l) && !/\s{3,}[\d,]+\.\d{2}$/.test(l) && !/^Cantidad|^Hoja|^P[aá]gina/i.test(l)) lines[lines.length - 1].description += ' ' + l;
+    const m = l.match(lineRe) || l.match(looseRe);
+    if (m) { const qty = n(m[1]), amount = n(m[5]); lines.push({ qty, unidad: (m[2] || '').trim(), description: m[3].trim(), price: qty ? Math.round(amount / qty * 1e6) / 1e6 : n(m[4]), amount, discount: 0, clave: '', taxes: [] }); }
+    else if (lines.length && l && !/^\d+(\.\d+)?\s{3,}/.test(l) && !/\s{3,}[\d,]+\.\d{2}$/.test(l) && !/^Cantidad|^Hoja|^P[aá]gina/i.test(l)) lines[lines.length - 1].description += ' ' + l;
   }
   if (!lines.length) return null;
   const sum = r2(lines.reduce((a, x) => a + x.amount, 0));
   const subtotal = val('Subtotal') ?? sum, iva = val('I\\.V\\.A\\.') ?? val('IVA') ?? 0, ieps = val('I\\.E\\.P\\.S\\.') ?? 0;
   const retIsr = val('Retenci[oó]n I\\.S\\.R\\.') ?? 0, retIva = val('Retenci[oó]n I\\.V\\.A\\.') ?? 0, discount = val('Descuentos?') ?? 0, total = val('Total');
   const notes = [];
-  // IVA belongs to the 16% lines: find the set of lines whose 16% adds up to the IVA shown
-  if (iva > 0) {
-    const k = lines.length; let best = null;
-    if (k <= 16) for (let mask = 1; mask < (1 << k); mask++) {
-      let base = 0; for (let i = 0; i < k; i++) if (mask & (1 << i)) base += lines[i].amount;
-      const d = Math.abs(r2(base * 0.16) - iva); if (d <= 0.02 * Math.max(1, Math.ceil(k / 4)) && (!best || d < best.d)) best = { mask, d };
+  // Which lines carry each tax: find the set of lines whose rate × amount adds up to the printed tax.
+  const k = lines.length, tol = 0.02 * Math.max(1, Math.ceil(k / 4));
+  function pick(bases, target, rate) {
+    if (k <= 20) {
+      let best = null;
+      for (let mask = 1; mask < (1 << k); mask++) {
+        let b = 0; for (let i = 0; i < k; i++) if (mask & (1 << i)) b += bases[i];
+        const d = Math.abs(r2(b * rate) - target); if (d <= tol && (!best || d < best.d)) best = { mask, d };
+      }
+      return best && bases.map((_, i) => !!(best.mask & (1 << i)));
     }
-    if (best) lines.forEach((x, i) => { x.taxes.push({ kind: 'traslado', tax: 'IVA', factor: 'Tasa', rate: (best.mask & (1 << i)) ? 0.16 : 0, base: x.amount, amount: (best.mask & (1 << i)) ? r2(x.amount * 0.16) : 0 }); });
-    else { notes.push('No se pudo saber qué conceptos llevan IVA; se repartió en proporción. Revísalo o sube el XML.'); let left = iva; lines.forEach((x, i) => { const a = i === k - 1 ? r2(left) : r2(iva * x.amount / sum); left -= a; x.taxes.push({ kind: 'traslado', tax: 'IVA', factor: 'Tasa', rate: 0.16, base: x.amount, amount: a }); }); }
-    // make the line IVA add up to the printed IVA exactly
-    const got = r2(lines.reduce((a, x) => a + x.taxes.reduce((b, y) => b + y.amount, 0), 0)), diff = r2(iva - got);
-    if (diff) { const l = lines.find(x => x.taxes[0] && x.taxes[0].amount) || lines[0]; l.taxes[0].amount = r2(l.taxes[0].amount + diff); }
+    // many lines: subset sum over cents of the base
+    const cents = bases.map(b => Math.round(b * 100)), max = cents.reduce((a, b) => a + b, 0);
+    if (max > 4e6) return null;
+    const from = new Int32Array(max + 1).fill(-2); from[0] = -1;
+    const via = new Int32Array(max + 1);
+    for (let i = 0; i < k; i++) for (let v = max - cents[i]; v >= 0; v--) if (from[v] !== -2 && from[v + cents[i]] === -2) { from[v + cents[i]] = v; via[v + cents[i]] = i; }
+    const want = target / rate * 100;
+    let hit = -1, bd = Infinity;
+    for (let v = Math.max(0, Math.floor(want - 300)); v <= Math.min(max, Math.ceil(want + 300)); v++) if (from[v] !== -2 && v) { const d = Math.abs(r2(v / 100 * rate) - target); if (d <= tol && d < bd) { bd = d; hit = v; } }
+    if (hit < 0) return null;
+    const use = bases.map(() => false); for (let v = hit; v > 0; v = from[v]) use[via[v]] = true;
+    return use;
+  }
+  function spread(name, amount, rate, bases, use) {
+    let left = amount;
+    const idx = lines.map((_, i) => i).filter(i => use ? use[i] : true), tot = idx.reduce((a, i) => a + bases[i], 0) || 1;
+    lines.forEach((x, i) => {
+      const on = idx.includes(i);
+      const a = !on ? 0 : i === idx[idx.length - 1] ? r2(left) : use ? r2(bases[i] * rate) : r2(amount * bases[i] / tot);
+      if (on) left = r2(left - a);
+      if (on || name === 'IVA') x.taxes.push({ kind: 'traslado', tax: name, factor: 'Tasa', rate: on ? rate : 0, base: bases[i], amount: a });
+    });
+  }
+  // IEPS: printed, or the gap between the printed total and lines + IVA (many printouts leave IEPS out)
+  const gap = total != null ? r2(total - (sum - discount + iva - retIva - retIsr)) : 0;
+  const iepsTotal = ieps || (gap > 0.05 ? gap : 0); // a few centavos is rounding, not a tax
+  const amounts = lines.map(x => x.amount);
+  if (iepsTotal) {
+    let use = null, rate = 0;
+    for (const rt of [0.08, 0.265, 0.3, 0.53]) { use = pick(amounts, iepsTotal, rt); if (use) { rate = rt; break; } }
+    if (use) spread('IEPS', iepsTotal, rate, amounts, use);
+    else { notes.push(`${ieps ? 'IEPS' : 'Impuesto no desglosado en el PDF'} por ${iepsTotal.toFixed(2)}: se repartió en proporción entre los conceptos. Revísalo o sube el XML.`); spread('IEPS', iepsTotal, 0, amounts, null); }
+  }
+  const lineIeps = lines.map(x => x.taxes.filter(t => t.tax === 'IEPS').reduce((a, t) => a + t.amount, 0));
+  if (iva > 0) {
+    const withIeps = amounts.map((a, i) => r2(a + lineIeps[i]));
+    let use = pick(withIeps, iva, 0.16), bases = withIeps;
+    if (!use && iepsTotal) { use = pick(amounts, iva, 0.16); bases = amounts; }
+    if (!use) for (const rt of [0.08]) { use = pick(amounts, iva, rt); if (use) { spread('IVA', iva, rt, amounts, use); break; } }
+    if (use && !lines[0].taxes.some(t => t.tax === 'IVA')) spread('IVA', iva, 0.16, bases, use);
+    if (!use) { notes.push('No se pudo saber qué conceptos llevan IVA; se repartió en proporción. Revísalo o sube el XML.'); spread('IVA', iva, 0.16, amounts, null); }
   } else lines.forEach(x => x.taxes.push({ kind: 'traslado', tax: 'IVA', factor: 'Tasa', rate: 0, base: x.amount, amount: 0 }));
-  if (ieps) { notes.push(`El PDF trae IEPS por ${ieps.toFixed(2)}; se sumó al primer concepto. Revísalo o sube el XML.`); lines[0].taxes.push({ kind: 'traslado', tax: 'IEPS', factor: 'Tasa', rate: 0, base: lines[0].amount, amount: ieps }); }
   if (retIva) lines[0].taxes.push({ kind: 'retencion', tax: 'IVA', factor: 'Tasa', rate: 0, base: subtotal, amount: retIva });
   if (retIsr) lines[0].taxes.push({ kind: 'retencion', tax: 'ISR', factor: 'Tasa', rate: 0, base: subtotal, amount: retIsr });
   if (discount) lines[0].discount = discount;
-  const calc = r2(sum - discount + iva + ieps - retIva - retIsr);
+  const calc = r2(sum - discount + iva + iepsTotal - retIva - retIsr);
   const ok = total != null && Math.abs(sum - subtotal) <= 0.05 && Math.abs(calc - total) <= 0.05 && !notes.length;
+  if (total != null && Math.abs(calc - total) > 0 && Math.abs(calc - total) <= 0.05) lines[0].taxes[0].amount = r2(lines[0].taxes[0].amount + total - calc); // centavo rounding
   if (Math.abs(sum - subtotal) > 0.05) notes.push(`Los conceptos leídos suman ${sum.toFixed(2)} y el subtotal dice ${subtotal.toFixed(2)}: falta algún concepto.`);
   if (total != null && Math.abs(calc - total) > 0.05) notes.push(`Los importes leídos dan ${calc.toFixed(2)} y el total dice ${total.toFixed(2)}.`);
   return {
@@ -176,4 +242,4 @@ function parsePrinted(text, companyRfc) {
   };
 }
 
-module.exports = { parseCfdi, factsFromText, parsePrinted, r2 };
+module.exports = { parseCfdi, factsFromText, parsePrinted, rfcValid, r2 };

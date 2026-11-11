@@ -4,8 +4,28 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const yauzl = require('yauzl');
+const ExcelJS = require('exceljs');
 const { parseCfdi, factsFromText, parsePrinted } = require('./cfdi');
 const { accountForClave, r2, uid, TYPES } = require('./core');
+
+/* SAT / CONTPAQi invoice list (xlsx): UUID → issuer, total, payment method. Used to check what was read from PDFs. */
+async function readList(buf) {
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf);
+  const out = {};
+  for (const ws of wb.worksheets) {
+    let head = null;
+    ws.eachRow((row, n) => {
+      const v = row.values.slice(1).map(x => (x && typeof x === 'object' && 'text' in x ? x.text : x));
+      if (!head) { if (v.some(c => /^uuid$/i.test(String(c || '').trim()))) head = v.map(c => String(c || '').replace(/[▲▼]/g, '').trim().toLowerCase()); return; }
+      const g = name => { const i = head.findIndex(h => h === name); return i < 0 ? null : v[i]; };
+      const uuid = String(g('uuid') || '').trim().toUpperCase();
+      if (!/^[0-9A-F-]{36}$/.test(uuid)) return;
+      const total = parseFloat(String(g('total') ?? '').replace(/[$,]/g, ''));
+      out[uuid] = { rfc: String(g('rfc emisor') || '').trim().toUpperCase(), name: String(g('nombre emisor') || '').trim(), total: isNaN(total) ? null : total, metodo: g('método pago') || g('metodo pago') || '', forma: g('forma pago') || '', fecha: g('fecha comprobante') || '', tipo: g('tipo comprobante desc') || '', cancel: g('estado de cancelación del documento') || '' };
+    });
+  }
+  return out;
+}
 
 async function unzip(buf) {
   const out = [];
@@ -15,7 +35,7 @@ async function unzip(buf) {
   for (const entry of entries) {
     if (/\/$/.test(entry.fileName)) continue;
     const name = path.basename(String(entry.fileName));
-    if (!/\.(xml|pdf)$/i.test(name)) continue;
+    if (!/\.(xml|pdf|xlsx)$/i.test(name)) continue;
     if (entry.uncompressedSize > 20 * 1024 * 1024) continue;
     const rs = await zip.openReadStreamPromise(entry);
     const chunks = [];
@@ -46,6 +66,11 @@ async function importFiles(books, files, user, pdf) {
     } else list.push(f);
   }
   const xmls = list.filter(f => /\.xml$/i.test(f.name)), pdfs = list.filter(f => /\.pdf$/i.test(f.name));
+  let sat = null; // invoice list from an Excel, if one came along
+  for (const f of list.filter(f => /\.xlsx$/i.test(f.name))) {
+    try { sat = { ...(sat || {}), ...(await readList(f.buf)) }; } catch (e) { res.errors.push({ file: f.name, error: 'No se pudo leer el Excel.' }); }
+  }
+  const seenUuid = new Set();
   const company = books.db.company.rfc;
   const byUuid = {}; // uuid -> doc (new or existing) for PDF pairing
   const base = n => n.replace(/\.[^.]+$/, '').toLowerCase();
@@ -55,6 +80,7 @@ async function importFiles(books, files, user, pdf) {
     let c;
     try { c = parseCfdi(f.buf); } catch (e) { res.errors.push({ file: f.name, error: e.message }); continue; }
     if (!c.uuid) { res.errors.push({ file: f.name, error: 'El XML no tiene timbre fiscal (UUID). ¿Es un CFDI timbrado?' }); continue; }
+    seenUuid.add(c.uuid);
     const incoming = c.receptor.rfc === company, outgoing = c.emisor.rfc === company;
     if (!incoming && !outgoing) { res.skipped.push({ file: f.name, reason: `No es de la empresa: emisor ${c.emisor.rfc}, receptor ${c.receptor.rfc}.` }); continue; }
     if (c.tipo === 'N') { res.skipped.push({ file: f.name, reason: 'Recibo de nómina: la nómina aún no se registra aquí.' }); continue; }
@@ -140,13 +166,22 @@ async function importFiles(books, files, user, pdf) {
       continue;
     }
     // printed CFDI we could read completely: same as an XML import, flagged as read from the PDF
+    if (printed) seenUuid.add(printed.uuid);
+    const listed = printed && sat && sat[printed.uuid];
+    if (listed && printed) {
+      // the SAT list is authoritative for who issued it and the total
+      if (listed.rfc && listed.rfc !== printed.emisor.rfc && printed.emisor.rfc !== company) printed.emisor = { ...printed.emisor, rfc: listed.rfc };
+      if (listed.name) printed.emisor.name = listed.name;
+      if (listed.total != null && Math.abs(listed.total - printed.total) > 0.05) { printed.ok = false; printed.notes.push(`El Excel dice total ${listed.total.toFixed(2)} y el PDF ${printed.total.toFixed(2)}.`); }
+      if (/cancel/i.test(String(listed.cancel))) printed.notes.push('El Excel lo marca como cancelado ante el SAT.');
+    }
     if (printed && printed.emisor.rfc && (printed.receptor.rfc === company || printed.emisor.rfc === company) && ['I', 'E'].includes(printed.tipo)) {
       if (books.db.docs.find(d => d.uuid === printed.uuid && d.state !== 'cancelled')) { res.duplicates.push({ file: f.name, uuid: printed.uuid }); continue; }
       const incoming = printed.emisor.rfc !== company, other = incoming ? printed.emisor : { rfc: printed.receptor.rfc, name: printed.receptor.name };
       let partner = books.findPartnerByRfc(other.rfc, other.name);
       if (!partner) partner = books.upsertPartner({ rfc: other.rfc, name: other.name || other.rfc, supplier: incoming, customer: !incoming, terms: 30, regimen: other.regimen || '' }, user);
       const type = incoming ? (printed.tipo === 'E' ? 'in_refund' : 'in_invoice') : (printed.tipo === 'E' ? 'out_refund' : 'out_invoice');
-      const warnings = ['Leído del PDF (no venía el XML). Los importes cuadran con el total impreso; sube el XML cuando lo tengas para confirmarlo.', ...printed.notes];
+      const warnings = [printed.ok ? `Leído del PDF (no venía el XML). Los importes cuadran con el total impreso${listed ? ' y con el Excel del SAT' : ''}; sube el XML cuando lo tengas para confirmarlo.` : 'Leído del PDF (no venía el XML) con diferencias: revisa los conceptos y el IVA contra el PDF adjunto.', ...printed.notes];
       const d = books.newDoc(type, {
         partnerId: partner.id, date: printed.date || undefined, currency: printed.currency, rate: 1, uuid: printed.uuid, serie: printed.serie, folio: printed.folio,
         metodoPago: printed.metodoPago, formaPago: printed.formaPago, source: 'pdfcfdi', warnings,
@@ -171,6 +206,12 @@ async function importFiles(books, files, user, pdf) {
       files: [storeFile(books, f.name, f.buf)],
     }, user);
     res.created.push({ file: f.name, id: d.id, type: 'in_invoice', partner: partner ? partner.name : '(sin proveedor)', total: d.total, currency: 'MXN', date: d.date, pdfOnly: true });
+  }
+  // invoices in the Excel with no file in this upload (and not already registered)
+  res.missing = [];
+  if (sat) for (const [uuid, x] of Object.entries(sat)) {
+    if (seenUuid.has(uuid) || books.db.docs.some(d => d.uuid === uuid && d.state !== 'cancelled')) continue;
+    res.missing.push({ uuid, rfc: x.rfc, name: x.name, total: x.total, fecha: x.fecha });
   }
   books.log(user, 'importó', 'archivos', '', `${res.created.length} documentos, ${res.payments.length} pagos, ${res.duplicates.length} duplicados, ${res.errors.length} errores`);
   return res;
