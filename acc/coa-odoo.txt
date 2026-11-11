@@ -1,0 +1,150 @@
+101.01.01|Efectivo|BK
+102.01.01|Banco|BK
+102.01.02|Cuenta transitoria|AC
+102.01.03|Fondos en tránsito|AC|r
+102.01.04|Recibos pendientes|AC|r
+102.01.05|Pagos pendientes|AC|r
+102.02.01|Transferencias bancarias moneda extranjera|AC|r
+105.01.01|Clientes nacionales|AR|r
+105.01.02|Clientes nacionales (PoS)|AR|r
+105.02.01|Clientes Extranjeros|AR|r
+107.01.01|Funcionarios y Empleados|AR|r
+107.05.01|Mercancías Enviadas - No Facturas|AC|r
+108.01.01|Estimación de cuentas incobrables nacional|AC|r
+108.02.01|Estimación de cuentas incobrables extranjero|AC|r
+110.01.01|Subsidio al empleo por aplicar|AC|r
+113.01.01|IVA a favor|AR|r
+113.02.01|ISR a favor|AR|r
+113.02.02|ISR Retenido|AC
+113.08.01|Otros impuestos a favor|AR|r
+115.01.01|Inventario|AC
+115.02.01|Materia prima|AC
+115.03.01|Producción en proceso|AC
+115.04.01|Productos terminados|AC
+115.05.01|Mercancías en tránsito|AC|r
+115.06.01|Mercancías en poder de terceros|AC
+118.01.01|IVA acreditable pagado|AC
+118.01.02|IVA acreditable pagado al 8%|AC
+118.02.01|IVA acreditable de importación pagado|AC
+118.03.01|IEPS acreditable pagado|AC
+119.01.01|IVA pendiente de pago|AC|r
+119.01.02|Flete IVA pendiente de pago|AC|r
+119.01.03|Honorarios IVA pendiente de pago|AC|r
+119.01.04|Arrendamiento IVA pendiente de pago|AC|r
+119.02.01|IVA de importación pendiente de pago|AC|r
+119.03.01|IEPS pendiente|AC|r
+120.01.01|Anticipo a proveedores nacional|AC|r
+120.02.01|Anticipo a proveedores extranjero|AC|r
+153.01.01|Maquinaria y Equipo|AF
+154.01.01|Vehículos|AF
+155.01.01|Mobiliario y Equipo de Oficina|AF
+156.01.01|Tecnología|AF
+168.01.01|Instalación de Tecnología de Energía Renovable|AF
+169.01.01|Otra Maquinaria y Equipo|AF
+170.01.01|Adaptaciones y Mejoras|AF
+171.02.01|Depreciación Acumulada Maquinaria y equipo|AF
+171.03.01|Depreciación Acumulada de Vehículos|AF
+171.04.01|Depreciación Acumulada Mobiliario y Equipo de Oficina|AF
+171.05.01|Depreciación Acumulada de Tecnología|AF
+171.16.01|Depreciación Acumulada Instalación de Tecnología de Energía Renovable|AF
+171.16000|Depreciación acumulada de maquinaria y equipo de generación de energía de fuentes renovables o de sistemas de cogeneración de electricidad eficiente|AC
+171.17.01|Depreciación Acumulada Mejoras y Adaptaciones|AF
+171.18.01|Depreciación Acumulada Otra Maquinaria y Equipo|AF
+173.01.01|Gastos diferidos|AC|r
+179.01.01|Marcas y Patentes|AF
+183.01.01|Amortización Acumulada de Gastos Diferidos|AN
+183.07.01|Amortización Acumulada Marcas y Patentes|AN
+201.01.01|Proveedores nacionales|LP|r
+201.01.02|Reembolso empleados|LU|r
+201.02.01|Proveedores Extranjeros|LP|r
+203.09.01|Factoraje financiero cobrados por anticipado a corto plazo nacional|LP|r
+205.02.01|Acreedores Diversos|LP|r
+205.06.01|Mercancías Recibidas - No Facturas|LU|r
+205.06.02|Otros acreedores diversos a corto plazo (Fonacot)|LU|r
+206.01.01|Anticipo de cliente nacional|LU|r
+206.02.01|Anticipo de cliente extranjero|LU|r
+206.05.01|Otros anticipos de clientes|LU|r
+208.01.01|IVA trasladado cobrado|LU
+208.02.01|IEPS trasladado cobrado|LU
+209.01.01|IVA trasladado no cobrado|LU|r
+209.02.01|IEPS trasladado no cobrado|LU|r
+210.01.01|Provisión de sueldos y salarios a pagar|LU|r
+210.02.01|Provisión de vacaciones a pagar|LU|r
+210.03.01|Provisión de aguinaldo a pagar|LU|r
+210.04.01|Provisión de fondo de ahorro a pagar|LU|r
+211.01.01|Provisión de IMSS patronal a pagar|LU|r
+211.02.01|Provisión de SAR a pagar|LU|r
+211.03.01|Provisión de infonavit a pagar|LU|r
+213.01.01|IVA por pagar|LP|r
+213.02.01|IEPS por pagar|LP|r
+213.03.01|ISR por pagar|LP|r
+213.07.01|Otros impuestos por pagar|LU
+216.01.01|Retenciones o impuesto sobre la renta para sueldos y salarios|LU|r
+216.03.01|Impuestos retenidos de ISR por arrendamiento|LU
+216.04.01|Impuestos retenidos de ISR por servicios profesionales|LU
+216.10.10|Impuestos retenidos de IVA|LU|r
+216.10.20|Impuestos retenidos de iva efectivamente pagados|LU
+216.11.01|Retención de impuestos del IMSS|LU|r
+260.01.01|Ingresos diferidos|LU
+302.01.01|Patrimonio|EQ
+304.01.01|Utilidad de ejercicios anteriores|EQ
+305.01.01|Resutado Integral|EU
+401.01.01|Ventas y/o servicios gravados a la tasa general|IN
+402.01.01|Devoluciones, descuentos o bonificaciones sobre ventas y/o servicios a tarifa general|IO
+402.04.01|Refacturaciones|IN
+403.01.01|Other Income|IN
+501.01.01|Costo de venta|EC
+501.01.02|Variación de Existencias|EX
+501.02.01|Costo de Servicios (Mano de Obra)|EC
+503.01.01|Devoluciones, descuentos o bonificaciones sobre compras|IO
+505.01.01|Compras de Materia Prima|EX
+601.01.01|Sueldos y salarios|EC
+601.06.01|Vacaciones|EC
+601.07.01|Prima Vacacional|EC
+601.12.01|Aguinaldo|EC
+601.15.01|Despensa|EC
+601.16.01|Transporte|EC
+601.16.02|Transport (Vales de gasolina)|EC
+601.19.01|Fondo de ahorro|EC
+601.26.01|Cuota IMSS|EC
+601.27.01|Aportaciones al infonavit|EC
+601.28.01|Aportaciones al SAR|EC
+601.32.01|Gastos de Administración|EX
+601.34.01|Honorarios pagados a personas Físicas residentes nacionales|EX
+601.38.01|Tarifas pagadas a Personas Morales residentes nacionales|EX
+601.45.01|Alquiler de Oficina Pagado a Personas Físicas|EX
+601.46.01|Alquiler de Oficina Pagada a Personas Morales|EX
+601.48.01|Combustible y Lubricantes|EX
+601.49.01|Gastos de viaje y Viáticos|EX
+601.50.01|Teléfono e Internet|EX
+601.51.01|Agua|EX
+601.52.01|Electricidad|EX
+601.54.01|Limpieza|EX
+601.55.01|Papelería y Suministros de Oficina|EX
+601.56.01|Servicios de Mantenimiento de Oficinas|EX
+601.57.01|Seguros|EX
+601.58.01|Otros Impuestos y Derechos|EX
+601.60.01|Software, Membresías y Suscripciones|EX
+601.62.01|Capacitación y Documentación del Personal|EX
+601.64.01|Asistencia Técnica|EX
+601.73.01|Gastos de Importación|EX
+601.74.01|Comisiones sobre ventas|EC
+601.83.01|Gastos no Deducibles|EX
+601.84.01|Otros gastos generales|EX
+601.84.02|Pérdida por diferencia de efectivo|EX
+602.61.01|Publicidad y Propaganda|EX
+602.72.01|Fletes y Acarreos|EX
+613.02.01|Depreciación de Maquinaria y equipo|EC
+613.03.01|Depreciación de Vehículos|EC
+613.04.01|Depreciación Mobiliario y Equipo de Oficina|EC
+613.05.01|Depreciación de Tecnología|EC
+613.16.01|Depreciación de la Instalación de Tecnología de Energía Renovable|EC
+613.17.01|Depreciación de Mejoras y Adaptaciones|EC
+613.18.01|Depreciación Otra Maquinaria y Equipo|EC
+614.01.01|Amortización de Gastos Diferidos|EC
+614.07.01|Amortización Marcas y Patentes|EC
+701.01.01|Pérdida cambiaria|EX
+701.10.01|Comisiones Bancarias|EX
+702.01.01|Utilidad cambiaria|IN
+811.01.01|Utilidad o pérdida fiscal en venta y/o baja de activo fijo|EX
+899.01.99|Base Imponible de Impuestos en Base a Flujo de Efectivo|EX

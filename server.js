@@ -103,7 +103,17 @@ app.use(cookieSession({
   httpOnly: true, sameSite: 'strict', secure: PROD,
 }));
 
-const authed = req => req.session && req.session.ok && req.session.ver === state.auth.ver;
+const users = require('./users')(DATA_DIR);
+/* Who is signed in: the original admin (uid "admin") or an extra user with a role. */
+function whoAmI(req) {
+  const s = req.session;
+  if (!s || !s.ok) return null;
+  if (!s.uid || s.uid === 'admin') return s.ver === state.auth.ver ? { id: 'admin', username: state.auth.user, name: state.auth.user, role: 'admin', owner: true } : null;
+  const u = users.get(s.uid);
+  return u && u.active && u.ver === s.ver ? { id: u.id, username: u.username, name: u.name, role: u.role } : null;
+}
+const authed = req => { if (req.user === undefined) req.user = whoAmI(req); return !!req.user; };
+const homeFor = u => (u && u.role === 'admin' ? '/app' : '/contabilidad');
 function requireAuth(req, res, next) {
   if (authed(req)) return next();
   if (req.path.startsWith('/api/') || req.path.startsWith('/files/') || req.path.startsWith('/reports/')) return res.status(401).json({ error: 'Vuelve a iniciar sesión.' });
@@ -120,32 +130,50 @@ app.use(express.static(SITE_DIR, { index: false, maxAge: '1h' }));
 app.use('/static', express.static(path.join(__dirname, 'public', 'static'), { maxAge: '1h' }));
 
 app.get('/login', (req, res) => {
-  if (authed(req)) return res.redirect('/app');
+  if (authed(req)) return res.redirect(homeFor(req.user));
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 app.post('/api/login', (req, res) => {
   const ip = req.ip;
   if (lockedOut(ip)) return res.status(429).json({ error: 'Demasiados intentos fallidos. Inténtalo de nuevo en 15 minutos.' });
   const { username, password } = req.body || {};
-  if (!checkLogin(username, password)) { recordFail(ip); return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); }
+  if (checkLogin(username, password)) {
+    attempts.delete(ip);
+    req.session = { ok: true, uid: 'admin', ver: state.auth.ver };
+    return res.json({ ok: true, home: '/app' });
+  }
+  const u = users.check(username, password);
+  if (!u) { recordFail(ip); return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); }
   attempts.delete(ip);
-  req.session = { ok: true, ver: state.auth.ver };
-  res.json({ ok: true });
+  req.session = { ok: true, uid: u.id, ver: u.ver };
+  res.json({ ok: true, home: homeFor(u) });
 });
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true }); });
 
 /* everything below needs a login */
 app.use(requireAuth);
-app.use(['/api', '/files', '/reports', '/comidas'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.get('/api/me', (req, res) => res.json({ ...req.user, roleLabel: users.ROLES[req.user.role] || 'Administrador' }));
+/* Accounting-only users (contador, consulta) can't reach the staff records or the meals tool. */
+app.use((req, res, next) => {
+  if (req.user.role === 'admin') return next();
+  if (req.path.startsWith('/contabilidad') || req.path.startsWith('/api/acc/') || req.path === '/api/me' || req.path === '/api/logout' || req.path === '/api/password') return next();
+  if (req.method === 'GET' && !req.path.startsWith('/api/') && !req.path.startsWith('/files/') && !req.path.startsWith('/reports/')) return res.redirect('/contabilidad');
+  return res.status(403).json({ error: 'Tu usuario no tiene acceso a esta sección.' });
+});
+app.use(['/api', '/files', '/reports', '/comidas', '/contabilidad'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
 
 app.post('/api/password', (req, res) => {
   const { current, next: nextPw } = req.body || {};
+  if (req.user.id !== 'admin') {
+    try { const u = users.changeOwn(req.user.id, current, nextPw); req.session = { ok: true, uid: u.id, ver: u.ver }; return res.json({ ok: true }); }
+    catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  }
   if (!checkLogin(state.auth.user, current)) return res.status(400).json({ error: 'La contraseña actual no es correcta.' });
   if (typeof nextPw !== 'string' || nextPw.length < 10) return res.status(400).json({ error: 'La contraseña nueva debe tener al menos 10 caracteres.' });
   setPassword(state.auth.user, nextPw);
-  req.session = { ok: true, ver: state.auth.ver }; // other devices are signed out
+  req.session = { ok: true, uid: 'admin', ver: state.auth.ver }; // other devices are signed out
   res.json({ ok: true });
 });
 
@@ -282,6 +310,9 @@ require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
 
 /* ---- Comidas de Nuevos Ingresos (DELPHI) ---- */
 require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
+
+/* ---- Contabilidad (accounting) ---- */
+require('./acc/routes')(app, { DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });
 
 app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'Ocurrió un error en el servidor.' }); });
 

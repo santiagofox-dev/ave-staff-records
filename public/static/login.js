@@ -9,7 +9,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: document.getElementById('u').value.trim(), password: document.getElementById('p').value }),
       });
-      if (r.ok) { location.href = '/app'; return; }
+      if (r.ok) { const j = await r.json().catch(() => ({})); location.href = j.home || '/app'; return; }
       const j = await r.json().catch(() => ({}));
       err.textContent = j.error || 'No se pudo iniciar sesión.'; err.hidden = false;
       document.getElementById('p').value = ''; document.getElementById('p').focus();
