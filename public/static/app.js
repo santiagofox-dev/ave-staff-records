@@ -242,7 +242,7 @@ $('#pwForm').addEventListener('submit', async ev => {
   try { await api('POST', '/api/password', { current: $('#pw_cur').value, next: a }); $('#pwDlg').close(); toast('Contraseña actualizada'); }
   catch (err) { e.textContent = err.message; e.hidden = false; }
 });
-$('#outBtn').addEventListener('click', async () => { try { await api('POST', '/api/logout'); } catch (e) {} location.href = '/login'; });
+$('#outBtn') && $('#outBtn').addEventListener('click', async () => { try { await api('POST', '/api/logout'); } catch (e) {} location.href = '/login'; });
 
 /* ---------- conexiones ---------- */
 document.addEventListener('click', ev => { const b = ev.target.closest('[data-open]'); if (b) openFile(b.dataset.open); });

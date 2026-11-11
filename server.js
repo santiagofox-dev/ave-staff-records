@@ -113,7 +113,7 @@ function whoAmI(req) {
   return u && u.active && u.ver === s.ver ? { id: u.id, username: u.username, name: u.name, role: u.role } : null;
 }
 const authed = req => { if (req.user === undefined) req.user = whoAmI(req); return !!req.user; };
-const homeFor = u => (u && u.role === 'admin' ? '/app' : '/contabilidad');
+const homeFor = () => '/app';
 function requireAuth(req, res, next) {
   if (authed(req)) return next();
   if (req.path.startsWith('/api/') || req.path.startsWith('/files/') || req.path.startsWith('/reports/')) return res.status(401).json({ error: 'Vuelve a iniciar sesión.' });
@@ -156,13 +156,14 @@ app.get('/api/me', (req, res) => res.json({ ...req.user, roleLabel: users.ROLES[
 /* Accounting-only users (contador, consulta) can't reach the staff records or the meals tool. */
 app.use((req, res, next) => {
   if (req.user.role === 'admin') return next();
-  if (req.path.startsWith('/contabilidad') || req.path.startsWith('/api/acc/') || req.path === '/api/me' || req.path === '/api/logout' || req.path === '/api/password') return next();
+  if (req.path === '/app' || req.path === '/api/hub' || req.path.startsWith('/contabilidad') || req.path.startsWith('/api/acc/') || req.path === '/api/me' || req.path === '/api/logout' || req.path === '/api/password') return next();
   if (req.method === 'GET' && !req.path.startsWith('/api/') && !req.path.startsWith('/files/') && !req.path.startsWith('/reports/')) return res.redirect('/contabilidad');
   return res.status(403).json({ error: 'Tu usuario no tiene acceso a esta sección.' });
 });
-app.use(['/api', '/files', '/reports', '/comidas', '/contabilidad'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use(['/api', '/files', '/reports', '/comidas', '/contabilidad', '/app', '/expedientes'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
-app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
+app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'hub.html')));
+app.get('/expedientes', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
 
 app.post('/api/password', (req, res) => {
   const { current, next: nextPw } = req.body || {};
@@ -312,7 +313,40 @@ require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
 require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
 
 /* ---- Contabilidad (accounting) ---- */
-require('./acc/routes')(app, { DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });
+const books = require('./acc/routes')(app, { DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });
+
+/* Central dashboard: a few live numbers from each tool, limited to what the user may open */
+app.get('/api/hub', (req, res, next) => {
+  try {
+    const admin = req.user.role === 'admin', out = { user: { name: req.user.name, role: req.user.role, roleLabel: users.ROLES[req.user.role] || 'Administrador' }, tools: {} };
+    const now = new Date(Date.now() - 7 * 3600e3), today = now.toISOString().slice(0, 10);
+    const days = d => Math.round((Date.parse(d + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 864e5);
+    if (admin) {
+      const emps = empList(); let expired = 0, expiring = 0; const alerts = [], bdays = [];
+      for (const e of emps) {
+        for (const t of e.trainings || []) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(t.expires || '')) continue;
+          const n = days(t.expires); if (n < 0) expired++; else if (n <= 30) expiring++;
+          if (n <= 30) alerts.push({ name: e.name, what: t.name, days: n });
+        }
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(e.birthday || '');
+        if (m) { let y = +today.slice(0, 4), d = `${y}-${m[2]}-${m[3]}`; if (d < today) d = `${y + 1}-${m[2]}-${m[3]}`; const n = days(d); if (n <= 30) bdays.push({ name: e.name, days: n }); }
+      }
+      alerts.sort((a, b) => a.days - b.days); bdays.sort((a, b) => a.days - b.days);
+      const plants = {}; for (const e of emps) { const k = e.site || 'Sin planta'; plants[k] = (plants[k] || 0) + 1; }
+      out.tools.expedientes = { total: emps.length, expired, expiring, birthdays: bdays.length, plants: Object.entries(plants).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n })), alerts: alerts.slice(0, 4), nextBirthdays: bdays.slice(0, 3) };
+      let hist = []; try { hist = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'meals', 'history.json'), 'utf8')); } catch (e) { hist = []; }
+      hist.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+      const last = hist[hist.length - 1] || null, since = new Date(Date.now() - 30 * 864e5).toISOString();
+      const recent = hist.filter(h => h.at >= since);
+      out.tools.comidas = { runs: hist.length, last: last && { label: last.label, at: last.at, meals: last.meals, added: last.added, employees: last.employees, confFinal: last.confFinal, pending: last.pending }, added30: recent.reduce((a, h) => a + (h.added || 0), 0), runs30: recent.length, series: hist.slice(-8).map(h => ({ label: h.label, added: h.added || 0 })) };
+    }
+    const d = books.dashboard();
+    out.tools.contabilidad = { payable: d.payable, payableOverdue: d.payableOverdue, receivable: d.receivable, receivableOverdue: d.receivableOverdue, banks: r2h(d.banks.reduce((a, b) => a + b.balance, 0)), drafts: d.drafts, month: d.month, pnl: d.pnl, series: d.series.slice(-6), dueSoon: d.dueSoon.slice(0, 3).map(x => ({ partner: x.partner, due: x.due, amount: x.amount })) };
+    res.json(out);
+  } catch (e) { next(e); }
+});
+const r2h = n => Math.round(n * 100) / 100;
 
 app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'Ocurrió un error en el servidor.' }); });
 

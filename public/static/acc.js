@@ -736,13 +736,11 @@
 
   /* ---------- boot ---------- */
   $('#navToggle').addEventListener('click', () => { const n = $('#nav'); n.classList.toggle('open'); $('#navToggle').setAttribute('aria-expanded', String(n.classList.contains('open'))); });
-  $('#logout').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; });
   window.addEventListener('hashchange', render);
   (async () => {
     try { await refreshMeta(); }
     catch (e) { clear(main); add(main, [h('div', { class: 'msg bad' }, e.message)]); return; }
     add(clear($('#me')), [h('b', {}, ME.name), { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta' }[ME.role]]);
-    $('#toApp').hidden = ME.role !== 'admin';
     render();
   })();
 })();

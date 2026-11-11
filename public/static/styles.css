@@ -168,3 +168,7 @@ dialog::backdrop{background:var(--scrim)}
 }
 @media (prefers-reduced-motion:no-preference){.sheet{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}
 .upper{text-transform:uppercase}
+
+.mark-logo{display:flex;flex-direction:column;gap:10px}
+.mark-logo img{width:220px;height:auto;display:block}
+.mark-logo h1{font-size:24px}
