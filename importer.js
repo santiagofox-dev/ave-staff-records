@@ -167,6 +167,20 @@ module.exports = function (app, { state, persist, UPLOAD_DIR, DATA_DIR }) {
     });
     res.status(ok ? 202 : 409).json(ok ? { ok: true } : { error: 'Ya hay una importación en curso.' });
   });
+  // one sheet's rows sent from the browser (for workbooks too big to download from Dropbox again);
+  // replaces that sheet in sheet.json so apply-auto can map it like the others
+  app.post('/api/import/sheet-rows', (req, res) => {
+    const { name, rows } = req.body || {};
+    if (!name || !Array.isArray(rows) || rows.length > 5000) return res.status(400).json({ error: 'Faltan las filas de la hoja.' });
+    const clean = rows.filter(r => r && Number.isInteger(r.r) && Array.isArray(r.v)).map(r => ({ r: r.r, v: r.v.slice(0, 80).map(c => (c == null ? null : typeof c === 'number' ? c : String(c).slice(0, 400))) }));
+    const sheets = fs.existsSync(SHEET) ? JSON.parse(fs.readFileSync(SHEET, 'utf8')) : [];
+    const i = sheets.findIndex(s => s.name.trim() === String(name).trim());
+    const sh = { name: String(name).trim(), rows: clean };
+    if (i >= 0) sheets[i] = sh; else sheets.push(sh);
+    fs.writeFileSync(SHEET, JSON.stringify(sheets));
+    res.json({ ok: true, sheet: sh.name, rows: clean.length });
+  });
+
   // first N rows of each sheet, so the column layout can be mapped
   app.get('/api/import/sheet-preview', (req, res) => {
     if (!fs.existsSync(SHEET)) return res.status(404).json({ error: 'Primero descarga la hoja.' });
