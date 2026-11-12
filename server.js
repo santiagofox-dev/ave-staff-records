@@ -220,6 +220,7 @@ app.put('/api/employees/:id', (req, res) => {
     extra: prev && prev.extra ? prev.extra : {},
     src: prev ? prev.src : undefined,
     trainings,
+    uniform: prev ? prev.uniform : undefined,
     docs: prev ? prev.docs : [],
     createdAt: prev ? prev.createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -227,6 +228,32 @@ app.put('/api/employees/:id', (req, res) => {
   state.employees[id] = emp;
   persist();
   res.json(publicEmp(emp));
+});
+
+/* Uniform per employee: shirt, pants, shoes — each '' (nothing yet), 'pedido' (ordered) or 'entregado' (given), with size and date */
+const UNI_ITEMS = ['camisa', 'pantalon', 'zapatos'], UNI_STATES = ['', 'pedido', 'entregado'];
+app.post('/api/employees/:id/uniform', (req, res) => {
+  const e = state.employees[req.params.id];
+  if (!e) return res.status(404).json({ error: 'No se encontró el empleado.' });
+  const { item, status, size } = req.body || {};
+  if (!UNI_ITEMS.includes(item)) return res.status(400).json({ error: 'Prenda no válida.' });
+  e.uniform = e.uniform || {};
+  const cur = e.uniform[item] || {};
+  const next = { ...cur };
+  if (status !== undefined) {
+    if (!UNI_STATES.includes(status)) return res.status(400).json({ error: 'Estado no válido.' });
+    next.status = status;
+    const today = new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10);
+    if (status === 'pedido') next.ordered = today;
+    if (status === 'entregado') { next.given = today; next.ordered = next.ordered || today; }
+    if (!status) { delete next.ordered; delete next.given; }
+    next.by = (req.user && (req.user.name || req.user.username)) || 'admin';
+  }
+  if (size !== undefined) next.size = S(size, 12);
+  e.uniform[item] = next;
+  e.updatedAt = new Date().toISOString();
+  persist();
+  res.json(publicEmp(e));
 });
 
 app.delete('/api/employees/:id', (req, res) => {

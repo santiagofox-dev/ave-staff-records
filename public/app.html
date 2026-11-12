@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Expedientes de Personal AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/static/styles.css?v=8">
+<link rel="stylesheet" href="/static/styles.css?v=9">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="/static/shell.css?v=3">
 </head>
@@ -53,6 +53,7 @@
             <button id="fAll" aria-pressed="true">Todos</button>
             <button id="fAttn" aria-pressed="false">Necesita atención</button>
             <button id="fBday" aria-pressed="false">🎂 Cumpleaños</button>
+            <button id="fUni" aria-pressed="false">👕 Falta uniforme</button>
           </div>
         </div>
       </div>
@@ -146,6 +147,12 @@
       </div>
     </form>
 
+    <section class="card" id="uniCard">
+      <h3>Uniforme</h3>
+      <div class="uni" id="uniBox"></div>
+      <div class="note">Toca el estado de cada prenda: <b>Pendiente</b> → <b>Pedido</b> → <b>Entregado</b>. Se guarda al momento con la fecha.</div>
+    </section>
+
     <section class="card" id="trainCard">
       <h3>Capacitaciones de seguridad</h3>
       <div class="list" id="trainList"></div>
@@ -198,7 +205,7 @@
 
 <div class="toast" id="toast" hidden></div>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/app.js?v=8"></script>
+<script src="/static/app.js?v=9"></script>
 <script src="/static/shell.js?v=2"></script>
 </body>
 </html>

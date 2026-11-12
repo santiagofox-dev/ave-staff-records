@@ -107,6 +107,7 @@ function renderRoster() {
   const q = $('#q').value.trim().toLowerCase();
   let list = employees.filter(e => (plantSel === '__bajas' ? isBaja(e) : !isBaja(e) && (!plantSel || (e.site || '') === plantSel)) && (!q || [e.name, e.number, e.position, e.site, e.curp].some(v => (v || '').toLowerCase().includes(q))));
   if (filter === 'attn') list = list.filter(e => ['bad', 'warn'].includes(eStatus(e).key));
+  if (filter === 'uni') list = list.filter(e => !uniDone(e));
   if (filter === 'bday') {
     // soonest birthday first; this week's highlighted at the top, then the rest of the year
     const withB = list.map(e => ({ e, b: nextBirthday(e) })).filter(x => x.b).sort((a, b) => a.b.days - b.b.days || (a.e.name || '').localeCompare(b.e.name || '', LOC));
@@ -114,7 +115,7 @@ function renderRoster() {
     if (!withB.length) { el.innerHTML = '<div class="empty">Nadie en esta vista tiene fecha de cumpleaños registrada.</div>'; return; }
     const week = withB.filter(x => x.b.days <= 7), month = withB.filter(x => x.b.days > 7 && x.b.days <= 30), later = withB.filter(x => x.b.days > 30);
     const sec = (title, arr, hot) => arr.length ? `<div class="group-head${hot ? ' hot' : ''}">${title}<span>${arr.length} empleado${arr.length === 1 ? '' : 's'}</span></div>` + arr.map(x => rowHTML(x.e, { hot, showSite: true })).join('') : '';
-    el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños ↑</span><span class="c-docs">Docs</span></div>` +
+    el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños ↑</span><span class="c-uni">Uniforme</span><span class="c-docs">Docs</span></div>` +
       (week.length ? '' : '<div class="group-head hot">🎂 Esta semana<span>Nadie cumple años en los próximos 7 días</span></div>') +
       sec('🎂 Esta semana', week, true) + sec('Este mes', month, false) + sec('Más adelante', later, false) +
       (noB ? `<div class="empty small">${noB} empleado${noB === 1 ? '' : 's'} sin fecha de cumpleaños registrada.</div>` : '');
@@ -123,11 +124,11 @@ function renderRoster() {
   const rank = { bad: 0, warn: 1, none: 2, ok: 3 };
   const byNum = (a, b) => (parseInt(a.number, 10) || 1e9) - (parseInt(b.number, 10) || 1e9) || (a.name || '').localeCompare(b.name || '', LOC);
   list.sort((a, b) => filter === 'attn' ? (rank[eStatus(a).key] - rank[eStatus(b).key]) : byNum(a, b));
-  if (!list.length) { el.innerHTML = `<div class="empty">${filter === 'attn' ? 'Nadie necesita atención por ahora.' : 'Ningún empleado coincide con la búsqueda.'}</div>`; return; }
+  if (!list.length) { el.innerHTML = `<div class="empty">${filter === 'attn' ? 'Nadie necesita atención por ahora.' : filter === 'uni' ? 'Todos tienen su uniforme completo entregado.' : 'Ningún empleado coincide con la búsqueda.'}</div>`; return; }
   const groups = new Map();
   for (const e of list) { const k = e.site || 'Sin planta'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
   const order = [...groups.keys()].sort((a, b) => plantRank(a) - plantRank(b) || a.localeCompare(b, LOC));
-  el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños</span><span class="c-docs">Docs</span></div>` +
+  el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños</span><span class="c-uni">Uniforme</span><span class="c-docs">Docs</span></div>` +
     order.map(k => `<div class="group-head">${esc(k)}<span>${groups.get(k).length} empleado${groups.get(k).length === 1 ? '' : 's'}</span></div>` + groups.get(k).map(rowHTML).join('')).join('');
 }
 const PLANT_ORDER = ['Auto Kabel Juárez', 'Juárez', 'Guadalajara', 'Monclova', 'Tijuana', 'Jabil Chihuahua', 'Wistron', 'Jabil Torres'];
@@ -149,6 +150,7 @@ function rowHTML(e, opt = {}) {
       <span class="c-site sub mono">${esc(e.number || '—')}</span>
       <span><span class="chip ${s.key}">${esc(s.label)}</span></span>
       <span class="c-bday">${b ? (b.days <= 30 ? `<span class="chip bday">${fmtShort(b.date)} · ${bdayLabel(b)}</span>` : `<span class="mono muted">${fmtShort(b.date)}</span>`) : '<span class="muted">—</span>'}</span>
+      <span class="c-uni">${uniChips(e)}</span>
       <span class="c-docs mono muted">${(e.docs || []).length}</span></button>`;
   }
 }
@@ -157,7 +159,42 @@ function rowHTML(e, opt = {}) {
 const P = ['name', 'number', 'position', 'site', 'curp', 'rfc', 'nss', 'contractType', 'address', 'status', 'bajaDate', 'birthday', 'hire', 'phone', 'emerg', 'notes'];
 const isBaja = e => e.status === 'baja';
 const active = () => employees.filter(e => !isBaja(e) && !/no es empleado/i.test(e.name));
-function setLocked(v) { $('#trainCard').classList.toggle('locked', v); $('#docCard').classList.toggle('locked', v); }
+function setLocked(v) { $('#uniCard').classList.toggle('locked', v); $('#trainCard').classList.toggle('locked', v); $('#docCard').classList.toggle('locked', v); }
+/* ---------- uniforme ---------- */
+const UNI = [['camisa', 'Camisa', '👕'], ['pantalon', 'Pantalón', '👖'], ['zapatos', 'Zapatos', '👞']];
+const UNI_LABEL = { '': 'Pendiente', pedido: 'Pedido', entregado: 'Entregado' };
+const uniOf = (e, k) => (e.uniform && e.uniform[k]) || {};
+const uniDone = e => UNI.every(([k]) => uniOf(e, k).status === 'entregado');
+const nextUni = s => (s === '' || !s ? 'pedido' : s === 'pedido' ? 'entregado' : '');
+async function setUni(id, item, body) {
+  try { put(await api('POST', `/api/employees/${id}/uniform`, { item, ...body })); if (openId === id) renderUni(); }
+  catch (e) { toast(e.message, true); }
+}
+function uniChips(e) {
+  return `<span class="unis">${UNI.map(([k, label, ic]) => { const u = uniOf(e, k), st = u.status || ''; return `<span class="uchip ${st || 'none'}" data-uni="${esc(e.id)}" data-item="${k}" role="button" tabindex="0" title="${label}: ${UNI_LABEL[st]}${u.size ? ' · talla ' + esc(u.size) : ''} — toca para cambiar">${ic}</span>`; }).join('')}</span>`;
+}
+function renderUni() {
+  const e = getEmp(openId), box = $('#uniBox');
+  if (!e) { box.innerHTML = ''; return; }
+  box.innerHTML = UNI.map(([k, label, ic]) => {
+    const u = uniOf(e, k), st = u.status || '';
+    const when = st === 'entregado' && u.given ? 'Entregado el ' + fmt(u.given) : st === 'pedido' && u.ordered ? 'Pedido el ' + fmt(u.ordered) : 'Sin pedir';
+    return `<div class="uitem ${st || 'none'}">
+      <div class="uhead"><span class="uic">${ic}</span><b>${label}</b></div>
+      <div class="useg" role="group" aria-label="${label}">${['', 'pedido', 'entregado'].map(s => `<button type="button" data-useg="${k}" data-st="${s}" aria-pressed="${s === st}">${UNI_LABEL[s]}</button>`).join('')}</div>
+      <label class="usize">Talla <input data-usize="${k}" value="${esc(u.size || '')}" maxlength="12" placeholder="${k === 'zapatos' ? '26.5' : 'M'}"></label>
+      <div class="uwhen">${when}${u.by && st ? ' · ' + esc(u.by) : ''}</div>
+    </div>`;
+  }).join('');
+}
+document.addEventListener('click', ev => {
+  const seg = ev.target.closest('[data-useg]');
+  if (seg) { setUni(openId, seg.dataset.useg, { status: seg.dataset.st }); return; }
+});
+document.addEventListener('change', ev => {
+  const sz = ev.target.closest('[data-usize]');
+  if (sz) setUni(openId, sz.dataset.usize, { size: sz.value.trim() });
+});
 function openFile(id) {
   const e = id ? getEmp(id) : null; isNew = !e;
   openId = e ? e.id : newId();
@@ -173,6 +210,7 @@ function openFile(id) {
   setLocked(isNew);
   $('#trainForm').reset(); $('#docForm').reset();
   renderFileLists();
+  renderUni();
   const d = $('#dlg'); if (!d.open) d.showModal();
   if (isNew) setTimeout(() => $('#p_name').focus(), 30);
 }
@@ -258,7 +296,13 @@ $('#pwForm').addEventListener('submit', async ev => {
 $('#outBtn') && $('#outBtn').addEventListener('click', async () => { try { await api('POST', '/api/logout'); } catch (e) {} location.href = '/login'; });
 
 /* ---------- conexiones ---------- */
-document.addEventListener('click', ev => { const b = ev.target.closest('[data-open]'); if (b) openFile(b.dataset.open); });
+document.addEventListener('click', ev => {
+  // quick uniform toggle from the list: cycles Pendiente → Pedido → Entregado without opening the file
+  const u = ev.target.closest('[data-uni]');
+  if (u) { ev.preventDefault(); ev.stopPropagation(); const e = getEmp(u.dataset.uni); if (e) setUni(e.id, u.dataset.item, { status: nextUni(uniOf(e, u.dataset.item).status) }); return; }
+  const b = ev.target.closest('[data-open]'); if (b) openFile(b.dataset.open);
+});
+document.addEventListener('keydown', ev => { const u = ev.target.closest && ev.target.closest('[data-uni]'); if (u && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); u.click(); } });
 $('#dClose').addEventListener('click', () => $('#dlg').close());
 $('#dlg').addEventListener('click', ev => { if (ev.target === ev.currentTarget) $('#dlg').close(); });
 $('#pwDlg').addEventListener('click', ev => { if (ev.target === ev.currentTarget) $('#pwDlg').close(); });
@@ -268,14 +312,15 @@ $('#q').addEventListener('input', renderRoster);
 $('#plant').addEventListener('change', () => { plantSel = $('#plant').value; try { localStorage.setItem('ave-plant', plantSel); } catch (e) {} renderRoster(); });
 function setFilter(f) {
   filter = f;
-  for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday']]) $(id).setAttribute('aria-pressed', String(v === f));
+  for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday'], ['#fUni', 'uni']]) $(id).setAttribute('aria-pressed', String(v === f));
   try { const u = new URL(location.href); if (f === 'bday') u.searchParams.set('vista', 'cumpleanos'); else u.searchParams.delete('vista'); history.replaceState(null, '', u); } catch (e) {}
   renderRoster();
 }
 $('#fAll').addEventListener('click', () => setFilter('all'));
 $('#fAttn').addEventListener('click', () => setFilter('attn'));
 $('#fBday').addEventListener('click', () => setFilter('bday'));
-if (new URLSearchParams(location.search).get('vista') === 'cumpleanos') { filter = 'bday'; for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday']]) $(id).setAttribute('aria-pressed', String(v === 'bday')); }
+$('#fUni').addEventListener('click', () => setFilter('uni'));
+if (new URLSearchParams(location.search).get('vista') === 'cumpleanos') { filter = 'bday'; for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday'], ['#fUni', 'uni']]) $(id).setAttribute('aria-pressed', String(v === 'bday')); }
 function syncReports() {
   $('#rWeekly').href = '/reports/weekly.pdf?days=' + win;
   $('#rWeeklyS').textContent = `Vencidas, por vencer en ${win} días y cumpleaños`;
