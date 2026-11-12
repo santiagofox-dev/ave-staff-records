@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="/static/styles.css?v=7">
-<link rel="stylesheet" href="/static/proveedor.css?v=1">
+<link rel="stylesheet" href="/static/proveedor.css?v=2">
 </head>
 <body class="pv">
 <header class="pv-top">
@@ -17,22 +17,44 @@
   <span>Portal de proveedores</span>
 </header>
 <main class="pv-main">
-  <section class="pv-hello" id="hello"><div class="pv-load">Cargando…</div></section>
+  <section class="pv-card" id="login" hidden>
+    <div><div class="eyebrow" id="lgFor">Portal de proveedores</div><h1 id="lgName">Entrar</h1></div>
+    <form id="lgForm" class="pv-form" novalidate>
+      <label>Usuario<input id="lgUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+      <label>Contraseña<input id="lgPw" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+      <div class="pv-err" id="lgErr" role="alert"></div>
+      <button class="btn primary pv-send" type="submit">Entrar</button>
+      <p class="pv-fine">¿Olvidaste tu contraseña? Pídele una nueva a Grupo AVE.</p>
+    </form>
+  </section>
+
+  <section class="pv-hello" id="hello" hidden></section>
 
   <form class="pv-card" id="form" hidden novalidate>
     <h2>Subir factura</h2>
+    <div class="pv-rule"><b>Importante:</b> cada factura debe ser <strong>solo para Jabil B1</strong> o <strong>solo para Jabil B3</strong>. Nunca facturen ambas plantas en la misma factura; si entregaron en las dos, hagan una factura para cada una.</div>
     <div class="pv-step">
       <div class="pv-n">1</div>
       <div class="pv-body">
+        <b>¿A qué planta va esta factura? <em>obligatorio</em></b>
+        <div class="pv-plants" role="radiogroup" aria-label="Planta">
+          <label class="pv-plant"><input type="radio" name="plant" value="B1"><span>Jabil <strong>B1</strong></span></label>
+          <label class="pv-plant"><input type="radio" name="plant" value="B3"><span>Jabil <strong>B3</strong></span></label>
+        </div>
+      </div>
+    </div>
+    <div class="pv-step">
+      <div class="pv-n">2</div>
+      <div class="pv-body">
         <b>Factura</b>
-        <p>El <strong>XML</strong> timbrado y, si lo tienes, el <strong>PDF</strong>. Puedes subir varias facturas a la vez.</p>
+        <p>El <strong>XML</strong> timbrado y, si lo tienes, el <strong>PDF</strong>. Puedes subir varias facturas a la vez si todas son de la misma planta.</p>
         <label class="pv-pick" for="fact"><span id="factTxt">Elegir XML / PDF</span></label>
         <input type="file" id="fact" name="factura" accept=".xml,.pdf,application/pdf,text/xml,application/xml" multiple>
         <ul class="pv-files" id="factList"></ul>
       </div>
     </div>
     <div class="pv-step">
-      <div class="pv-n">2</div>
+      <div class="pv-n">3</div>
       <div class="pv-body">
         <b>Foto del recibo de entrega <em>obligatoria</em></b>
         <p>La remisión o nota de entrega con la firma o sello de recibido de Grupo AVE. Que se lea completa.</p>
@@ -52,8 +74,18 @@
     <h2>Mis facturas</h2>
     <div id="list"></div>
   </section>
+
+  <section class="pv-card pv-acct" id="acct" hidden>
+    <h2>Mi cuenta</h2>
+    <form id="pwForm" class="pv-form" novalidate>
+      <label>Contraseña actual<input id="pwCur" type="password" autocomplete="current-password" autocapitalize="none"></label>
+      <label>Contraseña nueva (mínimo 8 caracteres)<input id="pwNew" type="password" autocomplete="new-password" autocapitalize="none"></label>
+      <div class="pv-err" id="pwErr" role="alert"></div>
+      <div class="pv-row"><button class="btn" type="submit">Cambiar contraseña</button><button class="btn quiet" type="button" id="logout">Salir</button></div>
+    </form>
+  </section>
 </main>
 <footer class="pv-foot">Grupo Industrial Fronterizo AVE 78 · Este enlace es personal; no lo compartas.</footer>
-<script src="/static/proveedor.js?v=1"></script>
+<script src="/static/proveedor.js?v=2"></script>
 </body>
 </html>

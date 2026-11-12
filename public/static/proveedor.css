@@ -42,3 +42,19 @@ body.pv{padding:0;background:var(--bg);min-height:100vh;display:flex;flex-direct
 .pv-st.revision{background:var(--warn-bg);color:var(--warn)} .pv-st.porpagar{background:var(--sunk);color:var(--fg)} .pv-st.pagada{background:var(--ok-bg);color:var(--ok)} .pv-st.parcial{background:var(--bday-bg);color:var(--bday)} .pv-st.rechazada{background:var(--bad-bg);color:var(--bad)}
 .pv-empty{color:var(--muted);font-size:14px}
 .pv-foot{text-align:center;color:var(--muted);font-size:12.5px;padding:16px}
+.pv-form{display:flex;flex-direction:column;gap:12px}
+.pv-form label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--muted)}
+.pv-form input{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;padding:12px;font-size:17px;font-weight:400}
+.pv-card h1{font-size:26px}
+.pv-rule{border-left:4px solid var(--accent);background:var(--sunk);border-radius:8px;padding:10px 12px;font-size:14.5px;line-height:1.4}
+.pv-plants{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
+.pv-plant{position:relative;cursor:pointer}
+.pv-plant input{position:absolute;opacity:0;pointer-events:none}
+.pv-plant span{display:flex;align-items:center;justify-content:center;gap:6px;min-height:60px;border:2px solid var(--line);border-radius:12px;font-size:18px}
+.pv-plant strong{font-family:var(--f-display);font-size:24px}
+.pv-plant input:checked + span{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--fg)}
+.pv-plant input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+.pv-row{display:flex;gap:8px;flex-wrap:wrap}
+.pv-who{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.pv-who button{border:0;background:none;color:var(--muted);text-decoration:underline;font-size:13px}
+.pv-test{display:inline-block;margin-top:8px;background:var(--warn-bg);color:var(--warn);font-weight:700;font-size:13px;padding:4px 10px;border-radius:999px}

@@ -152,7 +152,7 @@ app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true 
 
 /* Supplier portal: public, the private link is the key */
 const portal = (() => { let x = null; try { x = require('./extract'); } catch (e) { x = null; }
-  return require('./acc/portal')(app, { books: () => books, pdf: x && { text: x.pdfText, layout: x.pdfLayoutText }, publicUrl: process.env.PUBLIC_URL || (PROD ? 'https://gpoave.com' : '') }); })();
+  return require('./acc/portal')(app, { books: () => books, pdf: x && { text: x.pdfText, layout: x.pdfLayoutText }, publicUrl: process.env.PUBLIC_URL || (PROD ? 'https://gpoave.com' : ''), secret: SESSION_SECRET }); })();
 
 /* everything below needs a login */
 app.use(requireAuth);

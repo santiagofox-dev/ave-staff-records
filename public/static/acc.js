@@ -209,7 +209,7 @@
     const cols = [
       ...(canEdit() ? [{ t: allBox, c: 1, f: r => r.state === 'draft' ? inp({ type: 'checkbox', 'data-sel': r.id, 'aria-label': 'Seleccionar', onchange: e => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); updateSel(); } }) : '' }] : []),
       { t: 'Número', cls: 'nowrap', f: r => h('span', {}, r.number || h('span', { class: 'muted' }, 'Borrador'), r.type.endsWith('refund') ? h('div', { class: 'muted small' }, 'Nota de crédito') : null) },
-      { t: 'Folio', cls: 'mono nowrap', f: r => `${r.serie || ''}${r.folio || ''}` },
+      { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.plant ? [' ', badge('parcial', r.plant)] : null, r.test ? [' ', badge('draft', 'Prueba')] : null) },
       { t: side === 'ap' ? 'Proveedor' : 'Cliente', cls: 'w', f: r => r.partner || h('span', { class: 'warnmark' }, 'Sin contacto') },
       { t: 'Fecha', cls: 'nowrap', f: r => fd(r.date) },
       { t: 'Vence', cls: 'nowrap', f: r => fd(r.due) },
@@ -420,7 +420,7 @@
       xml && editable ? h('div', { class: 'msg info' }, 'Los importes vienen del XML timbrado y no se pueden cambiar. Solo elige la cuenta contable de cada concepto.') : null,
       !canEdit() ? h('div', { class: 'msg info' }, 'Tu usuario es de solo consulta.') : null);
 
-    const status = d.id ? h('span', {}, badge(d.state, STATE[d.state]), ' ', data.row.pay ? badge(data.row.pay, PAY[data.row.pay]) : null) : badge('draft', 'Nuevo');
+    const status = d.id ? h('span', {}, badge(d.state, STATE[d.state]), ' ', data.row.pay ? badge(data.row.pay, PAY[data.row.pay]) : null, d.plant ? [' ', badge('parcial', 'Jabil ' + d.plant)] : null, d.test ? [' ', badge('draft', 'Prueba')] : null) : badge('draft', 'Nuevo');
     const head = phead(h('span', {}, d.number || (d.id ? 'Borrador' : title)), h('span', {}, d.number || d.id ? title + ' · ' : '', status), actions);
 
     /* side info */
@@ -529,7 +529,7 @@
   /* ================= SUPPLIER PORTAL ================= */
   route(/^portal$/, async () => {
     const data = await get('/api/acc/portal');
-    const msg = v => `Hola, ${v.name}. Este es tu enlace para enviar a Grupo AVE tus facturas (XML y PDF) junto con la foto del recibo de entrega firmado o sellado: ${v.link}  Tus días de crédito cuentan desde el día que la subes. El enlace es personal, no lo compartas.`;
+    const msg = v => `Hola, ${v.name}. Este es tu acceso al portal de proveedores de Grupo AVE para enviarnos tus facturas (XML y PDF) con la foto del recibo de entrega firmado o sellado: ${v.link}  Usuario: ${v.username || '(pídelo a Grupo AVE)'}. Importante: cada factura debe ser solo para Jabil B1 o solo para Jabil B3, nunca ambas en la misma factura. Tus días de crédito cuentan desde el día que la subes. Puedes cambiar tu contraseña dentro del portal.`;
     const copy = async (text, ok) => { try { await navigator.clipboard.writeText(text); toast(ok); } catch (e) { await dialog('Copia el texto', h('textarea', { class: 'inp', rows: 5, readOnly: true }, text)); } };
     const add = canEdit() ? (() => {
       const others = META.partners.filter(p => p.supplier && !data.vendors.some(v => v.id === p.id));
@@ -544,16 +544,25 @@
       table([
         { t: 'Proveedor', cls: 'w', f: v => h('span', {}, h('b', {}, v.name), v.test ? [' ', badge('draft', 'Prueba')] : null, h('div', { class: 'muted small' }, v.rfc || 'RFC pendiente: se toma de su primera factura')) },
         { t: 'Crédito', f: v => v.terms ? `${v.terms} días` : 'Contado' },
+        { t: 'Usuario', f: v => v.username ? h('span', {}, h('span', { class: 'mono' }, v.username), h('div', { class: 'muted small' }, v.lastLogin ? 'Entró ' + fts(v.lastLogin) : 'Aún no entra', v.changedByVendor ? ' · cambió su contraseña' : '')) : h('span', { class: 'muted' }, 'Sin cuenta') },
         { t: 'Subidas', n: 1, f: v => String(v.uploads) },
         { t: 'Por revisar', n: 1, f: v => v.pending ? h('a', { href: '#/docs/ap?' + qs({ origin: 'portal', state: 'draft', partner: v.id }) }, String(v.pending)) : '0' },
         { t: 'Última', f: v => v.last ? fts(v.last) : '—' },
-        { t: 'Estado', f: v => v.enabled ? badge('posted', 'Activo') : badge('cancelled', 'Desactivado') },
+        { t: 'Estado', f: v => v.enabled ? badge('posted', 'Activo') : badge('cancelled', 'Pausado') },
         { t: 'Enlace', f: v => h('span', { class: 'acts' },
           h('button', { class: 'btn sm', type: 'button', onclick: () => copy(v.link, 'Enlace copiado.') }, 'Copiar enlace'),
           h('button', { class: 'btn sm', type: 'button', onclick: () => copy(msg(v), 'Mensaje copiado: pégalo en WhatsApp o correo.') }, 'Copiar mensaje'),
           h('a', { class: 'btn sm quiet', href: v.link, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir'),
+          canEdit() ? h('button', { class: 'btn sm', type: 'button', onclick: async () => {
+            if (v.hasPassword && !(await confirmDlg(`¿Nueva contraseña para ${v.name}?`, 'La contraseña actual deja de funcionar y su sesión se cierra. La nueva se muestra una sola vez.', 'Generar contraseña'))) return;
+            const r = await act(() => post(`/api/acc/portal/${v.id}/credentials`, {}));
+            if (!r) return;
+            await dialog('Acceso del proveedor', h('div', { class: 'kv' }, h('dt', {}, 'Proveedor'), h('dd', {}, r.name), h('dt', {}, 'Portal'), h('dd', {}, v.login), h('dt', {}, 'Su enlace'), h('dd', {}, v.link), h('dt', {}, 'Usuario'), h('dd', { class: 'mono' }, r.username), h('dt', {}, 'Contraseña'), h('dd', { class: 'mono' }, r.password)),
+              [{ label: 'Copiar todo', run: async () => { await copy(`Portal de proveedores Grupo AVE\n${v.link}\nUsuario: ${r.username}\nContraseña: ${r.password}\nCada factura debe ser solo para Jabil B1 o solo para Jabil B3, nunca ambas en la misma factura.`, 'Copiado.'); return false; } }, { label: 'Listo', primary: true }]);
+            render();
+          } }, v.hasPassword ? 'Nueva contraseña' : 'Crear acceso') : null,
           canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (await confirmDlg('¿Cambiar el enlace?', 'El enlace anterior deja de funcionar. Úsalo si el proveedor lo compartió por error.', 'Cambiar enlace', true)) { if (await act(() => post(`/api/acc/portal/${v.id}/regenerate`), 'Enlace nuevo creado.')) render(); } } }, 'Nuevo enlace') : null,
-          canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (await act(() => post(`/api/acc/portal/${v.id}/${v.enabled ? 'disable' : 'enable'}`, { region: v.region }), v.enabled ? 'Enlace desactivado.' : 'Enlace activado.')) render(); } }, v.enabled ? 'Desactivar' : 'Activar') : null) },
+          canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (await act(() => post(`/api/acc/portal/${v.id}/${v.enabled ? 'disable' : 'enable'}`, { region: v.region }), v.enabled ? 'Acceso pausado.' : 'Acceso reactivado.')) render(); } }, v.enabled ? 'Pausar' : 'Reactivar') : null) },
       ], data.vendors, { empty: 'Aún no hay proveedores en el portal.' }));
   });
 

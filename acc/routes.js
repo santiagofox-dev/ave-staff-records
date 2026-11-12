@@ -37,7 +37,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
+    return { plant: d.plant || '', test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
@@ -125,6 +125,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     return { id: p.id };
   }));
   app.post('/api/acc/portal/:id/disable', W(req => { portal.disable(req.params.id, who(req)); return { ok: true }; }));
+  app.post('/api/acc/portal/:id/credentials', W(req => portal.credentials(req.params.id, (req.body || {}).username, who(req))));
   app.post('/api/acc/portal/:id/regenerate', W(req => { portal.regenerate(req.params.id, who(req)); return { ok: true }; }));
 
   /* ---------- payments ---------- */

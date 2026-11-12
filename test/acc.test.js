@@ -191,3 +191,16 @@ test('test supplier accepts any invoice as a separate PRUEBA copy and learns no 
   assert.equal(r.created.length, 1); assert.equal(b.doc(r.created[0].id).partnerId, t.id);
   assert.ok(b.doc(r.created[0].id).uuid.startsWith('PRUEBA-')); assert.equal(t.rfc, '');
 });
+
+test('portal: two-word passwords and vendor usernames', () => {
+  const portal = require('../acc/portal');
+  const fake = { get() {}, post() {} };
+  const b = freshBooks();
+  const api = portal(fake, { books: () => b, pdf: null, publicUrl: 'https://x', secret: 'testsecret1234567890' });
+  const p = b.upsertPartner({ name: 'Distribuidora Arca Continental', supplier: true, terms: 30 }, 'u');
+  api.enable({}, p.id, 'Chihuahua', 'u');
+  const c = api.credentials(p.id, 'arca.continental', 'u');
+  assert.equal(c.username, 'arca.continental'); assert.match(c.password, /^[a-z]+ [a-z]+$/);
+  const q = b.upsertPartner({ name: 'Otro', supplier: true }, 'u'); api.enable({}, q.id, 'Chihuahua', 'u');
+  assert.throws(() => api.credentials(q.id, 'arca.continental', 'u'), /ya lo tiene/);
+});
