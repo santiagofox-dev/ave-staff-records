@@ -107,6 +107,19 @@ function renderRoster() {
   const q = $('#q').value.trim().toLowerCase();
   let list = employees.filter(e => (plantSel === '__bajas' ? isBaja(e) : !isBaja(e) && (!plantSel || (e.site || '') === plantSel)) && (!q || [e.name, e.number, e.position, e.site, e.curp].some(v => (v || '').toLowerCase().includes(q))));
   if (filter === 'attn') list = list.filter(e => ['bad', 'warn'].includes(eStatus(e).key));
+  if (filter === 'bday') {
+    // soonest birthday first; this week's highlighted at the top, then the rest of the year
+    const withB = list.map(e => ({ e, b: nextBirthday(e) })).filter(x => x.b).sort((a, b) => a.b.days - b.b.days || (a.e.name || '').localeCompare(b.e.name || '', LOC));
+    const noB = list.length - withB.length;
+    if (!withB.length) { el.innerHTML = '<div class="empty">Nadie en esta vista tiene fecha de cumpleaños registrada.</div>'; return; }
+    const week = withB.filter(x => x.b.days <= 7), month = withB.filter(x => x.b.days > 7 && x.b.days <= 30), later = withB.filter(x => x.b.days > 30);
+    const sec = (title, arr, hot) => arr.length ? `<div class="group-head${hot ? ' hot' : ''}">${title}<span>${arr.length} empleado${arr.length === 1 ? '' : 's'}</span></div>` + arr.map(x => rowHTML(x.e, { hot, showSite: true })).join('') : '';
+    el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños ↑</span><span class="c-docs">Docs</span></div>` +
+      (week.length ? '' : '<div class="group-head hot">🎂 Esta semana<span>Nadie cumple años en los próximos 7 días</span></div>') +
+      sec('🎂 Esta semana', week, true) + sec('Este mes', month, false) + sec('Más adelante', later, false) +
+      (noB ? `<div class="empty small">${noB} empleado${noB === 1 ? '' : 's'} sin fecha de cumpleaños registrada.</div>` : '');
+    return;
+  }
   const rank = { bad: 0, warn: 1, none: 2, ok: 3 };
   const byNum = (a, b) => (parseInt(a.number, 10) || 1e9) - (parseInt(b.number, 10) || 1e9) || (a.name || '').localeCompare(b.name || '', LOC);
   list.sort((a, b) => filter === 'attn' ? (rank[eStatus(a).key] - rank[eStatus(b).key]) : byNum(a, b));
@@ -128,11 +141,11 @@ function renderPlants() {
     + (nb ? `<option value="__bajas"${plantSel === '__bajas' ? ' selected' : ''}>Bajas (${nb})</option>` : '');
   $('#plantNames').innerHTML = [...new Set([...PLANT_ORDER, ...names.filter(n => n !== 'Sin planta')])].map(n => `<option value="${esc(n)}">`).join('');
 }
-function rowHTML(e) {
+function rowHTML(e, opt = {}) {
   {
       const s = eStatus(e), b = nextBirthday(e);
-      return `<button class="row" data-open="${esc(e.id)}">
-      <span><span class="name">${esc(e.name)}</span><br><span class="sub">${esc(e.position || '—')}</span></span>
+      return `<button class="row${opt.hot ? ' hot' : ''}" data-open="${esc(e.id)}">
+      <span><span class="name">${opt.hot ? '🎂 ' : ''}${esc(e.name)}</span><br><span class="sub">${esc([e.position || '—', opt.showSite ? e.site : ''].filter(Boolean).join(' · '))}</span></span>
       <span class="c-site sub mono">${esc(e.number || '—')}</span>
       <span><span class="chip ${s.key}">${esc(s.label)}</span></span>
       <span class="c-bday">${b ? (b.days <= 30 ? `<span class="chip bday">${fmtShort(b.date)} · ${bdayLabel(b)}</span>` : `<span class="mono muted">${fmtShort(b.date)}</span>`) : '<span class="muted">—</span>'}</span>
@@ -253,8 +266,16 @@ $('#dlg').addEventListener('close', () => { openId = null; isNew = false; });
 $('#addBtn').addEventListener('click', () => openFile(null));
 $('#q').addEventListener('input', renderRoster);
 $('#plant').addEventListener('change', () => { plantSel = $('#plant').value; try { localStorage.setItem('ave-plant', plantSel); } catch (e) {} renderRoster(); });
-$('#fAll').addEventListener('click', () => { filter = 'all'; $('#fAll').setAttribute('aria-pressed', 'true'); $('#fAttn').setAttribute('aria-pressed', 'false'); renderRoster(); });
-$('#fAttn').addEventListener('click', () => { filter = 'attn'; $('#fAttn').setAttribute('aria-pressed', 'true'); $('#fAll').setAttribute('aria-pressed', 'false'); renderRoster(); });
+function setFilter(f) {
+  filter = f;
+  for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday']]) $(id).setAttribute('aria-pressed', String(v === f));
+  try { const u = new URL(location.href); if (f === 'bday') u.searchParams.set('vista', 'cumpleanos'); else u.searchParams.delete('vista'); history.replaceState(null, '', u); } catch (e) {}
+  renderRoster();
+}
+$('#fAll').addEventListener('click', () => setFilter('all'));
+$('#fAttn').addEventListener('click', () => setFilter('attn'));
+$('#fBday').addEventListener('click', () => setFilter('bday'));
+if (new URLSearchParams(location.search).get('vista') === 'cumpleanos') { filter = 'bday'; for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday']]) $(id).setAttribute('aria-pressed', String(v === 'bday')); }
 function syncReports() {
   $('#rWeekly').href = '/reports/weekly.pdf?days=' + win;
   $('#rWeeklyS').textContent = `Vencidas, por vencer en ${win} días y cumpleaños`;

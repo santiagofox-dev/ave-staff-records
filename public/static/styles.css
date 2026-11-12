@@ -172,3 +172,9 @@ dialog::backdrop{background:var(--scrim)}
 .mark-logo{display:flex;flex-direction:column;gap:10px}
 .mark-logo img{width:220px;height:auto;display:block}
 .mark-logo h1{font-size:24px}
+
+/* birthday view: this week's birthdays stand out */
+.group-head.hot{background:var(--bday-bg);color:var(--bday)}
+.row.hot{background:color-mix(in srgb,var(--bday) 10%,transparent);box-shadow:inset 4px 0 0 var(--bday)}
+.row.hot .name{color:var(--bday)}
+.empty.small{font-size:13px;padding:12px}

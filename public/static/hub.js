@@ -54,7 +54,7 @@
     const list = [...t.alerts.map(a => h('div', { class: 'item2' }, h('span', {}, `${a.name} · ${a.what}`), h('em', { class: a.days < 0 ? 'bad' : 'warn' }, dayTxt(a.days)))),
       ...t.nextBirthdays.slice(0, Math.max(1, 4 - t.alerts.length)).map(b => h('div', { class: 'item2' }, h('span', {}, `🎂 ${b.name}`), h('em', { class: 'bday' }, b.days === 0 ? 'hoy' : dayTxt(b.days))))];
     return card('exp', 't-exp', 'Expedientes', 'Personal, capacitaciones y cumpleaños.', '/expedientes', [
-      h('div', { class: 'mets' }, met(num(t.total), 'Empleados activos', 'tc'), met(num(t.expired), 'Capacitaciones vencidas', t.expired ? 'bad' : 'good'), met(num(t.expiring), 'Vencen en 30 días', t.expiring ? 'warn' : ''), met(num(t.birthdays), 'Cumpleaños en 30 días')),
+      h('div', { class: 'mets' }, met(num(t.total), 'Empleados activos', 'tc'), met(num(t.expired), 'Capacitaciones vencidas', t.expired ? 'bad' : 'good'), met(num(t.expiring), 'Vencen en 30 días', t.expiring ? 'warn' : ''), met(num(t.birthdays), 'Cumpleaños en 30 días', '', '/expedientes?vista=cumpleanos')),
       h('div', { class: 'viz' }, h('div', { class: 'viz-h' }, h('span', {}, 'Plantilla por planta'), h('span', {}, `${t.plants.length} plantas`)), sb, keys),
       h('div', { class: 'viz' }, h('div', { class: 'viz-h' }, 'Próximos avisos'), list.length ? h('div', { class: 'items' }, list) : h('div', { class: 'none' }, 'Sin avisos en los próximos 30 días.')),
     ]);
@@ -89,8 +89,8 @@
     if (T.expedientes) {
       if (T.expedientes.expired) A('/expedientes', `${T.expedientes.expired} capacitaciones vencidas`, 'bad');
       if (T.expedientes.expiring) A('/expedientes', `${T.expedientes.expiring} vencen este mes`);
-      const b = T.expedientes.nextBirthdays.filter(x => x.days <= 7);
-      if (b.length) A('/expedientes', b.length === 1 ? `Cumpleaños: ${b[0].name.split(' ')[0]} ${b[0].days === 0 ? 'hoy' : dayTxt(b[0].days)}` : `${b.length} cumpleaños esta semana`, 'ok');
+      const b = T.expedientes.nextBirthdays.filter(x => x.days <= 7), nb = T.expedientes.birthdaysWeek ?? b.length;
+      if (nb) A('/expedientes?vista=cumpleanos', nb === 1 && b[0] ? `Cumpleaños: ${b[0].name.split(' ')[0]} ${b[0].days === 0 ? 'hoy' : dayTxt(b[0].days)}` : `${nb} cumpleaños esta semana`, 'ok');
     }
     if (T.comidas && T.comidas.last && T.comidas.last.pending) A('/comidas', `${T.comidas.last.pending} lecturas de comidas por revisar`);
     if (T.contabilidad) {

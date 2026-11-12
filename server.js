@@ -345,7 +345,7 @@ app.get('/api/hub', (req, res, next) => {
       }
       alerts.sort((a, b) => a.days - b.days); bdays.sort((a, b) => a.days - b.days);
       const plants = {}; for (const e of emps) { const k = e.site || 'Sin planta'; plants[k] = (plants[k] || 0) + 1; }
-      out.tools.expedientes = { total: emps.length, expired, expiring, birthdays: bdays.length, plants: Object.entries(plants).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n })), alerts: alerts.slice(0, 4), nextBirthdays: bdays.slice(0, 3) };
+      out.tools.expedientes = { total: emps.length, expired, expiring, birthdays: bdays.length, birthdaysWeek: bdays.filter(x => x.days <= 7).length, plants: Object.entries(plants).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n })), alerts: alerts.slice(0, 4), nextBirthdays: bdays.slice(0, 3) };
     }
     if (admin) {
       let hist = []; try { hist = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'meals', 'history.json'), 'utf8')); } catch (e) { hist = []; }
