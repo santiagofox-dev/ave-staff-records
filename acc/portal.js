@@ -15,7 +15,7 @@ const IMG_TYPES = /^image\/(jpeg|png|webp|heic|heif)$/i;
 const PLANTS = { B1: 'Jabil B1', B3: 'Jabil B3' };
 const WORDS = ['naranja', 'tortuga', 'ventana', 'canela', 'tomate', 'girasol', 'paloma', 'cereza', 'limonada', 'castillo', 'pradera', 'tortilla', 'mariposa', 'durazno', 'galleta', 'pelota', 'cometa', 'abanico', 'aguacate', 'ballena', 'bosque', 'caballo', 'camino', 'campana', 'cascada', 'cebolla', 'conejo', 'delfin', 'espiga', 'estrella', 'frijol', 'granero', 'guitarra', 'jardin', 'lechuga', 'lluvia', 'maceta', 'manzana', 'molino', 'nopal', 'oliva', 'panal', 'pepino', 'perico', 'pimienta', 'plátano', 'puente', 'rancho', 'sandia', 'semilla', 'sombrero', 'tambor', 'trigo', 'tulipan', 'verano', 'violeta', 'zanahoria', 'avena', 'brisa', 'cactus', 'colibri', 'coyote', 'elote', 'fogata', 'gaviota', 'higuera', 'laguna', 'mezquite', 'nogal', 'papaya', 'piñata'].map(w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ñ/g, 'n'));
 const pick = () => WORDS[crypto.randomInt(WORDS.length)];
-const twoWords = () => { let a = pick(), b = pick(); while (b === a) b = pick(); return `${a} ${b}`; };
+const twoWords = () => { let a = pick(), b = pick(); while (b === a) b = pick(); return `${a}.${b}`; };
 const hashPw = (pw, salt) => crypto.scryptSync(String(pw), salt, 64).toString('hex');
 
 module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret }) {
@@ -164,7 +164,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
     disable(partnerId, user) { const b = getBooks(), p = b.partner(partnerId); if (p && p.portal) { p.portal.enabled = false; b.log(user, 'pausó el acceso al portal', 'contacto', p.id, p.name); } return p; },
     regenerate(partnerId, user) { const b = getBooks(), p = b.partner(partnerId); if (p && p.portal) { p.portal.token = newToken(); b.log(user, 'cambió el enlace del portal', 'contacto', p.id, p.name); } return p; },
     /* create the account if missing (username from the request or the name) and set a fresh two-word password; returns it once */
-    credentials(partnerId, wantUser, user) {
+    credentials(partnerId, wantUser, user, wantPw) {
       const b = getBooks(), p = b.partner(partnerId);
       if (!p || !p.portal) { const e = new Error('Primero agrega el proveedor al portal.'); e.status = 400; throw e; }
       let username = p.portal.account && p.portal.account.username;
@@ -175,7 +175,8 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
         if (taken) { const e = new Error(`El usuario ${u} ya lo tiene otro proveedor.`); e.status = 400; throw e; }
         username = u;
       }
-      const password = twoWords();
+      const password = wantPw ? String(wantPw).trim().toLowerCase() : twoWords();
+      if (password.length < 8) { const e = new Error('La contraseña debe tener al menos 8 caracteres.'); e.status = 400; throw e; }
       p.portal.account = { ...(p.portal.account || {}), username };
       delete p.portal.account.changedByVendor;
       setPassword(p, password);

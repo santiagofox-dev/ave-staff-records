@@ -125,7 +125,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     return { id: p.id };
   }));
   app.post('/api/acc/portal/:id/disable', W(req => { portal.disable(req.params.id, who(req)); return { ok: true }; }));
-  app.post('/api/acc/portal/:id/credentials', W(req => portal.credentials(req.params.id, (req.body || {}).username, who(req))));
+  app.post('/api/acc/portal/:id/credentials', W(req => portal.credentials(req.params.id, (req.body || {}).username, who(req), (req.body || {}).password)));
   app.post('/api/acc/portal/:id/regenerate', W(req => { portal.regenerate(req.params.id, who(req)); return { ok: true }; }));
 
   /* ---------- payments ---------- */

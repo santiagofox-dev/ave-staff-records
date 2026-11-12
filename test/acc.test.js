@@ -200,7 +200,7 @@ test('portal: two-word passwords and vendor usernames', () => {
   const p = b.upsertPartner({ name: 'Distribuidora Arca Continental', supplier: true, terms: 30 }, 'u');
   api.enable({}, p.id, 'Chihuahua', 'u');
   const c = api.credentials(p.id, 'arca.continental', 'u');
-  assert.equal(c.username, 'arca.continental'); assert.match(c.password, /^[a-z]+ [a-z]+$/);
+  assert.equal(c.username, 'arca.continental'); assert.match(c.password, /^[a-z]+\.[a-z]+$/);
   const q = b.upsertPartner({ name: 'Otro', supplier: true }, 'u'); api.enable({}, q.id, 'Chihuahua', 'u');
   assert.throws(() => api.credentials(q.id, 'arca.continental', 'u'), /ya lo tiene/);
 });
