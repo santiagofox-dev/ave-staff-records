@@ -10,8 +10,9 @@
     const who = bar.querySelector('.who'), av = bar.querySelector('.avatar');
     if (who) { who.querySelector('b').textContent = me.name || me.username; who.querySelector('span').textContent = me.roleLabel || ''; }
     if (av) av.textContent = String(me.name || me.username || '?').trim().charAt(0).toUpperCase();
-    if (me.role !== 'admin') bar.querySelectorAll('.appbar-nav a[data-admin]').forEach(a => a.remove());
-  }).catch(() => {});
+    bar.querySelectorAll('[data-roles]').forEach(a => { if (!a.dataset.roles.split(' ').includes(me.role)) a.remove(); });
+    bar.classList.add('ready');
+  }).catch(() => { bar.classList.add('ready'); });
   const out = bar.querySelector('.appbar-out');
   if (out) out.addEventListener('click', async () => { try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {} location.href = '/login'; });
 })();

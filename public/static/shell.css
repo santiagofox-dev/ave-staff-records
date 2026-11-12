@@ -27,3 +27,9 @@ body.has-bar > .wrap{padding:24px max(16px,env(safe-area-inset-right,0px)) 48px 
 }
 @media print{.appbar{display:none}}
 @media (max-width:760px){.appbar-user .avatar{display:none}.appbar-logo img{height:22px}.appbar{gap:6px}.appbar-nav{gap:2px}}
+
+.appbar-users{display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1px solid var(--line);color:var(--muted);text-decoration:none;font-weight:600;font-size:13px}
+.appbar-users svg{width:16px;height:16px}
+.appbar-users:hover,body[data-tool="usuarios"] .appbar-users{color:var(--fg);border-color:var(--fg)}
+@media (max-width:760px){.appbar-users span{display:none}.appbar-users{padding:6px 8px}}
+.appbar:not(.ready) [data-roles]{visibility:hidden}

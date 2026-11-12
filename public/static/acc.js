@@ -714,7 +714,7 @@
   }
   async function usersPanel() {
     const u = await get('/api/acc/users');
-    const roleTxt = { admin: 'Todo: expedientes, comidas y contabilidad', contador: 'Contabilidad: capturar, publicar, pagar, cerrar', consulta: 'Contabilidad: solo ver y descargar reportes' };
+    const roleTxt = { admin: 'Todo: expedientes, comidas, contabilidad y usuarios', contador: 'Contabilidad: capturar, publicar, pagar, cerrar', consulta: 'Contabilidad: solo ver y descargar reportes', personal: 'Solo expedientes del personal' };
     return h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'Usuarios'), h('button', { class: 'btn sm primary', type: 'button', onclick: async () => { if (await userDialog(null, u.roles)) render(); } }, '+ Nuevo usuario')),
       table([{ t: 'Nombre', k: 'name', cls: 'w' }, { t: 'Usuario', k: 'username', cls: 'mono' }, { t: 'Rol', f: x => h('span', {}, x.roleLabel, h('div', { class: 'muted small' }, roleTxt[x.role])) }, { t: 'Último acceso', f: x => x.lastLogin ? fts(x.lastLogin) : 'Nunca' }, { t: 'Estado', f: x => x.active ? badge('posted', 'Activo') : badge('cancelled', 'Desactivado') }],
         [{ id: null, name: u.owner + ' (dueño)', username: u.owner, roleLabel: 'Administrador', role: 'admin', active: true, lastLogin: null, owner: true }, ...u.users],
@@ -745,7 +745,7 @@
   (async () => {
     try { await refreshMeta(); }
     catch (e) { clear(main); add(main, [h('div', { class: 'msg bad' }, e.message)]); return; }
-    add(clear($('#me')), [h('b', {}, ME.name), { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta' }[ME.role]]);
+    add(clear($('#me')), [h('b', {}, ME.name), { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta', personal: 'Personal' }[ME.role]]);
     render();
   })();
 })();

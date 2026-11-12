@@ -1,11 +1,12 @@
 'use strict';
 /* Extra logins with roles. The original admin (ADMIN_USER) keeps full access and lives in db.json.
-   Roles: admin = everything; contador = Contabilidad (edit); consulta = Contabilidad (read only). */
+   Roles: admin = everything; contador = Contabilidad (edit); consulta = Contabilidad (read only);
+   personal = Expedientes del personal only. */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const ROLES = { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta' };
+const ROLES = { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta', personal: 'Personal' };
 const hash = (pw, salt) => crypto.scryptSync(pw, salt, 64).toString('hex');
 
 module.exports = function users(DATA_DIR) {
