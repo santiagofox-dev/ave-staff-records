@@ -15,7 +15,7 @@
     consulta: { label: 'Consulta', desc: 'Contabilidad de solo lectura: ve y descarga reportes.', tools: ['Contabilidad'] },
   };
   const ALL = ['Expedientes', 'Comidas', 'Contabilidad', 'Usuarios'];
-  const api = async (m, u, b) => { const r = await fetch(u, { method: m, headers: b ? { 'Content-Type': 'application/json' } : {}, body: b ? JSON.stringify(b) : undefined }); if (r.status === 401) location.href = '/login'; const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Error ' + r.status); return j; };
+  const api = async (m, u, b) => { const r = await (window.aveFetch || fetch)(u, { method: m, headers: b ? { 'Content-Type': 'application/json' } : {}, body: b ? JSON.stringify(b) : undefined }); if (r.status === 401) location.href = '/login'; const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Error ' + r.status); return j; };
   let tt; const toast = m => { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => { t.hidden = true; }, 3000); };
   const when = s => s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : 'Nunca';
 

@@ -7,7 +7,7 @@ let run = null, readConf = null, genArmed = false, rows = [], curPhoto = 1, rot 
 async function api(method, url, body) {
   const opt = { method, headers: {} };
   if (body instanceof FormData) opt.body = body; else if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-  let r; try { r = await fetch(url, opt); } catch (e) { throw new Error('Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.'); }
+  let r; try { r = await (window.aveFetch || fetch)(url, opt); } catch (e) { throw new Error('Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.'); }
   if (r.status === 401) { location.href = '/login'; throw new Error('Tu sesión terminó.'); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || 'Algo salió mal. Inténtalo de nuevo.');

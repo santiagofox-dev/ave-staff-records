@@ -104,7 +104,7 @@
 
   const hr = +new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/Ciudad_Juarez' });
   $('#today').textContent = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Ciudad_Juarez' }).replace(/^./, c => c.toUpperCase());
-  fetch('/api/hub').then(r => { if (r.status === 401) { location.href = '/login'; throw new Error('Sesión expirada.'); } if (!r.ok) throw new Error('No se pudo cargar el resumen.'); return r.json(); }).then(d => {
+  (window.aveFetch || fetch)('/api/hub').then(r => { if (r.status === 401) { location.href = '/login'; throw new Error('Sesión expirada.'); } if (!r.ok) throw new Error('No se pudo cargar el resumen.'); return r.json(); }).then(d => {
     const first = String(d.user.name || '').split(/\s+/)[0];
     $('#greet').textContent = `${hr < 12 ? 'Buenos días' : hr < 19 ? 'Buenas tardes' : 'Buenas noches'}${first ? ', ' + first.charAt(0).toUpperCase() + first.slice(1) : ''}`;
     const tools = $('#tools'); tools.replaceChildren();

@@ -7,7 +7,7 @@
   const NF = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
   const fd = s => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : '');
   function h(tag, attrs, ...kids) { const el = document.createElement(tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) { if (k === 'class') el.className = v; else el.setAttribute(k, v); } for (const c of kids.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : String(c)); return el; }
-  const api = async (m, u, body) => { const r = await fetch(u, { method: m, cache: 'no-store', headers: body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined }); const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || 'Error'); e.status = r.status; throw e; } return j; };
+  const api = async (m, u, body) => { const r = await (window.aveFetch || fetch)(u, { method: m, cache: 'no-store', headers: body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined }); const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || 'Error'); e.status = r.status; throw e; } return j; };
   const show = (...ids) => { for (const id of ['login', 'hello', 'form', 'mine', 'acct', 'done']) $('#' + id).hidden = !ids.includes(id); };
 
   async function showLogin(msg) {

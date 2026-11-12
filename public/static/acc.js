@@ -43,7 +43,7 @@
     const opt = { method, headers: {} };
     if (body instanceof FormData) opt.body = body;
     else if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-    const r = await fetch(url, opt);
+    const r = await (window.aveFetch || fetch)(url, opt);
     if (r.status === 401) { location.href = '/login'; throw new Error('Sesión expirada.'); }
     let j = null; try { j = await r.json(); } catch (e) { j = null; }
     if (!r.ok) throw new Error((j && j.error) || `Error ${r.status}`);

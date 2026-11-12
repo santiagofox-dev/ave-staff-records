@@ -15,7 +15,7 @@ async function api(method, url, body) {
   if (body instanceof FormData) opt.body = body;
   else if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   let r;
-  try { r = await fetch(url, opt); } catch (e) { throw new ApiError('Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.'); }
+  try { r = await (window.aveFetch || fetch)(url, opt); } catch (e) { throw new ApiError('Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.'); }
   if (r.status === 401) { location.href = '/login'; throw new ApiError('Tu sesión terminó. Vuelve a iniciar sesión.'); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new ApiError(j.error || 'Algo salió mal. Inténtalo de nuevo.');
