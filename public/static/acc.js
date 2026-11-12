@@ -216,7 +216,7 @@
       { t: 'Total', n: 1, f: r => (r.type.endsWith('refund') ? -1 : 1) * r.totalMxn },
       { t: 'Saldo', n: 1, f: r => r.state === 'posted' ? r.residual : '' },
       { t: 'Estado', f: r => h('span', {}, badge(r.state, STATE[r.state]), ' ', r.pay ? badge(r.pay, PAY[r.pay]) : null) },
-      { t: '', cls: 'nowrap', f: r => h('span', { class: 'nowrap' }, r.portal ? h('span', { title: 'Subida por el proveedor desde el portal' }, '📥 ') : null, r.warnings ? h('span', { class: 'warnmark', title: 'Tiene avisos por revisar' }, '⚠ ') : null, r.files ? h('span', { class: 'muted', title: 'Archivos adjuntos' }, `📎${r.files}`) : null) },
+      { t: '', cls: 'nowrap', f: r => h('span', { class: 'nowrap' }, r.portal ? [badge('parcial', 'Portal'), ' '] : null, r.warnings ? [h('span', { class: 'badge draft', title: 'Tiene avisos por revisar' }, 'Revisar'), ' '] : null, r.files ? h('span', { class: 'muted small', title: 'Archivos adjuntos' }, `${r.files} arch.`) : null) },
     ];
     const chips = (key, opts) => h('div', { class: 'chips' }, opts.map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(st[key] === v), onclick: () => { st[key] = v; render(); } }, t)));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar número, contacto, RFC, UUID o importe', value: st.q });
@@ -232,7 +232,7 @@
       drop,
       h('div', { class: 'filters' }, search, fromI, h('span', { class: 'muted' }, 'a'), toI,
         st.partner ? h('button', { class: 'chipb', type: 'button', 'aria-pressed': 'true', onclick: () => { st.partner = ''; go('docs/' + side); } }, 'Contacto filtrado ✕') : null),
-      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', '📥 Del portal']]) : null),
+      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal']]) : null),
       selBar,
       table(cols, data.rows, { tall: 1, onRow: r => go('doc/' + r.id), rowClass: r => r.state === 'cancelled' ? 'cx' : '', empty: st.q || st.state || st.pay ? 'Ningún documento coincide con el filtro.' : 'Aún no hay documentos. Importa los XML del SAT para empezar.' }),
       h('div', { class: 'foot' }, h('span', {}, `${data.count} documentos${data.count > data.rows.length ? ` (se muestran ${data.rows.length})` : ''}`), h('span', {}, `Total ${money(data.sum.total)} · Saldo abierto ${money(data.sum.residual)}`)),
@@ -539,7 +539,7 @@
     return h('div', { class: 'stack' },
       phead('Portal de proveedores', 'Cada proveedor tiene su propio enlace para subir facturas con la foto del recibo de entrega. Por ahora: proveedores de Chihuahua.',
         data.pending ? [h('a', { class: 'btn primary', href: '#/docs/ap?origin=portal&state=draft' }, `${data.pending} facturas nuevas por revisar`)] : []),
-      h('div', { class: 'msg info' }, 'Lo que suben llega a Facturas de proveedores como borrador (📥), con la foto del recibo adjunta y la fecha de recepción de ese día; el vencimiento cuenta los días de crédito desde ahí. Revisa y publica como cualquier factura.'),
+      h('div', { class: 'msg info' }, 'Lo que suben llega a Facturas de proveedores como borrador (marcadas «Portal»), con la foto del recibo adjunta y la fecha de recepción de ese día; el vencimiento cuenta los días de crédito desde ahí. Revisa y publica como cualquier factura.'),
       add,
       table([
         { t: 'Proveedor', cls: 'w', f: v => h('span', {}, h('b', {}, v.name), v.test ? [' ', badge('draft', 'Prueba')] : null, h('div', { class: 'muted small' }, v.rfc || 'RFC pendiente: se toma de su primera factura')) },

@@ -46,7 +46,7 @@
   const plant = () => (document.querySelector('input[name=plant]:checked') || {}).value || '';
   function refresh() {
     const fs = [...fact.files], rs = [...rec.files];
-    $('#factList').replaceChildren(...fs.map(f => h('li', {}, '📄 ' + f.name)));
+    $('#factList').replaceChildren(...fs.map(f => h('li', {}, f.name)));
     $('#factTxt').textContent = fs.length ? `${fs.length} archivo${fs.length > 1 ? 's' : ''} · cambiar` : 'Elegir XML / PDF';
     $('#factTxt').parentElement.classList.toggle('ok', !!fs.length);
     $('#recTxt').textContent = rs.length ? `${rs.length} foto${rs.length > 1 ? 's' : ''} · cambiar` : 'Tomar o elegir foto';
@@ -78,7 +78,7 @@
         ok ? h('ul', {}, j.created.map(c => h('li', {}, `Factura ${c.folio || ''} por ${NF.format(c.total)} · vence ${fd(c.due)}`))) : null,
         j.duplicates ? h('div', {}, `${j.duplicates} ya la habías subido antes.`) : null,
         j.pdfOnly ? h('div', {}, 'Recibimos el PDF sin XML: por favor súbenos también el XML.') : null,
-        ...j.errors.map(x => h('div', {}, '⚠ ' + x)), ...j.skipped.map(x => h('div', {}, x)));
+        ...j.errors.map(x => h('div', {}, 'Aviso: ' + x)), ...j.skipped.map(x => h('div', {}, x)));
       done.hidden = false;
       if (ok) { fact.value = ''; rec.value = ''; document.querySelectorAll('input[name=plant]').forEach(r => { r.checked = false; }); refresh(); }
       await load(); done.hidden = false; done.scrollIntoView({ behavior: 'smooth', block: 'center' });

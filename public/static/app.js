@@ -116,8 +116,8 @@ function renderRoster() {
     const week = withB.filter(x => x.b.days <= 7), month = withB.filter(x => x.b.days > 7 && x.b.days <= 30), later = withB.filter(x => x.b.days > 30);
     const sec = (title, arr, hot) => arr.length ? `<div class="group-head${hot ? ' hot' : ''}">${title}<span>${arr.length} empleado${arr.length === 1 ? '' : 's'}</span></div>` + arr.map(x => rowHTML(x.e, { hot, showSite: true })).join('') : '';
     el.innerHTML = `<div class="row head"><span>Empleado</span><span class="c-site">No.</span><span>Capacitaciones</span><span class="c-bday">Cumpleaños ↑</span><span class="c-uni">Uniforme</span><span class="c-docs">Docs</span></div>` +
-      (week.length ? '' : '<div class="group-head hot">🎂 Esta semana<span>Nadie cumple años en los próximos 7 días</span></div>') +
-      sec('🎂 Esta semana', week, true) + sec('Este mes', month, false) + sec('Más adelante', later, false) +
+      (week.length ? '' : '<div class="group-head hot">Esta semana<span>Nadie cumple años en los próximos 7 días</span></div>') +
+      sec('Esta semana', week, true) + sec('Este mes', month, false) + sec('Más adelante', later, false) +
       (noB ? `<div class="empty small">${noB} empleado${noB === 1 ? '' : 's'} sin fecha de cumpleaños registrada.</div>` : '');
     return;
   }
@@ -146,7 +146,7 @@ function rowHTML(e, opt = {}) {
   {
       const s = eStatus(e), b = nextBirthday(e);
       return `<button class="row${opt.hot ? ' hot' : ''}" data-open="${esc(e.id)}">
-      <span><span class="name">${opt.hot ? '🎂 ' : ''}${esc(e.name)}</span><br><span class="sub">${esc([e.position || '—', opt.showSite ? e.site : ''].filter(Boolean).join(' · '))}</span></span>
+      <span><span class="name">${esc(e.name)}</span><br><span class="sub">${esc([e.position || '—', opt.showSite ? e.site : ''].filter(Boolean).join(' · '))}</span></span>
       <span class="c-site sub mono">${esc(e.number || '—')}</span>
       <span><span class="chip ${s.key}">${esc(s.label)}</span></span>
       <span class="c-bday">${b ? (b.days <= 30 ? `<span class="chip bday">${fmtShort(b.date)} · ${bdayLabel(b)}</span>` : `<span class="mono muted">${fmtShort(b.date)}</span>`) : '<span class="muted">—</span>'}</span>
@@ -161,29 +161,31 @@ const isBaja = e => e.status === 'baja';
 const active = () => employees.filter(e => !isBaja(e) && !/no es empleado/i.test(e.name));
 function setLocked(v) { $('#uniCard').classList.toggle('locked', v); $('#trainCard').classList.toggle('locked', v); $('#docCard').classList.toggle('locked', v); }
 /* ---------- uniforme ---------- */
-const UNI = [['camisa', 'Camisa', '👕'], ['pantalon', 'Pantalón', '👖'], ['zapatos', 'Zapatos', '👞']];
+const UNI = [['camisa', 'Camisa'], ['pantalon', 'Pantalón'], ['zapatos', 'Zapatos']];
 const UNI_LABEL = { '': 'Pendiente', pedido: 'Pedido', entregado: 'Entregado' };
 const uniOf = (e, k) => (e.uniform && e.uniform[k]) || {};
 const uniDone = e => UNI.every(([k]) => uniOf(e, k).status === 'entregado');
-const nextUni = s => (s === '' || !s ? 'pedido' : s === 'pedido' ? 'entregado' : '');
+// list buttons: first tap marks it ordered, then it toggles between ordered and given
+const nextUni = s => (s === 'pedido' ? 'entregado' : 'pedido');
 async function setUni(id, item, body) {
   try { put(await api('POST', `/api/employees/${id}/uniform`, { item, ...body })); if (openId === id) renderUni(); }
   catch (e) { toast(e.message, true); }
 }
 function uniChips(e) {
-  return `<span class="unis">${UNI.map(([k, label, ic]) => { const u = uniOf(e, k), st = u.status || ''; return `<span class="uchip ${st || 'none'}" data-uni="${esc(e.id)}" data-item="${k}" role="button" tabindex="0" title="${label}: ${UNI_LABEL[st]}${u.size ? ' · talla ' + esc(u.size) : ''} — toca para cambiar">${ic}</span>`; }).join('')}</span>`;
+  return `<span class="unis">${UNI.map(([k, label]) => { const u = uniOf(e, k), st = u.status || ''; const d = st === 'entregado' ? u.given : st === 'pedido' ? u.ordered : ''; return `<span class="uchip ${st || 'none'}" data-uni="${esc(e.id)}" data-item="${k}" role="button" tabindex="0" title="${label}: ${UNI_LABEL[st]}${d ? ' el ' + fmt(d) : ''}${u.size ? ' · talla ' + esc(u.size) : ''}. Toca para cambiar entre pedido y entregado."><b>${label}</b><i>${st ? UNI_LABEL[st] : '—'}</i></span>`; }).join('')}</span>`;
 }
 function renderUni() {
   const e = getEmp(openId), box = $('#uniBox');
   if (!e) { box.innerHTML = ''; return; }
-  box.innerHTML = UNI.map(([k, label, ic]) => {
+  box.innerHTML = UNI.map(([k, label]) => {
     const u = uniOf(e, k), st = u.status || '';
-    const when = st === 'entregado' && u.given ? 'Entregado el ' + fmt(u.given) : st === 'pedido' && u.ordered ? 'Pedido el ' + fmt(u.ordered) : 'Sin pedir';
     return `<div class="uitem ${st || 'none'}">
-      <div class="uhead"><span class="uic">${ic}</span><b>${label}</b></div>
+      <div class="uhead"><b>${label}</b><span class="ust">${UNI_LABEL[st]}</span></div>
       <div class="useg" role="group" aria-label="${label}">${['', 'pedido', 'entregado'].map(s => `<button type="button" data-useg="${k}" data-st="${s}" aria-pressed="${s === st}">${UNI_LABEL[s]}</button>`).join('')}</div>
+      <label class="usize">Pedido <input type="date" data-udate="${k}" data-field="ordered" value="${esc(u.ordered || '')}"></label>
+      <label class="usize">Entregado <input type="date" data-udate="${k}" data-field="given" value="${esc(u.given || '')}"></label>
       <label class="usize">Talla <input data-usize="${k}" value="${esc(u.size || '')}" maxlength="12" placeholder="${k === 'zapatos' ? '26.5' : 'M'}"></label>
-      <div class="uwhen">${when}${u.by && st ? ' · ' + esc(u.by) : ''}</div>
+      <div class="uwhen">${u.by && st ? 'Último cambio: ' + esc(u.by) : ''}</div>
     </div>`;
   }).join('');
 }
@@ -194,6 +196,8 @@ document.addEventListener('click', ev => {
 document.addEventListener('change', ev => {
   const sz = ev.target.closest('[data-usize]');
   if (sz) setUni(openId, sz.dataset.usize, { size: sz.value.trim() });
+  const dt = ev.target.closest('[data-udate]');
+  if (dt) setUni(openId, dt.dataset.udate, { [dt.dataset.field]: dt.value });
 });
 function openFile(id) {
   const e = id ? getEmp(id) : null; isNew = !e;

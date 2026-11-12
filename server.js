@@ -235,7 +235,7 @@ const UNI_ITEMS = ['camisa', 'pantalon', 'zapatos'], UNI_STATES = ['', 'pedido',
 app.post('/api/employees/:id/uniform', (req, res) => {
   const e = state.employees[req.params.id];
   if (!e) return res.status(404).json({ error: 'No se encontró el empleado.' });
-  const { item, status, size } = req.body || {};
+  const { item, status, size, ordered, given } = req.body || {};
   if (!UNI_ITEMS.includes(item)) return res.status(400).json({ error: 'Prenda no válida.' });
   e.uniform = e.uniform || {};
   const cur = e.uniform[item] || {};
@@ -250,6 +250,10 @@ app.post('/api/employees/:id/uniform', (req, res) => {
     next.by = (req.user && (req.user.name || req.user.username)) || 'admin';
   }
   if (size !== undefined) next.size = S(size, 12);
+  // dates typed by the user: an ordered date marks it ordered, a given date marks it given
+  if (ordered !== undefined) { next.ordered = D(ordered) || undefined; if (next.ordered && !next.status) next.status = 'pedido'; if (!next.ordered && next.status === 'pedido') next.status = ''; next.by = (req.user && (req.user.name || req.user.username)) || 'admin'; }
+  if (given !== undefined) { next.given = D(given) || undefined; if (next.given) next.status = 'entregado'; else if (next.status === 'entregado') next.status = next.ordered ? 'pedido' : ''; next.by = (req.user && (req.user.name || req.user.username)) || 'admin'; }
+  for (const k of ['ordered', 'given']) if (!next[k]) delete next[k];
   e.uniform[item] = next;
   e.updatedAt = new Date().toISOString();
   persist();

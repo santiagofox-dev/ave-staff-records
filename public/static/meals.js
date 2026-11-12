@@ -126,7 +126,7 @@ function renderGrid() {
       <td class="src">${r.photo ? 'F' + r.photo : '+'}${r.row != null ? ' #' + esc(r.row) : ''}</td>
       <td><input class="nm" data-k="${r.key}" value="${esc(r.nameAsWritten)}" aria-label="Nombre como aparece en la hoja"></td>
       <td>${selectHTML(r)}${r.matchKind === 'fuzzy' && r.id === r.origId ? `<div class="note">aprox. ${r.matchScore}%</div>` : ''}</td>
-      <td class="idc mono">${esc(r.id || 'SIN ID')}${r.id && unusual.has(r.id) ? ' ⚠' : ''}</td>
+      <td class="idc mono">${esc(r.id || 'SIN ID')}${r.id && unusual.has(r.id) ? ' (revisar)' : ''}</td>
       ${days.map(d => `<td class="d${(r.uncertain.includes(d) || r.disputed.includes(d)) ? (r.reviewed.days.includes(d) ? ' rv' : ' unc') : ''}"><input type="checkbox" data-k="${r.key}" data-d="${esc(d)}" ${r.marks[d] ? 'checked' : ''} aria-label="${esc(d)}"></td>`).join('')}
       <td class="note">${esc(r.note || '')}</td>
       <td><button class="x" data-del="${r.key}" title="Quitar renglón" aria-label="Quitar renglón">×</button></td></tr>`).join('') + '</tbody>';

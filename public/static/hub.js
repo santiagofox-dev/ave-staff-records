@@ -52,7 +52,7 @@
     const sb = h('div', { class: 'stackbar' }, t.plants.map((p, i) => { const e = h('i', { title: `${p.name}: ${p.n}` }); e.style.width = p.n / total * 100 + '%'; e.style.background = PAL[i % PAL.length]; return e; }));
     const keys = h('div', { class: 'keys' }, t.plants.slice(0, 6).map((p, i) => { const sw = h('i'); sw.style.background = PAL[i % PAL.length]; return h('span', {}, sw, `${p.name} ${p.n}`); }));
     const list = [...t.alerts.map(a => h('div', { class: 'item2' }, h('span', {}, `${a.name} · ${a.what}`), h('em', { class: a.days < 0 ? 'bad' : 'warn' }, dayTxt(a.days)))),
-      ...t.nextBirthdays.slice(0, Math.max(1, 4 - t.alerts.length)).map(b => h('div', { class: 'item2' }, h('span', {}, `🎂 ${b.name}`), h('em', { class: 'bday' }, b.days === 0 ? 'hoy' : dayTxt(b.days))))];
+      ...t.nextBirthdays.slice(0, Math.max(1, 4 - t.alerts.length)).map(b => h('div', { class: 'item2' }, h('span', {}, `Cumpleaños: ${b.name}`), h('em', { class: 'bday' }, b.days === 0 ? 'hoy' : dayTxt(b.days))))];
     return card('exp', 't-exp', 'Expedientes', 'Personal, capacitaciones y cumpleaños.', '/expedientes', [
       h('div', { class: 'mets' }, met(num(t.total), 'Empleados activos', 'tc'), met(num(t.expired), 'Capacitaciones vencidas', t.expired ? 'bad' : 'good'), met(num(t.expiring), 'Vencen en 30 días', t.expiring ? 'warn' : ''), met(num(t.birthdays), 'Cumpleaños en 30 días', '', '/expedientes?vista=cumpleanos')),
       h('div', { class: 'viz' }, h('div', { class: 'viz-h' }, h('span', {}, 'Plantilla por planta'), h('span', {}, `${t.plants.length} plantas`)), sb, keys),
