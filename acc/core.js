@@ -154,7 +154,7 @@ class Books {
     if (!String(data.name || '').trim()) throw httpErr(400, 'Falta el nombre del contacto.');
     if (data.account && !this.account(data.account)) throw httpErr(400, 'La cuenta contable por defecto no existe.');
     const fields = { rfc, name: String(data.name).trim(), supplier: !!data.supplier, customer: !!data.customer, terms: Math.max(0, Math.min(365, parseInt(data.terms, 10) || 0)), account: data.account || null, email: data.email || '', phone: data.phone || '', regimen: data.regimen || '', cp: data.cp || '', notes: data.notes || '' };
-    if (p) { Object.assign(p, fields); this.log(user, 'editó', 'contacto', p.id, p.name); }
+    if (p) { const termsChanged = p.terms !== fields.terms; Object.assign(p, fields); this.log(user, 'editó', 'contacto', p.id, p.name); if (termsChanged) this.recomputeDue(p.id, user); }
     else { p = { id: uid(), created: new Date().toISOString(), ...fields }; this.db.partners.push(p); this.log(user, 'creó', 'contacto', p.id, p.name); }
     return p;
   }
@@ -202,15 +202,46 @@ class Books {
   defaultDue(d) {
     const p = d.partnerId && this.partner(d.partnerId);
     if (d.metodoPago === 'PUE') return d.date;
-    return addDays(d.date, p ? (p.terms || 0) : 30);
+    // credit days run from the day we received the invoice (defaults to its date)
+    return addDays(d.received || d.date, p ? (p.terms || 0) : 30);
+  }
+  setDates(id, { received, due }, user) {
+    const d = this.doc(id);
+    if (!d) throw httpErr(404, 'No se encontró el documento.');
+    if (d.state === 'cancelled') throw httpErr(400, 'El documento está cancelado.');
+    if (received !== undefined) { if (received && !isDate(received)) throw httpErr(400, 'Fecha de recepción no válida.'); d.received = received || null; }
+    if (due) { if (!isDate(due)) throw httpErr(400, 'Fecha de vencimiento no válida.'); d.due = due; }
+    else if (received !== undefined) d.due = this.defaultDue(d);
+    this.log(user, 'cambió fechas', 'documento', d.id, `${d.number || 'borrador'}: recibida ${d.received || d.date}, vence ${d.due}`);
+    return d;
+  }
+  /* after a supplier's credit days change, move the due date of its open invoices */
+  recomputeDue(partnerId, user) {
+    let n = 0;
+    for (const d of this.db.docs) {
+      if (d.partnerId !== partnerId || d.state === 'cancelled' || d.metodoPago === 'PUE') continue;
+      if (d.state === 'posted' && this.residual(d) <= 0.009) continue;
+      const due = this.defaultDue(d); if (due !== d.due) { d.due = due; n++; }
+    }
+    if (n) this.log(user, 'recalculó vencimientos', 'contacto', partnerId, `${n} facturas`);
+    return n;
+  }
+  /* a contact created by hand with no RFC (e.g. from a supplier list) is claimed by the first invoice whose issuer name matches */
+  claimByName(rfc, name) {
+    const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\b(s\.?\s?a\.?|de|c\.?v\.?|s\.?\s?de\s?r\.?l\.?|sapi|sas|la|el|los|las|y)\b/g, ' ').replace(/[^a-z0-9ñ ]/g, ' ').split(/\s+/).filter(Boolean);
+    const want = norm(name); if (!want.length) return null;
+    const p = this.db.partners.find(x => !x.rfc && (() => { const t = norm(x.name); return t.length && t.every(w => want.includes(w)); })());
+    if (p && rfc) p.rfc = String(rfc).toUpperCase();
+    return p || null;
   }
 
   updateDoc(id, data, user) {
     const d = this.doc(id);
     if (!d) throw httpErr(404, 'No se encontró el documento.');
     if (d.state !== 'draft') throw httpErr(400, 'Solo se pueden editar documentos en borrador. Pásalo a borrador primero.');
-    const allowed = ['partnerId', 'date', 'due', 'ref', 'notes', 'currency', 'rate', 'metodoPago', 'formaPago', 'serie', 'folio'];
+    const allowed = ['partnerId', 'date', 'due', 'received', 'ref', 'notes', 'currency', 'rate', 'metodoPago', 'formaPago', 'serie', 'folio'];
     for (const k of allowed) if (k in data) d[k] = data[k];
+    if ('received' in data && !data.due) d.due = this.defaultDue(d);
     if (Array.isArray(data.lines)) {
       if (fixedAmounts(d)) {
         // XML amounts are fixed by the CFDI; only the account (and description note) can change

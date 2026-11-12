@@ -156,3 +156,17 @@ test('printed CFDI: issuer name glued to its RFC, IEPS left off the printout, PA
   const ieps = c.lines.map(l => (l.taxes.find(t => t.tax === 'IEPS') || {}).amount || 0);
   assert.deepEqual(ieps, [14.04, 0]);
 });
+
+test('credit days run from the received date; changing terms moves open invoices; name-only contacts get claimed', () => {
+  const b = freshBooks();
+  const p = b.upsertPartner({ name: 'Grupo Calibeb', supplier: true, terms: 30 }, 'u');
+  assert.equal(b.claimByName('GCA010101AB1', 'GRUPO CALIBEB, S.A. DE C.V.').id, p.id);
+  assert.equal(b.partner(p.id).rfc, 'GCA010101AB1');
+  const d = b.newDoc('in_invoice', { partnerId: p.id, date: '2026-11-09', metodoPago: 'PPD', lines: [{ description: 'x', qty: 1, price: 100, account: '501.01.01', taxCodes: [] }] }, 'u');
+  assert.equal(d.due, '2026-12-09');
+  b.postDoc(d.id, 'u');
+  b.setDates(d.id, { received: '2026-11-12' }, 'u');
+  assert.equal(b.doc(d.id).due, '2026-12-12');
+  b.upsertPartner({ ...b.partner(p.id), terms: 0 }, 'u');
+  assert.equal(b.doc(d.id).due, '2026-11-12');
+});

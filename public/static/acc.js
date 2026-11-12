@@ -319,11 +319,19 @@
     /* header fields */
     const pSel = partnerSelect(d.partnerId, kind, { disabled: !editable, onchange: e => { d.partnerId = e.target.value; } });
     const newP = editable ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { const p = await partnerDialog(null, kind); if (p) { await refreshMeta(); d.partnerId = p.id; const ns = partnerSelect(d.partnerId, kind, { onchange: e => { d.partnerId = e.target.value; } }); pSel.replaceWith(ns); } } }, '+ Nuevo contacto') : null;
+    // due dates stay editable after posting: they don't change the accounting
+    const datesEditable = canEdit() && d.state === 'posted';
+    const dateIn = k => inp({ type: 'date', value: (k === 'received' ? d.received || d.date : d[k]) || '', onchange: async e => {
+      const body = k === 'received' ? { received: e.target.value } : { due: e.target.value };
+      const r = await act(() => post(`/api/acc/docs/${d.id}/dates`, body), k === 'received' ? 'Fecha de recepción guardada; vencimiento recalculado.' : 'Vencimiento guardado.');
+      if (r) render();
+    } });
     const f = (k, type, attrs) => inp({ type: type || 'text', value: d[k] ?? '', disabled: !editable || (xml && ['date', 'serie', 'folio', 'currency', 'rate'].includes(k)), onchange: e => { d[k] = type === 'number' ? +e.target.value : e.target.value; }, ...(attrs || {}) });
     const form = h('div', { class: 'form' },
       field(side === 'ap' ? 'Proveedor' : 'Cliente', h('div', { class: 'acts' }, pSel, newP), 'span2'),
       field('Fecha', f('date', 'date')),
-      field('Vencimiento', f('due', 'date')),
+      field('Recibida', datesEditable ? dateIn('received') : f('received', 'date')),
+      field('Vencimiento', datesEditable ? dateIn('due') : f('due', 'date')),
       field('Serie', f('serie')), field('Folio', f('folio')),
       field('Moneda', f('currency', 'text', { maxlength: 3 })), field('Tipo de cambio', f('rate', 'number', { step: '0.0001', min: '0' })),
       field('Referencia', f('ref'), 'span2'),
@@ -605,7 +613,7 @@
   /* ================= REPORTS ================= */
   const REPORTS = [
     ['pnl', 'Estado de resultados'], ['balance', 'Balance general'], ['trial', 'Balanza'], ['ledger', 'Libro mayor'], ['journal', 'Libro diario'],
-    ['aging', 'Antigüedad de saldos'], ['statement', 'Estado de cuenta'], ['tax', 'IVA y DIOT'], ['analysis', 'Análisis de facturas'], ['cashflow', 'Bancos y caja'],
+    ['schedule', 'Calendario de pagos'], ['aging', 'Antigüedad de saldos'], ['statement', 'Estado de cuenta'], ['tax', 'IVA y DIOT'], ['analysis', 'Análisis de facturas'], ['cashflow', 'Bancos y caja'],
   ];
   const defaults = name => ({ pnl: { from: firstOfYear(), to: today() }, trial: { from: firstOfMonth(), to: today() }, journal: { from: firstOfMonth(), to: today() }, ledger: { from: firstOfYear(), to: today() }, balance: { at: today() }, aging: { side: 'ap', at: today() }, statement: { from: firstOfYear(), to: today() }, tax: { month: today().slice(0, 7) }, analysis: { from: firstOfYear(), to: today(), side: 'ap', by: 'partner' }, cashflow: { from: firstOfMonth(), to: today() } }[name] || {});
   route(/^reportes\/([a-z]+)$/, async (m, q) => {
@@ -677,6 +685,11 @@
       table([{ t: 'Proveedor', k: 'partner', cls: 'w' }, { t: 'RFC', k: 'rfc', cls: 'mono' }, { t: 'Base 16%', k: 'base16', n: 1 }, { t: 'Base 8%', k: 'base8', n: 1 }, { t: 'Base 0%', k: 'base0', n: 1 }, { t: 'Exento', k: 'exento', n: 1 }, { t: 'IVA pagado', k: 'iva', n: 1 }, { t: 'IVA retenido', k: 'ivaRet', n: 1 }, { t: 'Pagado', k: 'paid', n: 1 }], r.diot, { tall: 1, empty: 'No hubo pagos a proveedores este mes.' })),
     analysis: r => table([{ t: { partner: 'Contacto', month: 'Mes', account: 'Cuenta' }[r.by], f: x => r.by === 'month' ? monthName(x.label) : x.label, cls: 'w' }, { t: 'Documentos', n: 1, tk: 'count', f: x => String(x.count) }, { t: 'Subtotal', k: 'subtotal', n: 1 }, { t: r.by === 'account' ? '' : 'Total con impuestos', n: 1, tk: 'total', f: x => r.by === 'account' ? '' : x.total }],
       r.rows, { tall: 1, empty: 'Sin documentos publicados en el periodo.', total: { label: 'Total', count: String(r.totals.count), subtotal: r.totals.subtotal, total: r.by === 'account' ? '' : r.totals.total }, onRow: x => { if (r.by === 'partner') go(`docs/${r.side}`, { partner: x.key, state: '' }); else if (r.by === 'account') toLedger(x.key); } }),
+    schedule: r => h('div', { class: 'stack' },
+      h('div', { class: 'kpis' }, r.weeks.slice(0, 4).map(w => h('div', { class: 'kpi' }, h('span', {}, w.week === 'vencido' ? 'Ya vencido' : `Semana del ${fd(w.week)}`), h('b', { class: w.week === 'vencido' ? 'diff' : '' }, money(w.total)), h('small', {}, `${w.count} facturas`)))),
+      table([{ t: 'Vence', f: x => h('span', { class: x.due < r.at ? 'diff' : '' }, fd(x.due)), cls: 'nowrap' }, { t: 'Proveedor', k: 'partner', cls: 'w' }, { t: 'Número', k: 'number', cls: 'nowrap' }, { t: 'Folio', k: 'folio', cls: 'mono' }, { t: 'Recibida', f: x => fd(x.received), cls: 'nowrap' }, { t: 'Crédito', f: x => x.pue ? 'Contado (PUE)' : x.terms ? `${x.terms} días` : 'Contado' }, { t: 'Saldo', k: 'amount', n: 1 }],
+        r.rows, { tall: 1, onRow: x => go('doc/' + x.id), empty: 'No hay facturas de proveedores por pagar.', total: { partner: 'Total por pagar', amount: r.total } }),
+      h('div', { class: 'muted small' }, 'El vencimiento cuenta los días de crédito del proveedor desde que recibimos la factura. Cambia la fecha de recepción en la factura si llegó después.')),
     cashflow: r => table([{ t: 'Cuenta', k: 'bank', cls: 'w' }, { t: 'Cuenta contable', k: 'account', cls: 'mono' }, { t: 'Saldo inicial', k: 'open', n: 1 }, { t: 'Entradas', k: 'inflow', n: 1 }, { t: 'Salidas', k: 'outflow', n: 1 }, { t: 'Saldo final', k: 'close', n: 1 }], r.rows, { onRow: x => toLedger(x.account), total: { bank: 'Total', ...r.totals } }),
   };
 

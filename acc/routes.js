@@ -64,6 +64,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
     return books.updateDoc(d.id, { lines: b.lines || [] }, who(req));
   }));
   app.put('/api/acc/docs/:id', W(req => books.updateDoc(req.params.id, req.body || {}, who(req))));
+  app.post('/api/acc/docs/:id/dates', W(req => books.setDates(req.params.id, req.body || {}, who(req))));
   app.post('/api/acc/docs/:id/post', W(req => books.postDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/:id/draft', W(req => books.draftDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/:id/cancel', W(req => books.cancelDoc(req.params.id, who(req))));
@@ -190,6 +191,19 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
       case 'tax': return books.taxReport(/^\d{4}-\d{2}$/.test(q.month || '') ? q.month : today().slice(0, 7));
       case 'analysis': return books.analysis(from, to, q.side === 'ar' ? 'ar' : 'ap', ['month', 'account'].includes(q.by) ? q.by : 'partner');
       case 'cashflow': return books.cashFlow(from, to);
+      case 'schedule': {
+        // open supplier invoices by due date: what to pay and when
+        const rows = books.db.docs.filter(d => d.state === 'posted' && TYPES[d.type].side === 'ap' && TYPES[d.type].sign > 0 && books.residual(d) > 0.009)
+          .map(d => { const p = books.partner(d.partnerId) || {}; return { id: d.id, number: d.number, folio: `${d.serie || ''}${d.folio || ''}`, partner: p.name || '', terms: d.metodoPago === 'PUE' ? 0 : p.terms, pue: d.metodoPago === 'PUE', date: d.date, received: d.received || d.date, due: d.due, amount: books.residual(d) }; })
+          .sort((a, b) => a.due.localeCompare(b.due) || a.partner.localeCompare(b.partner));
+        const t = today(), weeks = {};
+        for (const r of rows) {
+          const dd = new Date(r.due + 'T12:00:00Z'), dow = (dd.getUTCDay() + 6) % 7; dd.setUTCDate(dd.getUTCDate() - dow);
+          const k = r.due < t ? 'vencido' : dd.toISOString().slice(0, 10);
+          (weeks[k] = weeks[k] || { week: k, total: 0, count: 0 }); weeks[k].total = r2(weeks[k].total + r.amount); weeks[k].count++;
+        }
+        return { at: t, rows, weeks: Object.values(weeks).sort((a, b) => (a.week === 'vencido' ? -1 : b.week === 'vencido' ? 1 : a.week.localeCompare(b.week))), total: r2(rows.reduce((a, r) => a + r.amount, 0)) };
+      }
       case 'journal': return { from, to, rows: books.journal(from, to).map(l => ({ date: l.date, number: l.src.number, account: l.account, name: (books.account(l.account) || {}).name || '', partner: (books.partner(l.partnerId) || {}).name || '', label: l.label, debit: l.debit, credit: l.credit })) };
       default: throw httpErr(404, 'Reporte no encontrado.');
     }
@@ -208,6 +222,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
       case 'statement': return { title: `Estado de cuenta ${r.partner.name}`, cols: [['Fecha', 'date'], ['Número', 'number'], ['Concepto', 'label'], ['Cargo', 'charge', money], ['Abono', 'credit', money], ['Saldo', 'balance', money]], rows: [{ label: 'Saldo inicial', balance: r.open }, ...r.rows] };
       case 'tax': return { title: `IVA ${r.month} (flujo de efectivo) y DIOT`, cols: [['Proveedor', 'partner'], ['RFC', 'rfc'], ['Base 16%', 'base16', money], ['Base 8%', 'base8', money], ['Base 0%', 'base0', money], ['Exento', 'exento', money], ['IVA pagado', 'iva', money], ['IVA retenido', 'ivaRet', money], ['Pagado', 'paid', money]], rows: [{ partner: 'IVA trasladado cobrado', paid: r.ivaCollected }, { partner: 'IVA acreditable pagado', paid: r.ivaPaid }, { partner: 'IVA retenido por clientes', paid: r.ivaRetByClients }, { partner: 'IVA a cargo (a favor si es negativo)', paid: r.payable }, { partner: 'Retenciones de IVA a enterar', paid: r.retIvaPaid }, {}, ...r.diot] };
       case 'analysis': return { title: 'Análisis de facturas', cols: [['Concepto', 'label'], ['Documentos', 'count'], ['Subtotal', 'subtotal', money], ['Total', 'total', money]], rows: r.rows, total: { label: 'Total', ...r.totals } };
+      case 'schedule': return { title: 'Calendario de pagos a proveedores', cols: [['Vence', 'due'], ['Proveedor', 'partner'], ['Número', 'number'], ['Folio', 'folio'], ['Fecha factura', 'date'], ['Recibida', 'received'], ['Días crédito', 'terms'], ['Saldo', 'amount', money]], rows: r.rows, total: { partner: 'Total', amount: r.total } };
       case 'cashflow': return { title: 'Flujo de efectivo', cols: [['Cuenta', 'bank'], ['Saldo inicial', 'open', money], ['Entradas', 'inflow', money], ['Salidas', 'outflow', money], ['Saldo final', 'close', money]], rows: r.rows, total: { bank: 'Total', ...r.totals } };
       case 'journal': return { title: 'Libro diario', cols: [['Fecha', 'date'], ['Número', 'number'], ['Cuenta', 'account'], ['Nombre', 'name'], ['Contacto', 'partner'], ['Concepto', 'label'], ['Cargo', 'debit', money], ['Abono', 'credit', money]], rows: r.rows };
     }
