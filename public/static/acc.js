@@ -542,7 +542,7 @@
       h('div', { class: 'msg info' }, 'Lo que suben llega a Facturas de proveedores como borrador (📥), con la foto del recibo adjunta y la fecha de recepción de ese día; el vencimiento cuenta los días de crédito desde ahí. Revisa y publica como cualquier factura.'),
       add,
       table([
-        { t: 'Proveedor', cls: 'w', f: v => h('span', {}, h('b', {}, v.name), h('div', { class: 'muted small' }, v.rfc || 'RFC pendiente: se toma de su primera factura')) },
+        { t: 'Proveedor', cls: 'w', f: v => h('span', {}, h('b', {}, v.name), v.test ? [' ', badge('draft', 'Prueba')] : null, h('div', { class: 'muted small' }, v.rfc || 'RFC pendiente: se toma de su primera factura')) },
         { t: 'Crédito', f: v => v.terms ? `${v.terms} días` : 'Contado' },
         { t: 'Subidas', n: 1, f: v => String(v.uploads) },
         { t: 'Por revisar', n: 1, f: v => v.pending ? h('a', { href: '#/docs/ap?' + qs({ origin: 'portal', state: 'draft', partner: v.id }) }, String(v.pending)) : '0' },

@@ -58,6 +58,7 @@ async function importFiles(books, files, user, pdf, opts = {}) {
   // opts.vendor: uploads from the supplier portal must be invoices issued by that supplier to us
   const vendorOk = (incoming, rfc, file) => {
     const v = opts.vendor; if (!v) return true;
+    if (opts.test) return true; // test supplier: accepts any invoice, learns nothing
     if (!incoming) { res.errors.push({ file, error: 'Esta factura no está dirigida a Grupo AVE.' }); return false; }
     rfc = String(rfc || '').toUpperCase();
     if (v.rfc && v.rfc !== rfc) { res.errors.push({ file, error: `La factura la emitió el RFC ${rfc}, no el de ${v.name} (${v.rfc}).` }); return false; }
@@ -88,6 +89,8 @@ async function importFiles(books, files, user, pdf, opts = {}) {
   for (const f of xmls) {
     let c;
     try { c = parseCfdi(f.buf); } catch (e) { res.errors.push({ file: f.name, error: e.message }); continue; }
+    // test supplier: keep test copies apart from the real invoice with the same UUID
+    if (opts.test && c.uuid) { if (c.tipo === 'P') { res.skipped.push({ file: f.name, reason: 'Los complementos de pago no se prueban aquí.' }); continue; } c.uuid = 'PRUEBA-' + c.uuid; }
     if (!c.uuid) { res.errors.push({ file: f.name, error: 'El XML no tiene timbre fiscal (UUID). ¿Es un CFDI timbrado?' }); continue; }
     seenUuid.add(c.uuid);
     const incoming = c.receptor.rfc === company, outgoing = c.emisor.rfc === company;
@@ -167,6 +170,7 @@ async function importFiles(books, files, user, pdf, opts = {}) {
         const lay = pdfLayout ? await pdfLayout(tmp) : '';
         if (lay) { facts = factsFromText(lay); printed = parsePrinted(lay, company); }
         else { const r = await pdfText(tmp); facts = factsFromText(r && typeof r === 'object' ? r.text : r); }
+        if (opts.test) { if (printed && printed.uuid) printed.uuid = 'PRUEBA-' + printed.uuid; if (facts && facts.uuid) facts.uuid = 'PRUEBA-' + facts.uuid; }
       } catch (e) { facts = null; printed = null; } finally { try { fs.unlinkSync(tmp); } catch (e) {} }
       if (facts && facts.uuid) target = byUuid[facts.uuid] || books.db.docs.find(d => d.uuid === facts.uuid && d.state !== 'cancelled');
     }

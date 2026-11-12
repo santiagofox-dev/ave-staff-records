@@ -56,7 +56,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl }) {
         if (!recs.length) return res.status(400).json({ error: 'Falta la foto del recibo de entrega.' });
         list.push(now); hits.set(v.id, list);
         const b = getBooks();
-        const out = await importFiles(b, fact, `Proveedor: ${v.name}`, pdf, { vendor: v });
+        const out = await importFiles(b, fact, `Proveedor: ${v.name}`, pdf, { vendor: v, test: !!v.portal.test });
         const created = out.created.map(c => b.doc(c.id)).filter(Boolean);
         const at = new Date().toISOString(), recv = localToday();
         for (const d of created) {
@@ -67,6 +67,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl }) {
           d.portal = { at, ip: req.ip };
           d.received = recv; d.due = b.defaultDue(d);
           d.warnings = [`Subida por el proveedor desde el portal el ${recv}, con foto del recibo de entrega.`, ...(d.warnings || [])];
+          if (v.portal.test) { d.test = true; d.warnings.unshift('FACTURA DE PRUEBA del proveedor fantasma: no la publiques; elimínala cuando termines.'); }
         }
         b.log(`Proveedor: ${v.name}`, 'subió desde el portal', 'facturas', v.id, `${created.length} facturas, ${recs.length} fotos`);
         b.save();
@@ -88,13 +89,13 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl }) {
       return b.db.partners.filter(p => p.portal).map(p => {
         const docs = b.db.docs.filter(d => d.partnerId === p.id && d.portal);
         const last = docs.map(d => d.portal.at).sort().pop() || null;
-        return { id: p.id, name: p.name, rfc: p.rfc, terms: p.terms, region: p.portal.region, enabled: !!p.portal.enabled, link: link(req, p.portal.token), uploads: docs.length, pending: docs.filter(d => d.state === 'draft').length, last };
+        return { test: !!p.portal.test, id: p.id, name: p.name, rfc: p.rfc, terms: p.terms, region: p.portal.region, enabled: !!p.portal.enabled, link: link(req, p.portal.token), uploads: docs.length, pending: docs.filter(d => d.state === 'draft').length, last };
       }).sort((a, c) => a.name.localeCompare(c.name, 'es'));
     },
-    enable(req, partnerId, region, user) {
+    enable(req, partnerId, region, user, test) {
       const b = getBooks(), p = b.partner(partnerId);
       if (!p) { const e = new Error('No se encontró el proveedor.'); e.status = 404; throw e; }
-      p.portal = { ...(p.portal || {}), token: (p.portal && p.portal.token) || newToken(), enabled: true, region: region || (p.portal && p.portal.region) || 'Chihuahua', since: (p.portal && p.portal.since) || new Date().toISOString() };
+      p.portal = { ...(p.portal || {}), token: (p.portal && p.portal.token) || newToken(), enabled: true, region: region || (p.portal && p.portal.region) || 'Chihuahua', test: !!(test || (p.portal && p.portal.test)), since: (p.portal && p.portal.since) || new Date().toISOString() };
       p.supplier = true;
       b.log(user, 'activó portal', 'contacto', p.id, p.name);
       return p;

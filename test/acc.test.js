@@ -180,3 +180,14 @@ test('supplier portal import: pinned to the vendor, wrong RFC rejected, RFC lear
   const bad = await importFiles(b, [{ name: 'b.xml', buf: Buffer.from(cfdi({ uuid: 'cccccccc-0000-4000-8000-000000000002', emisor: ['AIN0112122R2', 'OTRO'], receptor: [CO, 'AVE'], conceptos: [{ desc: 'x', qty: 1, price: 100, iva: 0 }] })) }], 'p', null, { vendor: v });
   assert.equal(bad.created.length, 0); assert.match(bad.errors[0].error, /no el de Grupo Calibeb/);
 });
+
+test('test supplier accepts any invoice as a separate PRUEBA copy and learns no RFC', async () => {
+  const { importFiles } = require('../acc/importer');
+  const b = freshBooks();
+  const xml = Buffer.from(cfdi({ uuid: 'dddddddd-0000-4000-8000-000000000001', emisor: ['AIN0112122R2', 'ABARROTES'], receptor: [CO, 'AVE'], conceptos: [{ desc: 'x', qty: 1, price: 100, iva: 0 }] }));
+  await importFiles(b, [{ name: 'real.xml', buf: xml }], 'u');
+  const t = b.upsertPartner({ name: 'Proveedor Prueba', supplier: true, terms: 30 }, 'u');
+  const r = await importFiles(b, [{ name: 'test.xml', buf: xml }], 'p', null, { vendor: t, test: true });
+  assert.equal(r.created.length, 1); assert.equal(b.doc(r.created[0].id).partnerId, t.id);
+  assert.ok(b.doc(r.created[0].id).uuid.startsWith('PRUEBA-')); assert.equal(t.rfc, '');
+});

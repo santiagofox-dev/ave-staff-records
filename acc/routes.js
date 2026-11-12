@@ -118,6 +118,12 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- supplier portal (links per supplier) ---------- */
   app.get('/api/acc/portal', R(req => ({ vendors: portal ? portal.list(req) : [], pending: portal ? portal.pendingCount() : 0 })));
   app.post('/api/acc/portal/:id/enable', W(req => { portal.enable(req, req.params.id, (req.body || {}).region, who(req)); return { ok: true }; }));
+  app.post('/api/acc/portal/test-vendor', W(req => {
+    let p = books.db.partners.find(x => x.portal && x.portal.test);
+    if (!p) p = books.upsertPartner({ name: 'Proveedor Prueba', supplier: true, terms: 30, notes: 'Proveedor fantasma para probar el portal' }, who(req));
+    portal.enable(req, p.id, 'Prueba', who(req), true);
+    return { id: p.id };
+  }));
   app.post('/api/acc/portal/:id/disable', W(req => { portal.disable(req.params.id, who(req)); return { ok: true }; }));
   app.post('/api/acc/portal/:id/regenerate', W(req => { portal.regenerate(req.params.id, who(req)); return { ok: true }; }));
 
