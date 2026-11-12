@@ -54,7 +54,16 @@ function storeFile(books, name, buf) {
 }
 
 /* files: [{ name, buf }]; pdf: { text: async path => string, layout: async path => string } (or a bare text function) */
-async function importFiles(books, files, user, pdf) {
+async function importFiles(books, files, user, pdf, opts = {}) {
+  // opts.vendor: uploads from the supplier portal must be invoices issued by that supplier to us
+  const vendorOk = (incoming, rfc, file) => {
+    const v = opts.vendor; if (!v) return true;
+    if (!incoming) { res.errors.push({ file, error: 'Esta factura no está dirigida a Grupo AVE.' }); return false; }
+    rfc = String(rfc || '').toUpperCase();
+    if (v.rfc && v.rfc !== rfc) { res.errors.push({ file, error: `La factura la emitió el RFC ${rfc}, no el de ${v.name} (${v.rfc}).` }); return false; }
+    if (!v.rfc) { const o = books.findPartnerByRfc(rfc); if (o && o.id !== v.id) { res.errors.push({ file, error: `El RFC ${rfc} pertenece a otro proveedor registrado.` }); return false; } v.rfc = rfc; }
+    return true;
+  };
   const pdfText = typeof pdf === 'function' ? pdf : pdf && pdf.text;
   const pdfLayout = pdf && typeof pdf === 'object' ? pdf.layout : null;
   const res = { created: [], payments: [], duplicates: [], skipped: [], errors: [], attached: [] };
@@ -89,7 +98,8 @@ async function importFiles(books, files, user, pdf) {
 
     if (c.tipo === 'P') {
       if (books.db.payments.find(p => p.uuid === c.uuid && p.state !== 'cancelled')) { res.duplicates.push({ file: f.name, uuid: c.uuid }); continue; }
-      let partner = books.findPartnerByRfc(other.rfc, other.name) || books.claimByName(other.rfc, other.name);
+      if (!vendorOk(incoming, other.rfc, f.name)) continue;
+      let partner = opts.vendor || books.findPartnerByRfc(other.rfc, other.name) || books.claimByName(other.rfc, other.name);
       if (!partner) partner = books.upsertPartner({ rfc: other.rfc, name: other.name || other.rfc, supplier: incoming, customer: outgoing, terms: incoming ? 30 : 30 }, user);
       for (const pg of c.payments) {
         const allocations = [], missing = [];
@@ -118,7 +128,8 @@ async function importFiles(books, files, user, pdf) {
     const existing = books.db.docs.find(d => d.uuid === c.uuid && d.state !== 'cancelled');
     if (existing) { res.duplicates.push({ file: f.name, uuid: c.uuid, number: existing.number || 'borrador' }); byUuid[c.uuid] = existing; xmlBase[base(f.name)] = existing; continue; }
     const type = incoming ? (c.tipo === 'E' ? 'in_refund' : 'in_invoice') : (c.tipo === 'E' ? 'out_refund' : 'out_invoice');
-    let partner = books.findPartnerByRfc(other.rfc, other.name) || books.claimByName(other.rfc, other.name);
+    if (!vendorOk(incoming, other.rfc, f.name)) continue;
+      let partner = opts.vendor || books.findPartnerByRfc(other.rfc, other.name) || books.claimByName(other.rfc, other.name);
     if (!partner) partner = books.upsertPartner({ rfc: other.rfc, name: other.name || other.rfc, supplier: incoming, customer: outgoing, terms: 30, regimen: incoming ? c.emisor.regimen : c.receptor.regimen, cp: outgoing ? c.receptor.cp : '' }, user);
     else { if (incoming && !partner.supplier) partner.supplier = true; if (outgoing && !partner.customer) partner.customer = true; }
     const A = books.A;
@@ -178,7 +189,8 @@ async function importFiles(books, files, user, pdf) {
     if (printed && printed.emisor.rfc && (printed.receptor.rfc === company || printed.emisor.rfc === company) && ['I', 'E'].includes(printed.tipo)) {
       if (books.db.docs.find(d => d.uuid === printed.uuid && d.state !== 'cancelled')) { res.duplicates.push({ file: f.name, uuid: printed.uuid }); continue; }
       const incoming = printed.emisor.rfc !== company, other = incoming ? printed.emisor : { rfc: printed.receptor.rfc, name: printed.receptor.name };
-      let partner = books.findPartnerByRfc(other.rfc, other.name) || books.claimByName(other.rfc, other.name);
+      if (!vendorOk(incoming, other.rfc, f.name)) continue;
+      let partner = opts.vendor || books.findPartnerByRfc(other.rfc, other.name) || books.claimByName(other.rfc, other.name);
       if (!partner) partner = books.upsertPartner({ rfc: other.rfc, name: other.name || other.rfc, supplier: incoming, customer: !incoming, terms: 30, regimen: other.regimen || '' }, user);
       const type = incoming ? (printed.tipo === 'E' ? 'in_refund' : 'in_invoice') : (printed.tipo === 'E' ? 'out_refund' : 'out_invoice');
       const warnings = [printed.ok ? `Leído del PDF (no venía el XML). Los importes cuadran con el total impreso${listed ? ' y con el Excel del SAT' : ''}; sube el XML cuando lo tengas para confirmarlo.` : 'Leído del PDF (no venía el XML) con diferencias: revisa los conceptos y el IVA contra el PDF adjunto.', ...printed.notes];
@@ -197,7 +209,7 @@ async function importFiles(books, files, user, pdf) {
     }
     // PDF without its XML: keep it as a supplier draft so nothing gets lost
     const rfcs = facts ? facts.rfcs.filter(r => r !== books.db.company.rfc) : [];
-    const partner = rfcs.map(r => books.findPartnerByRfc(r)).find(Boolean) || null;
+    const partner = opts.vendor || rfcs.map(r => books.findPartnerByRfc(r)).find(Boolean) || null;
     if (facts && facts.uuid && books.db.docs.find(d => d.uuid === facts.uuid && d.state !== 'cancelled')) { res.duplicates.push({ file: f.name, uuid: facts.uuid }); continue; }
     const d = books.newDoc('in_invoice', {
       partnerId: partner ? partner.id : null, uuid: facts && facts.uuid ? facts.uuid : null, source: 'pdf',
@@ -217,4 +229,4 @@ async function importFiles(books, files, user, pdf) {
   return res;
 }
 
-module.exports = { importFiles };
+module.exports = { importFiles, storeFile };

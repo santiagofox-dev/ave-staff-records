@@ -180,11 +180,11 @@
   });
 
   /* ================= DOCUMENT LISTS ================= */
-  const listState = { ap: { state: '', pay: '', q: '', from: '', to: '' }, ar: { state: '', pay: '', q: '', from: '', to: '' } };
+  const listState = { ap: { state: '', pay: '', q: '', from: '', to: '', origin: '' }, ar: { state: '', pay: '', q: '', from: '', to: '', origin: '' } };
   route(/^docs\/(ap|ar)$/, async (m, q) => {
     const side = m[1]; last.side = side;
     const st = listState[side];
-    for (const k of ['state', 'pay', 'q', 'from', 'to', 'partner']) if (k in q) st[k] = q[k];
+    for (const k of ['state', 'pay', 'q', 'from', 'to', 'partner', 'origin']) if (k in q) st[k] = q[k];
     const types = side === 'ap' ? 'in_invoice,in_refund' : 'out_invoice,out_refund';
     const data = await get('/api/acc/docs?' + qs({ type: types, ...st }));
     const selected = new Set();
@@ -216,7 +216,7 @@
       { t: 'Total', n: 1, f: r => (r.type.endsWith('refund') ? -1 : 1) * r.totalMxn },
       { t: 'Saldo', n: 1, f: r => r.state === 'posted' ? r.residual : '' },
       { t: 'Estado', f: r => h('span', {}, badge(r.state, STATE[r.state]), ' ', r.pay ? badge(r.pay, PAY[r.pay]) : null) },
-      { t: '', cls: 'nowrap', f: r => h('span', { class: 'nowrap' }, r.warnings ? h('span', { class: 'warnmark', title: 'Tiene avisos por revisar' }, '⚠ ') : null, r.files ? h('span', { class: 'muted', title: 'Archivos adjuntos' }, `📎${r.files}`) : null) },
+      { t: '', cls: 'nowrap', f: r => h('span', { class: 'nowrap' }, r.portal ? h('span', { title: 'Subida por el proveedor desde el portal' }, '📥 ') : null, r.warnings ? h('span', { class: 'warnmark', title: 'Tiene avisos por revisar' }, '⚠ ') : null, r.files ? h('span', { class: 'muted', title: 'Archivos adjuntos' }, `📎${r.files}`) : null) },
     ];
     const chips = (key, opts) => h('div', { class: 'chips' }, opts.map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(st[key] === v), onclick: () => { st[key] = v; render(); } }, t)));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar número, contacto, RFC, UUID o importe', value: st.q });
@@ -232,7 +232,7 @@
       drop,
       h('div', { class: 'filters' }, search, fromI, h('span', { class: 'muted' }, 'a'), toI,
         st.partner ? h('button', { class: 'chipb', type: 'button', 'aria-pressed': 'true', onclick: () => { st.partner = ''; go('docs/' + side); } }, 'Contacto filtrado ✕') : null),
-      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']])),
+      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', '📥 Del portal']]) : null),
       selBar,
       table(cols, data.rows, { tall: 1, onRow: r => go('doc/' + r.id), rowClass: r => r.state === 'cancelled' ? 'cx' : '', empty: st.q || st.state || st.pay ? 'Ningún documento coincide con el filtro.' : 'Aún no hay documentos. Importa los XML del SAT para empezar.' }),
       h('div', { class: 'foot' }, h('span', {}, `${data.count} documentos${data.count > data.rows.length ? ` (se muestran ${data.rows.length})` : ''}`), h('span', {}, `Total ${money(data.sum.total)} · Saldo abierto ${money(data.sum.residual)}`)),
@@ -430,7 +430,12 @@
       h('dt', {}, 'UUID'), h('dd', { class: 'mono' }, d.uuid || '—'),
       d.cfdi ? [h('dt', {}, 'Emisor'), h('dd', {}, `${d.cfdi.emisor.name || ''} · ${d.cfdi.emisor.rfc}`), h('dt', {}, 'Receptor'), h('dd', {}, `${d.cfdi.receptor.name || ''} · ${d.cfdi.receptor.rfc}`),
         h('dt', {}, 'Uso CFDI'), h('dd', {}, d.cfdi.uso || '—'), h('dt', {}, 'Método / forma'), h('dd', {}, `${d.metodoPago || '—'} / ${d.formaPago || '—'}`), h('dt', {}, 'Timbrado'), h('dd', {}, d.cfdi.fechaTimbrado || '—')] : null)));
-    if ((d.files || []).length) extra.push(h('section', { class: 'panel' }, h('h2', {}, 'Archivos'), h('div', { class: 'files' }, d.files.map(fl => h('a', { class: 'file', href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener' }, h('b', {}, fl.kind), fl.name)))));
+    if ((d.files || []).length) {
+      const imgs = d.files.filter(fl => fl.kind === 'img'), other = d.files.filter(fl => fl.kind !== 'img');
+      extra.push(h('section', { class: 'panel' }, h('h2', {}, 'Archivos'),
+        imgs.length ? h('div', { class: 'receipts' }, imgs.map(fl => h('a', { href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener', title: fl.name }, h('img', { src: '/api/acc/file/' + fl.stored, alt: fl.receipt ? 'Foto del recibo de entrega' : fl.name, loading: 'lazy' }), h('span', {}, fl.receipt ? 'Recibo de entrega' : fl.name)))) : null,
+        other.length ? h('div', { class: 'files' }, other.map(fl => h('a', { class: 'file', href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener' }, h('b', {}, fl.kind), fl.name))) : null));
+    }
     if ((data.payments || []).length) extra.push(h('section', { class: 'panel' }, h('h2', {}, 'Pagos y notas aplicados'), table([{ t: 'Número', k: 'number' }, { t: 'Fecha', f: r => fd(r.date) }, { t: 'Monto', k: 'amount', n: 1 }], data.payments, { onRow: r => go((r.kind === 'payment' ? 'pago/' : 'doc/') + r.id) }), h('div', { class: 'foot' }, h('span'), h('span', {}, `Saldo pendiente ${money(data.row.residual)}`))));
     if ((data.journal || []).length) extra.push(h('section', { class: 'panel' }, h('h2', {}, d.state === 'posted' ? 'Asiento contable' : 'Así quedará el asiento'),
       table([{ t: 'Cuenta', cls: 'mono nowrap', k: 'account' }, { t: 'Nombre', k: 'name' }, { t: 'Concepto', k: 'label' }, { t: 'Cargo', n: 1, tk: 'debit', f: r => r.debit || '' }, { t: 'Abono', n: 1, tk: 'credit', f: r => r.credit || '' }], data.journal,
@@ -521,6 +526,37 @@
 
   /* ================= CONTACTS ================= */
   const cState = { q: '', kind: '' };
+  /* ================= SUPPLIER PORTAL ================= */
+  route(/^portal$/, async () => {
+    const data = await get('/api/acc/portal');
+    const msg = v => `Hola, ${v.name}. Este es tu enlace para enviar a Grupo AVE tus facturas (XML y PDF) junto con la foto del recibo de entrega firmado o sellado: ${v.link}  Tus días de crédito cuentan desde el día que la subes. El enlace es personal, no lo compartas.`;
+    const copy = async (text, ok) => { try { await navigator.clipboard.writeText(text); toast(ok); } catch (e) { await dialog('Copia el texto', h('textarea', { class: 'inp', rows: 5, readOnly: true }, text)); } };
+    const add = canEdit() ? (() => {
+      const others = META.partners.filter(p => p.supplier && !data.vendors.some(v => v.id === p.id));
+      const s = sel([['', '— Agregar proveedor al portal —'], ...others.map(p => [p.id, p.name])], '', {});
+      return h('div', { class: 'filters' }, s, h('button', { class: 'btn', type: 'button', onclick: async () => { if (!s.value) return toast('Elige un proveedor.', true); if (await act(() => post(`/api/acc/portal/${s.value}/enable`, { region: 'Chihuahua' }), 'Proveedor agregado al portal.')) render(); } }, 'Agregar'));
+    })() : null;
+    return h('div', { class: 'stack' },
+      phead('Portal de proveedores', 'Cada proveedor tiene su propio enlace para subir facturas con la foto del recibo de entrega. Por ahora: proveedores de Chihuahua.',
+        data.pending ? [h('a', { class: 'btn primary', href: '#/docs/ap?origin=portal&state=draft' }, `${data.pending} facturas nuevas por revisar`)] : []),
+      h('div', { class: 'msg info' }, 'Lo que suben llega a Facturas de proveedores como borrador (📥), con la foto del recibo adjunta y la fecha de recepción de ese día; el vencimiento cuenta los días de crédito desde ahí. Revisa y publica como cualquier factura.'),
+      add,
+      table([
+        { t: 'Proveedor', cls: 'w', f: v => h('span', {}, h('b', {}, v.name), h('div', { class: 'muted small' }, v.rfc || 'RFC pendiente: se toma de su primera factura')) },
+        { t: 'Crédito', f: v => v.terms ? `${v.terms} días` : 'Contado' },
+        { t: 'Subidas', n: 1, f: v => String(v.uploads) },
+        { t: 'Por revisar', n: 1, f: v => v.pending ? h('a', { href: '#/docs/ap?' + qs({ origin: 'portal', state: 'draft', partner: v.id }) }, String(v.pending)) : '0' },
+        { t: 'Última', f: v => v.last ? fts(v.last) : '—' },
+        { t: 'Estado', f: v => v.enabled ? badge('posted', 'Activo') : badge('cancelled', 'Desactivado') },
+        { t: 'Enlace', f: v => h('span', { class: 'acts' },
+          h('button', { class: 'btn sm', type: 'button', onclick: () => copy(v.link, 'Enlace copiado.') }, 'Copiar enlace'),
+          h('button', { class: 'btn sm', type: 'button', onclick: () => copy(msg(v), 'Mensaje copiado: pégalo en WhatsApp o correo.') }, 'Copiar mensaje'),
+          h('a', { class: 'btn sm quiet', href: v.link, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir'),
+          canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (await confirmDlg('¿Cambiar el enlace?', 'El enlace anterior deja de funcionar. Úsalo si el proveedor lo compartió por error.', 'Cambiar enlace', true)) { if (await act(() => post(`/api/acc/portal/${v.id}/regenerate`), 'Enlace nuevo creado.')) render(); } } }, 'Nuevo enlace') : null,
+          canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (await act(() => post(`/api/acc/portal/${v.id}/${v.enabled ? 'disable' : 'enable'}`, { region: v.region }), v.enabled ? 'Enlace desactivado.' : 'Enlace activado.')) render(); } }, v.enabled ? 'Desactivar' : 'Activar') : null) },
+      ], data.vendors, { empty: 'Aún no hay proveedores en el portal.' }));
+  });
+
   route(/^contactos$/, async () => {
     const rows = await get('/api/acc/partners?' + qs(cState));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar nombre o RFC', value: cState.q });

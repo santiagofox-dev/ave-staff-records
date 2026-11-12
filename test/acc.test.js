@@ -170,3 +170,13 @@ test('credit days run from the received date; changing terms moves open invoices
   b.upsertPartner({ ...b.partner(p.id), terms: 0 }, 'u');
   assert.equal(b.doc(d.id).due, '2026-11-12');
 });
+
+test('supplier portal import: pinned to the vendor, wrong RFC rejected, RFC learned on first invoice', async () => {
+  const { importFiles } = require('../acc/importer');
+  const b = freshBooks();
+  const v = b.upsertPartner({ name: 'Grupo Calibeb', supplier: true, terms: 30 }, 'u');
+  const ok = await importFiles(b, [{ name: 'a.xml', buf: Buffer.from(cfdi({ uuid: 'cccccccc-0000-4000-8000-000000000001', emisor: ['GCA010101AB1', 'GRUPO CALIBEB SA DE CV'], receptor: [CO, 'AVE'], conceptos: [{ desc: 'x', qty: 1, price: 100, iva: 0.16 }] })) }], 'p', null, { vendor: v });
+  assert.equal(ok.created.length, 1); assert.equal(b.doc(ok.created[0].id).partnerId, v.id); assert.equal(v.rfc, 'GCA010101AB1');
+  const bad = await importFiles(b, [{ name: 'b.xml', buf: Buffer.from(cfdi({ uuid: 'cccccccc-0000-4000-8000-000000000002', emisor: ['AIN0112122R2', 'OTRO'], receptor: [CO, 'AVE'], conceptos: [{ desc: 'x', qty: 1, price: 100, iva: 0 }] })) }], 'p', null, { vendor: v });
+  assert.equal(bad.created.length, 0); assert.match(bad.errors[0].error, /no el de Grupo Calibeb/);
+});

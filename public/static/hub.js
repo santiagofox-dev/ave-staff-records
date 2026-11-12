@@ -95,6 +95,7 @@
     if (T.comidas && T.comidas.last && T.comidas.last.pending) A('/comidas', `${T.comidas.last.pending} lecturas de comidas por revisar`);
     if (T.contabilidad) {
       if (T.contabilidad.payableOverdue > 0) A('/contabilidad#/docs/ap?pay=vencido', `${money(T.contabilidad.payableOverdue)} vencido con proveedores`, 'bad');
+      if (T.contabilidad.portalPending) A('/contabilidad#/docs/ap?origin=portal&state=draft', `${T.contabilidad.portalPending} facturas nuevas del portal de proveedores`);
       if (T.contabilidad.drafts) A('/contabilidad#/docs/ap?state=draft', `${T.contabilidad.drafts} facturas en borrador`);
     }
     if (!out.length) A('#', 'Todo al día', 'ok');

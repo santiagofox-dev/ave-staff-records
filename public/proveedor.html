@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Portal de proveedores · Grupo AVE</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/static/styles.css?v=7">
+<link rel="stylesheet" href="/static/proveedor.css?v=1">
+</head>
+<body class="pv">
+<header class="pv-top">
+  <img src="/assets/logo-grupo-ave.png" alt="Grupo AVE Comedores Industriales" width="147" height="30">
+  <span>Portal de proveedores</span>
+</header>
+<main class="pv-main">
+  <section class="pv-hello" id="hello"><div class="pv-load">Cargando…</div></section>
+
+  <form class="pv-card" id="form" hidden novalidate>
+    <h2>Subir factura</h2>
+    <div class="pv-step">
+      <div class="pv-n">1</div>
+      <div class="pv-body">
+        <b>Factura</b>
+        <p>El <strong>XML</strong> timbrado y, si lo tienes, el <strong>PDF</strong>. Puedes subir varias facturas a la vez.</p>
+        <label class="pv-pick" for="fact"><span id="factTxt">Elegir XML / PDF</span></label>
+        <input type="file" id="fact" name="factura" accept=".xml,.pdf,application/pdf,text/xml,application/xml" multiple>
+        <ul class="pv-files" id="factList"></ul>
+      </div>
+    </div>
+    <div class="pv-step">
+      <div class="pv-n">2</div>
+      <div class="pv-body">
+        <b>Foto del recibo de entrega <em>obligatoria</em></b>
+        <p>La remisión o nota de entrega con la firma o sello de recibido de Grupo AVE. Que se lea completa.</p>
+        <label class="pv-pick cam" for="rec"><span id="recTxt">Tomar o elegir foto</span></label>
+        <input type="file" id="rec" name="recibo" accept="image/*" capture="environment" multiple>
+        <div class="pv-thumbs" id="thumbs"></div>
+      </div>
+    </div>
+    <div class="pv-err" id="err" role="alert"></div>
+    <button class="btn primary pv-send" type="submit" id="send" disabled>Enviar factura</button>
+    <p class="pv-fine">Tus días de crédito empiezan a contar desde el día en que subes la factura aquí.</p>
+  </form>
+
+  <section class="pv-done" id="done" hidden aria-live="polite"></section>
+
+  <section class="pv-card" id="mine" hidden>
+    <h2>Mis facturas</h2>
+    <div id="list"></div>
+  </section>
+</main>
+<footer class="pv-foot">Grupo Industrial Fronterizo AVE 78 · Este enlace es personal; no lo compartas.</footer>
+<script src="/static/proveedor.js?v=1"></script>
+</body>
+</html>

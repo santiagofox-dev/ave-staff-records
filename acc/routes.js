@@ -6,7 +6,7 @@ const ExcelJS = require('exceljs');
 const { Books, TYPES, ACC_TYPES, TAX_PRESETS, r2, today, httpErr } = require('./core');
 const { importFiles } = require('./importer');
 
-module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
+module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, portal }) {
   const books = new Books(path.join(DATA_DIR, 'acc'), { rfc });
   let pdf = null;
   try { const x = require('../extract'); pdf = { text: x.pdfText, layout: x.pdfLayoutText }; } catch (e) { pdf = null; }
@@ -37,13 +37,13 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
+    return { portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
     const types = String(type || '').split(',').filter(t => TYPES[t]);
     const ql = String(q || '').toLowerCase().trim();
-    let rows = books.db.docs.filter(d => (!types.length || types.includes(d.type)) && (!state || d.state === state) && (!from || d.date >= from) && (!to || d.date <= to) && (!partner || d.partnerId === partner)).map(docRow);
+    let rows = books.db.docs.filter(d => (req.query.origin !== 'portal' || d.portal) && (!types.length || types.includes(d.type)) && (!state || d.state === state) && (!from || d.date >= from) && (!to || d.date <= to) && (!partner || d.partnerId === partner)).map(docRow);
     if (pay) rows = rows.filter(r => pay === 'abierto' ? ['pendiente', 'vencido', 'parcial'].includes(r.pay) : r.pay === pay);
     if (ql) rows = rows.filter(r => [r.number, r.partner, r.rfc, r.uuid, r.serie + r.folio, String(r.total)].some(v => String(v || '').toLowerCase().includes(ql)));
     rows.sort((a, b) => b.date.localeCompare(a.date) || String(b.number || '').localeCompare(String(a.number || '')));
@@ -109,10 +109,17 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc }) {
     const f = owner.files.find(x => x.stored === stored);
     const full = path.join(books.filesDir, stored);
     if (!fs.existsSync(full)) return res.status(404).json({ error: 'El archivo ya no está en el servidor.' });
-    res.set('Content-Type', f.kind === 'pdf' ? 'application/pdf' : f.kind === 'xml' ? 'application/xml; charset=utf-8' : 'application/octet-stream');
+    const IMGT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.heic': 'image/heic', '.heif': 'image/heif' };
+    res.set('Content-Type', f.kind === 'pdf' ? 'application/pdf' : f.kind === 'xml' ? 'application/xml; charset=utf-8' : IMGT[path.extname(stored).toLowerCase()] || 'application/octet-stream');
     res.set('Content-Disposition', `${req.query.dl ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(f.name)}`);
     fs.createReadStream(full).pipe(res);
   });
+
+  /* ---------- supplier portal (links per supplier) ---------- */
+  app.get('/api/acc/portal', R(req => ({ vendors: portal ? portal.list(req) : [], pending: portal ? portal.pendingCount() : 0 })));
+  app.post('/api/acc/portal/:id/enable', W(req => { portal.enable(req, req.params.id, (req.body || {}).region, who(req)); return { ok: true }; }));
+  app.post('/api/acc/portal/:id/disable', W(req => { portal.disable(req.params.id, who(req)); return { ok: true }; }));
+  app.post('/api/acc/portal/:id/regenerate', W(req => { portal.regenerate(req.params.id, who(req)); return { ok: true }; }));
 
   /* ---------- payments ---------- */
   const payRow = p => { const pa = books.partner(p.partnerId), b = books.bank(p.bankId); return { id: p.id, number: p.number, dir: p.dir, date: p.date, partnerId: p.partnerId, partner: pa ? pa.name : '', bank: b ? b.name : '', amount: p.amount, applied: r2(p.allocations.reduce((a, x) => a + x.amount, 0)), method: p.method, ref: p.ref, state: p.state, uuid: p.uuid }; };

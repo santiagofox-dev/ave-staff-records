@@ -150,6 +150,10 @@ app.post('/api/login', (req, res) => {
 });
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true }); });
 
+/* Supplier portal: public, the private link is the key */
+const portal = (() => { let x = null; try { x = require('./extract'); } catch (e) { x = null; }
+  return require('./acc/portal')(app, { books: () => books, pdf: x && { text: x.pdfText, layout: x.pdfLayoutText }, publicUrl: process.env.PUBLIC_URL || (PROD ? 'https://gpoave.com' : '') }); })();
+
 /* everything below needs a login */
 app.use(requireAuth);
 app.get('/api/me', (req, res) => res.json({ ...req.user, roleLabel: users.ROLES[req.user.role] || 'Administrador' }));
@@ -320,7 +324,7 @@ require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
 require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
 
 /* ---- Contabilidad (accounting) ---- */
-const books = require('./acc/routes')(app, { DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });
+const books = require('./acc/routes')(app, { portal, DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });
 
 /* Central dashboard: a few live numbers from each tool, limited to what the user may open */
 app.get('/api/hub', (req, res, next) => {
@@ -352,7 +356,7 @@ app.get('/api/hub', (req, res, next) => {
     }
     if (admin || role === 'contador' || role === 'consulta') {
     const d = books.dashboard();
-    out.tools.contabilidad = { payable: d.payable, payableOverdue: d.payableOverdue, receivable: d.receivable, receivableOverdue: d.receivableOverdue, banks: r2h(d.banks.reduce((a, b) => a + b.balance, 0)), drafts: d.drafts, month: d.month, pnl: d.pnl, series: d.series.slice(-6), dueSoon: d.dueSoon.slice(0, 3).map(x => ({ partner: x.partner, due: x.due, amount: x.amount })) };
+    out.tools.contabilidad = { payable: d.payable, payableOverdue: d.payableOverdue, receivable: d.receivable, receivableOverdue: d.receivableOverdue, banks: r2h(d.banks.reduce((a, b) => a + b.balance, 0)), drafts: d.drafts, portalPending: portal.pendingCount(), month: d.month, pnl: d.pnl, series: d.series.slice(-6), dueSoon: d.dueSoon.slice(0, 3).map(x => ({ partner: x.partner, due: x.due, amount: x.amount })) };
     }
     res.json(out);
   } catch (e) { next(e); }
