@@ -190,25 +190,40 @@
     const data = await get('/api/acc/docs?' + qs({ type: types, ...st }));
     const selected = new Set();
     const selBar = h('div', { class: 'sel-bar', hidden: true });
+    const byId = Object.fromEntries(data.rows.map(r => [r.id, r]));
+    const payable = r => r.state === 'posted' && !r.type.endsWith('refund') && r.residual > 0.009;
     const updateSel = () => {
       selBar.hidden = !selected.size; clear(selBar);
       if (!selected.size) return;
-      const accSel = accSelect('', {}, a => side === 'ap' ? ['EC', 'EX', 'ED', 'AF', 'AC', 'AN', 'AP'].includes(a.type) : ['IN', 'IO'].includes(a.type));
-      add(selBar, [h('b', {}, `${selected.size} seleccionados`),
-        h('button', { class: 'btn sm primary', type: 'button', onclick: async () => {
-          const r = await act(() => post('/api/acc/docs/bulk-post', { ids: [...selected] }));
+      const rows = [...selected].map(id => byId[id]).filter(Boolean);
+      const dr = rows.filter(r => r.state === 'draft'), op = rows.filter(payable);
+      const partners = [...new Set(op.map(r => r.partnerId))];
+      const owed = r2(op.reduce((a, r) => a + r.residual, 0));
+      const parts = [h('b', {}, `${selected.size} seleccionadas`)];
+      if (op.length) {
+        parts.push(h('span', {}, `Por pagar: `, h('b', {}, money(owed))));
+        if (partners.length === 1 && !dr.length) parts.push(h('button', { class: 'btn sm primary', type: 'button', onclick: () => go('pago/new/' + (side === 'ap' ? 'out' : 'in'), { partner: partners[0], docs: op.map(r => r.id).join(',') }) }, op.length > 1 ? `Pagar estas ${op.length} facturas en un pago` : 'Registrar pago'));
+        else if (partners.length > 1) parts.push(h('span', { class: 'muted small' }, 'Para juntarlas en un pago elige facturas de un solo proveedor.'));
+      }
+      if (dr.length) {
+        const accSel = accSelect('', {}, a => side === 'ap' ? ['EC', 'EX', 'ED', 'AF', 'AC', 'AN', 'AP'].includes(a.type) : ['IN', 'IO'].includes(a.type));
+        parts.push(h('button', { class: 'btn sm primary', type: 'button', onclick: async () => {
+          const r = await act(() => post('/api/acc/docs/bulk-post', { ids: dr.map(x => x.id) }));
           if (!r) return;
           await dialog('Resultado', h('div', { class: 'list' }, h('div', { class: 'msg ok' }, `${r.ok.length} publicados.`), r.failed.map(f => h('div', { class: 'msg bad' }, `${f.label}: ${f.error}`))));
           render();
-        } }, 'Publicar'),
+        } }, dr.length === rows.length ? 'Publicar' : `Publicar ${dr.length} borradores`),
         h('span', { class: 'muted' }, 'Cambiar cuenta a'), accSel,
-        h('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!accSel.value) return toast('Elige una cuenta.', true); const r = await act(() => post('/api/acc/docs/bulk-account', { ids: [...selected], account: accSel.value })); if (r) { toast(`${r.updated} borradores actualizados.`); render(); } } }, 'Aplicar'),
-        h('button', { class: 'btn sm quiet', type: 'button', onclick: () => { selected.clear(); render(); } }, 'Quitar selección')]);
+        h('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!accSel.value) return toast('Elige una cuenta.', true); const r = await act(() => post('/api/acc/docs/bulk-account', { ids: dr.map(x => x.id), account: accSel.value })); if (r) { toast(`${r.updated} borradores actualizados.`); render(); } } }, 'Aplicar'));
+      }
+      parts.push(h('button', { class: 'btn sm quiet', type: 'button', onclick: () => { selected.clear(); render(); } }, 'Quitar selección'));
+      add(selBar, parts);
     };
-    const drafts = data.rows.filter(r => r.state === 'draft');
-    const allBox = canEdit() && drafts.length ? inp({ type: 'checkbox', title: 'Seleccionar todos los borradores', onchange: e => { drafts.forEach(r => e.target.checked ? selected.add(r.id) : selected.delete(r.id)); document.querySelectorAll('input[data-sel]').forEach(b => { b.checked = e.target.checked; }); updateSel(); } }) : '';
+    const pickable = r => r.state === 'draft' || payable(r);
+    const picks = data.rows.filter(pickable);
+    const allBox = canEdit() && picks.length ? inp({ type: 'checkbox', title: 'Seleccionar todos (borradores y por pagar)', onchange: e => { picks.forEach(r => e.target.checked ? selected.add(r.id) : selected.delete(r.id)); document.querySelectorAll('input[data-sel]').forEach(b => { b.checked = e.target.checked; }); updateSel(); } }) : '';
     const cols = [
-      ...(canEdit() ? [{ t: allBox, c: 1, f: r => r.state === 'draft' ? inp({ type: 'checkbox', 'data-sel': r.id, 'aria-label': 'Seleccionar', onchange: e => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); updateSel(); } }) : '' }] : []),
+      ...(canEdit() ? [{ t: allBox, c: 1, f: r => pickable(r) ? inp({ type: 'checkbox', 'data-sel': r.id, 'aria-label': 'Seleccionar', onchange: e => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); updateSel(); } }) : '' }] : []),
       { t: 'Número', cls: 'nowrap', f: r => h('span', {}, r.number || h('span', { class: 'muted' }, 'Borrador'), r.type.endsWith('refund') ? h('div', { class: 'muted small' }, 'Nota de crédito') : null) },
       { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.plant ? [' ', badge('parcial', r.plant)] : null, r.test ? [' ', badge('draft', 'Prueba')] : null) },
       { t: side === 'ap' ? 'Proveedor' : 'Cliente', cls: 'w', f: r => r.partner || h('span', { class: 'warnmark' }, 'Sin contacto') },
@@ -479,50 +494,85 @@
   });
 
   route(/^pago\/new\/(out|in)$/, async (m, q) => {
-    const dir = m[1], side = dir === 'out' ? 'ap' : 'ar', kind = dir === 'out' ? 'supplier' : 'customer';
+    // One payment for several invoices of the same contact: pick them by quick filters or by hand, see the total live.
+    const dir = m[1], kind = dir === 'out' ? 'supplier' : 'customer';
     if (!canEdit()) throw new Error('Tu usuario es de solo consulta.');
     const p = { dir, partnerId: q.partner || '', date: today(), bankId: META.banks[0] && META.banks[0].id, amount: 0, method: '03', ref: '', notes: '' };
-    const alloc = {}; let open = [];
-    const amountI = inp({ type: 'number', step: '0.01', min: '0', value: '', onchange: e => { p.amount = +e.target.value; info(); } });
-    const docsBox = h('div'), infoBox = h('div', { class: 'foot' });
+    const alloc = {}; let open = [], manualAmount = false;
+    const want = new Set(String(q.docs || q.doc || '').split(',').filter(Boolean));
+    const amountI = inp({ type: 'number', step: '0.01', min: '0', value: '', onchange: e => { p.amount = r2(+e.target.value || 0); manualAmount = true; info(); } });
+    const docsBox = h('div'), sumBox = h('div', { class: 'pay-sum' }), msgBox = h('div');
+    const selTotal = () => r2(Object.values(alloc).reduce((a, v) => a + (+v || 0), 0));
+    const selCount = () => Object.values(alloc).filter(v => +v > 0).length;
     function info() {
-      const applied = r2(Object.values(alloc).reduce((a, v) => a + (+v || 0), 0));
-      clear(infoBox); add(infoBox, [h('span', {}, `Aplicado ${money(applied)}`), h('span', { class: applied > p.amount + 0.009 ? 'diff' : '' }, p.amount ? `Sin aplicar ${money(r2(p.amount - applied))}` : '')]);
+      const t = selTotal(), n = selCount();
+      if (!manualAmount) { p.amount = t; amountI.value = t ? t.toFixed(2) : ''; }
+      clear(sumBox);
+      add(sumBox, [h('div', {}, h('span', { class: 'k' }, 'Facturas seleccionadas'), h('b', {}, String(n))),
+        h('div', {}, h('span', { class: 'k' }, 'Total a pagar'), h('b', { class: 'big' }, money(t))),
+        h('div', {}, h('span', { class: 'k' }, 'Monto del pago'), h('b', {}, money(p.amount || 0)))]);
+      clear(msgBox);
+      if (p.amount && p.amount < t - 0.009) add(msgBox, [h('div', { class: 'msg bad' }, `El monto del pago es ${money(r2(t - p.amount))} menor que lo seleccionado. Ajusta el monto o los importes a aplicar.`)]);
+      else if (p.amount > t + 0.009 && n) add(msgBox, [h('div', { class: 'msg info' }, `Quedan ${money(r2(p.amount - t))} sin aplicar (saldo a favor / anticipo).`)]);
+      docsBox.querySelectorAll('tbody tr[data-id]').forEach(tr => { const v = +alloc[tr.dataset.id] || 0; tr.classList.toggle('on', v > 0); tr.querySelector('input[type=checkbox]').checked = v > 0; const a = tr.querySelector('input.num'); if (document.activeElement !== a) a.value = v ? v.toFixed(2) : ''; });
+      const all = docsBox.querySelector('input[data-all]'); if (all) { all.checked = open.length > 0 && n === open.length; all.indeterminate = n > 0 && n < open.length; }
     }
+    const setSel = pred => { for (const d of open) alloc[d.id] = pred(d) ? d.residual : 0; manualAmount = false; info(); };
+    // quick selectors
+    const ymd = d => d.toISOString().slice(0, 10);
+    const lastWeek = () => { const t = new Date(today() + 'T12:00:00'), dow = (t.getDay() + 6) % 7; const mon = new Date(t); mon.setDate(t.getDate() - dow - 7); const sun = new Date(mon); sun.setDate(mon.getDate() + 6); return [ymd(mon), ymd(sun)]; };
+    const basis = sel([['date', 'Fecha de factura'], ['received', 'Fecha recibida'], ['due', 'Fecha de vencimiento']], 'date', {});
+    const fromI = inp({ type: 'date', 'aria-label': 'Desde' }), toI = inp({ type: 'date', 'aria-label': 'Hasta' });
+    const byRange = (f, t) => { const k = basis.value; setSel(d => { const v = d[k] || d.date; return (!f || v >= f) && (!t || v <= t); }); };
+    const quick = h('div', { class: 'quick' },
+      h('div', { class: 'chips' },
+        h('button', { class: 'chipb', type: 'button', onclick: () => setSel(() => true) }, 'Todas sin pagar'),
+        h('button', { class: 'chipb', type: 'button', onclick: () => { const [f, t] = lastWeek(); fromI.value = f; toI.value = t; byRange(f, t); } }, 'Semana pasada'),
+        h('button', { class: 'chipb', type: 'button', onclick: () => setSel(d => d.pay === 'vencido') }, 'Vencidas'),
+        h('button', { class: 'chipb', type: 'button', onclick: () => setSel(() => false) }, 'Ninguna')),
+      h('div', { class: 'filters' }, h('span', { class: 'muted' }, 'Por días:'), basis, fromI, h('span', { class: 'muted' }, 'a'), toI,
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { if (!fromI.value && !toI.value) return toast('Elige al menos una fecha.', true); byRange(fromI.value, toI.value); } }, 'Seleccionar esas fechas')));
     async function loadDocs() {
       open = p.partnerId ? await get('/api/acc/open-docs?' + qs({ partner: p.partnerId, dir })) : [];
       for (const k of Object.keys(alloc)) delete alloc[k];
-      if (q.doc) { const d = open.find(x => x.id === q.doc); if (d) { alloc[d.id] = d.residual; p.amount = d.residual; amountI.value = d.residual; } q.doc = null; }
+      for (const d of open) if (want.has(d.id)) alloc[d.id] = d.residual;
+      want.clear(); manualAmount = false;
       clear(docsBox);
-      if (!p.partnerId) return add(docsBox, [h('div', { class: 'empty2' }, 'Elige el contacto para ver sus facturas abiertas.')]);
+      if (!p.partnerId) { add(docsBox, [h('div', { class: 'empty2' }, `Elige el ${dir === 'out' ? 'proveedor' : 'cliente'} para ver sus facturas sin pagar.`)]); quick.hidden = true; info(); return; }
+      quick.hidden = !open.length;
+      const allBox = inp({ type: 'checkbox', 'data-all': '1', 'aria-label': 'Seleccionar todas', onchange: e => setSel(() => e.target.checked) });
       const rows = open.map(d => {
-        const a = inp({ class: 'num', type: 'number', step: '0.01', min: '0', max: d.residual, value: alloc[d.id] || '', onchange: e => { alloc[d.id] = Math.min(+e.target.value || 0, d.residual); e.target.value = alloc[d.id] || ''; info(); } });
-        const ck = inp({ type: 'checkbox', checked: !!alloc[d.id], 'aria-label': 'Aplicar', onchange: e => { alloc[d.id] = e.target.checked ? d.residual : 0; a.value = alloc[d.id] || ''; if (!p.amount || e.target.checked) { p.amount = r2(Object.values(alloc).reduce((x, v) => x + (+v || 0), 0)); amountI.value = p.amount; } info(); } });
-        return h('tr', {}, h('td', { class: 'c' }, ck), h('td', { class: 'nowrap' }, d.number), h('td', { class: 'mono' }, `${d.serie || ''}${d.folio || ''}`), h('td', { class: 'nowrap' }, fd(d.date)), h('td', { class: 'nowrap' }, fd(d.due), ' ', d.pay === 'vencido' ? badge('vencido', 'Vencido') : null), h('td', { class: 'n' }, money(d.totalMxn)), h('td', { class: 'n' }, money(d.residual)), h('td', {}, a));
+        const a = inp({ class: 'num', type: 'number', step: '0.01', min: '0', max: d.residual, 'aria-label': 'Importe a aplicar', onchange: e => { alloc[d.id] = r2(Math.min(+e.target.value || 0, d.residual)); manualAmount = false; info(); } });
+        const ck = inp({ type: 'checkbox', 'aria-label': 'Incluir en el pago', onchange: e => { alloc[d.id] = e.target.checked ? d.residual : 0; manualAmount = false; info(); } });
+        const tr = h('tr', { 'data-id': d.id, class: 'click' }, h('td', { class: 'c' }, ck), h('td', { class: 'nowrap' }, d.number), h('td', { class: 'mono' }, `${d.serie || ''}${d.folio || ''}`), h('td', { class: 'nowrap' }, fd(d.date)), h('td', { class: 'nowrap' }, fd(d.received)), h('td', { class: 'nowrap' }, fd(d.due), ' ', d.pay === 'vencido' ? badge('vencido', 'Vencida') : null), h('td', { class: 'n' }, money(d.totalMxn)), h('td', { class: 'n' }, money(d.residual)), h('td', {}, a));
+        tr.addEventListener('click', e => { if (e.target.closest('input')) return; ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); });
+        return tr;
       });
-      add(docsBox, [h('div', { class: 'tw' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, ['', 'Número', 'Folio', 'Fecha', 'Vence', 'Total', 'Saldo', 'Aplicar'].map((t, i) => h('th', { class: i >= 5 ? 'n' : '' }, t)))), h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colspan: 8, class: 'empty2' }, 'Este contacto no tiene facturas publicadas con saldo.')))))]);
+      add(docsBox, [h('div', { class: 'tw' }, h('table', { class: 't pay-pick' }, h('thead', {}, h('tr', {}, h('th', { class: 'c' }, allBox), ...['Número', 'Folio', 'Fecha', 'Recibida', 'Vence', 'Total', 'Saldo', 'Aplicar'].map((t, i) => h('th', { class: i >= 5 ? 'n' : '' }, t)))),
+        h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colspan: 9, class: 'empty2' }, 'Este contacto no tiene facturas publicadas con saldo.')))))]);
       info();
     }
-    const autoBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => { let left = p.amount; for (const d of open) { const v = r2(Math.min(left, d.residual)); alloc[d.id] = v > 0 ? v : 0; left = r2(left - (alloc[d.id] || 0)); } const save = q.doc; q.doc = null; renderAlloc(); q.doc = save; } }, 'Aplicar a las más antiguas');
-    function renderAlloc() { const keep = { ...alloc }; loadDocs().then(() => { Object.assign(alloc, keep); docsBox.querySelectorAll('tbody tr').forEach((tr, i) => { const d = open[i]; if (!d) return; tr.querySelector('input[type=checkbox]').checked = !!alloc[d.id]; tr.querySelector('input.num').value = alloc[d.id] || ''; }); info(); }); }
     const pSel = partnerSelect(p.partnerId, kind, { onchange: e => { p.partnerId = e.target.value; loadDocs(); } });
     const form = h('div', { class: 'form' },
       field(dir === 'out' ? 'Proveedor' : 'Cliente', pSel, 'span2'),
-      field('Fecha', inp({ type: 'date', value: p.date, onchange: e => { p.date = e.target.value; } })),
+      field('Fecha del pago', inp({ type: 'date', value: p.date, onchange: e => { p.date = e.target.value; } })),
       field('Monto (MXN)', amountI),
       field('Cuenta', sel(META.banks.map(b => [b.id, b.name]), p.bankId, { onchange: e => { p.bankId = e.target.value; } })),
       field('Forma de pago', sel(Object.entries(FORMAS), p.method, { onchange: e => { p.method = e.target.value; } })),
       field('Referencia', inp({ value: '', placeholder: 'Folio de transferencia, cheque…', onchange: e => { p.ref = e.target.value; } }), 'span2'),
       field('Notas', inp({ value: '', onchange: e => { p.notes = e.target.value; } }), 'span4'));
     await loadDocs();
+    const submit = h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+      const allocations = Object.entries(alloc).filter(([, v]) => v > 0).map(([docId, amount]) => ({ docId, amount }));
+      if (!allocations.length && !(await confirmDlg('¿Pago sin facturas?', 'No seleccionaste facturas: se registra como anticipo / saldo a favor.', 'Registrar anticipo'))) return;
+      const r = await act(() => post('/api/acc/payments', { ...p, allocations }), allocations.length > 1 ? `Pago registrado para ${allocations.length} facturas.` : 'Pago registrado.');
+      if (r) go('pago/' + r.id);
+    } }, 'Registrar pago');
     return h('div', { class: 'stack' }, h('a', { href: '#/pagos/' + dir, class: 'muted small' }, '← ' + (dir === 'out' ? 'Pagos a proveedores' : 'Cobros a clientes')),
-      phead(dir === 'out' ? 'Registrar pago' : 'Registrar cobro', 'Si recibiste el complemento de pago (CFDI tipo P), mejor impórtalo: se registra y aplica solo.',
-        [h('button', { class: 'btn primary', type: 'button', onclick: async () => {
-          const r = await act(() => post('/api/acc/payments', { ...p, allocations: Object.entries(alloc).filter(([, v]) => v > 0).map(([docId, amount]) => ({ docId, amount })) }), 'Pago registrado.');
-          if (r) go('pago/' + r.id);
-        } }, 'Registrar')]),
+      phead(dir === 'out' ? 'Registrar pago' : 'Registrar cobro', 'Junta varias facturas del mismo contacto en un solo pago. Si recibiste el complemento de pago (CFDI tipo P), mejor impórtalo: se registra y aplica solo.', [submit]),
       h('section', { class: 'panel' }, form),
-      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'Facturas abiertas'), autoBtn), docsBox, infoBox));
+      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'Facturas sin pagar')), quick, docsBox),
+      h('section', { class: 'panel pay-bar' }, sumBox, msgBox));
   });
 
   route(/^pago\/([a-f0-9]+)$/, async m => {
