@@ -47,6 +47,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
 
   const statusOf = (b, d) => {
     if (d.state === 'cancelled') return { key: 'rechazada', label: 'Cancelada' };
+    if (d.state === 'erased') return { key: 'rechazada', label: 'Eliminada por Grupo AVE' };
     if (d.state === 'draft') return { key: 'revision', label: 'En revisión' };
     const ps = b.payState(d);
     if (ps === 'pagado') return { key: 'pagada', label: 'Pagada' };

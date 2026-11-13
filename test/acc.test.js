@@ -204,3 +204,21 @@ test('portal: two-word passwords and vendor usernames', () => {
   const q = b.upsertPartner({ name: 'Otro', supplier: true }, 'u'); api.enable({}, q.id, 'Chihuahua', 'u');
   assert.throws(() => api.credentials(q.id, 'arca.continental', 'u'), /ya lo tiene/);
 });
+
+test('erase leaves a ghost with who/when, drops it from the books and frees the UUID', async () => {
+  const b = freshBooks();
+  const xml = Buffer.from(cfdi({ uuid: 'eeeeeeee-1111-4000-8000-000000000001', emisor: SUP, receptor: ME, conceptos: [{ desc: 'Arroz', qty: 10, price: 100, iva: 0.16 }] }));
+  const r = await importFiles(b, [{ name: 'a.xml', buf: xml }], 'u');
+  const id = r.created[0].id;
+  b.postDoc(id, 'u');
+  const before = b.aging('ap').partners.reduce((a, p) => a + p.total, 0);
+  assert.ok(before > 1000);
+  const d = b.eraseDoc(id, 'Maria');
+  assert.equal(d.state, 'erased'); assert.equal(d.erased.by, 'Maria'); assert.equal(d.erased.from, 'posted'); assert.ok(d.erased.at);
+  assert.equal(d.uuid, undefined); assert.equal(d.erased.uuid.toLowerCase(), 'eeeeeeee-1111-4000-8000-000000000001');
+  assert.equal(b.aging('ap').partners.reduce((a, p) => a + p.total, 0), 0);
+  assert.ok(b.db.docs.find(x => x.id === id), 'ghost stays in the list');
+  assert.throws(() => b.eraseDoc(id, 'Maria'), /ya fue eliminado/);
+  const again = await importFiles(b, [{ name: 'a.xml', buf: xml }], 'u');
+  assert.equal(again.created.length, 1, 'same CFDI can be imported again');
+});

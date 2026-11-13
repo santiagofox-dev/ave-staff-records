@@ -32,7 +32,8 @@
   const today = () => META ? META.today : new Date().toISOString().slice(0, 10);
   const firstOfMonth = () => today().slice(0, 8) + '01';
   const firstOfYear = () => today().slice(0, 5) + '01-01';
-  const STATE = { draft: 'Borrador', posted: 'Publicado', cancelled: 'Cancelado' };
+  const STATE = { draft: 'Borrador', posted: 'Publicado', cancelled: 'Cancelado', erased: 'Eliminada' };
+  const fdt = s => { try { return new Date(s).toLocaleString('es-MX', { timeZone: 'America/Ciudad_Juarez', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return s; } };
   const PAY = { pagado: 'Pagado', parcial: 'Parcial', vencido: 'Vencido', pendiente: 'Pendiente' };
   const FORMAS = { '01': 'Efectivo', '02': 'Cheque', '03': 'Transferencia', '04': 'Tarjeta de crédito', '28': 'Tarjeta de débito', '17': 'Compensación', '99': 'Por definir' };
   const badge = (cls, txt) => h('span', { class: 'badge ' + cls }, txt);
@@ -215,7 +216,7 @@
       { t: 'Vence', cls: 'nowrap', f: r => fd(r.due) },
       { t: 'Total', n: 1, f: r => (r.type.endsWith('refund') ? -1 : 1) * r.totalMxn },
       { t: 'Saldo', n: 1, f: r => r.state === 'posted' ? r.residual : '' },
-      { t: 'Estado', f: r => h('span', {}, badge(r.state, STATE[r.state]), ' ', r.pay ? badge(r.pay, PAY[r.pay]) : null) },
+      { t: 'Estado', f: r => r.state === 'erased' ? h('span', { class: 'erased-note' }, `Eliminada por ${r.erasedBy || '—'} · ${fdt(r.erasedAt)}`) : h('span', {}, badge(r.state, STATE[r.state]), ' ', r.pay ? badge(r.pay, PAY[r.pay]) : null) },
       { t: '', cls: 'nowrap', f: r => h('span', { class: 'nowrap' }, r.portal ? [badge('parcial', 'Portal'), ' '] : null, r.warnings ? [h('span', { class: 'badge draft', title: 'Tiene avisos por revisar' }, 'Revisar'), ' '] : null, r.files ? h('span', { class: 'muted small', title: 'Archivos adjuntos' }, `${r.files} arch.`) : null) },
     ];
     const chips = (key, opts) => h('div', { class: 'chips' }, opts.map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(st[key] === v), onclick: () => { st[key] = v; render(); } }, t)));
@@ -232,9 +233,9 @@
       drop,
       h('div', { class: 'filters' }, search, fromI, h('span', { class: 'muted' }, 'a'), toI,
         st.partner ? h('button', { class: 'chipb', type: 'button', 'aria-pressed': 'true', onclick: () => { st.partner = ''; go('docs/' + side); } }, 'Contacto filtrado ✕') : null),
-      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal']]) : null),
+      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados'], ['erased', 'Eliminadas']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal']]) : null),
       selBar,
-      table(cols, data.rows, { tall: 1, onRow: r => go('doc/' + r.id), rowClass: r => r.state === 'cancelled' ? 'cx' : '', empty: st.q || st.state || st.pay ? 'Ningún documento coincide con el filtro.' : 'Aún no hay documentos. Importa los XML del SAT para empezar.' }),
+      table(cols, data.rows, { tall: 1, onRow: r => { if (r.state !== 'erased') go('doc/' + r.id); }, rowClass: r => r.state === 'cancelled' ? 'cx' : r.state === 'erased' ? 'ghost' : '', empty: st.q || st.state || st.pay ? 'Ningún documento coincide con el filtro.' : 'Aún no hay documentos. Importa los XML del SAT para empezar.' }),
       h('div', { class: 'foot' }, h('span', {}, `${data.count} documentos${data.count > data.rows.length ? ` (se muestran ${data.rows.length})` : ''}`), h('span', {}, `Total ${money(data.sum.total)} · Saldo abierto ${money(data.sum.residual)}`)),
     );
   });
@@ -300,6 +301,16 @@
     return docForm({ doc: d, row: { pay: '' }, payments: [], journal: [], errors: [] });
   });
   route(/^doc\/([a-f0-9]+)$/, async m => docForm(await get('/api/acc/docs/' + m[1])));
+
+  // Erase = remove from the books for good; the list keeps a crossed-out ghost saying who and when
+  function eraseBtn(d, side) {
+    return h('button', { class: 'btn danger quiet', type: 'button', onclick: async () => {
+      const label = `${d.serie || ''}${d.folio || ''}` || d.number || 'este borrador';
+      if (!(await confirmDlg(`¿Eliminar la factura ${label}?`, 'Sale de la contabilidad por completo: se borran sus conceptos, archivos y su UUID (se puede volver a importar). En la lista queda un registro tachado con quién la eliminó y cuándo. No se puede deshacer. Si el CFDI se canceló ante el SAT, usa Cancelar.', 'Eliminar factura', true))) return;
+      const r = await act(() => post(`/api/acc/docs/${d.id}/erase`), 'Factura eliminada.');
+      if (r) go('docs/' + side);
+    } }, 'Eliminar');
+  }
 
   function lineTotals(l) {
     const amount = r2((+l.qty || 0) * (+l.price || 0)), base = r2(amount - (+l.discount || 0));
@@ -403,7 +414,7 @@
     if (editable) {
       actions.push(h('button', { class: 'btn', type: 'button', onclick: async () => { const r = await act(() => save(), 'Guardado.'); if (r) { go('doc/' + r.id); render(); } } }, 'Guardar borrador'));
       actions.push(h('button', { class: 'btn primary', type: 'button', onclick: async () => { const r = await act(async () => { const s = await save(); return post(`/api/acc/docs/${s.id}/post`); }, 'Publicado.'); if (r) { go('doc/' + r.id); render(); } else if (d.id) { go('doc/' + d.id); render(); } } }, 'Publicar'));
-      if (d.id) actions.push(h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (await confirmDlg('¿Eliminar borrador?', 'Se borra el borrador y sus archivos dejan de estar ligados. No se puede deshacer.', 'Eliminar', true)) { const r = await act(() => api('DELETE', '/api/acc/docs/' + d.id), 'Borrador eliminado.'); if (r) go('docs/' + side); } } }, 'Eliminar'));
+      if (d.id) actions.push(eraseBtn(d, side));
     }
     if (canEdit() && d.state === 'posted') {
       const residual = data.row.residual;
@@ -411,7 +422,9 @@
       if (!isRefund) actions.push(h('button', { class: 'btn', type: 'button', onclick: () => go('doc/new/' + (side === 'ap' ? 'in_refund' : 'out_refund'), { partner: d.partnerId, applies: d.id }) }, 'Nota de crédito'));
       actions.push(h('button', { class: 'btn', type: 'button', onclick: async () => { if (await confirmDlg('¿Regresar a borrador?', 'El documento deja de contar en la contabilidad hasta que lo publiques otra vez. Conserva su número.', 'Regresar a borrador')) { const r = await act(() => post(`/api/acc/docs/${d.id}/draft`), 'Ahora es borrador.'); if (r) render(); } } }, 'A borrador'));
       actions.push(h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (await confirmDlg('¿Cancelar documento?', 'Queda registrado como cancelado y sale de la contabilidad. Úsalo cuando el CFDI se canceló ante el SAT.', 'Cancelar documento', true)) { const r = await act(() => post(`/api/acc/docs/${d.id}/cancel`), 'Cancelado.'); if (r) render(); } } }, 'Cancelar'));
+      actions.push(eraseBtn(d, side));
     }
+    if (canEdit() && d.state === 'cancelled' && d.id) actions.push(eraseBtn(d, side));
     if (canEdit() && d.state === 'cancelled' && d.id) actions.push(h('button', { class: 'btn', type: 'button', onclick: async () => { const r = await act(() => post(`/api/acc/docs/${d.id}/draft`), 'Ahora es borrador.'); if (r) render(); } }, 'Reabrir como borrador'));
 
     const msgs = h('div', { class: 'msgs' },

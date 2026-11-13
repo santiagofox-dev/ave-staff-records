@@ -37,7 +37,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { plant: d.plant || '', test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
+    return { plant: d.plant || '', test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
@@ -47,7 +47,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     if (pay) rows = rows.filter(r => pay === 'abierto' ? ['pendiente', 'vencido', 'parcial'].includes(r.pay) : r.pay === pay);
     if (ql) rows = rows.filter(r => [r.number, r.partner, r.rfc, r.uuid, r.serie + r.folio, String(r.total)].some(v => String(v || '').toLowerCase().includes(ql)));
     rows.sort((a, b) => b.date.localeCompare(a.date) || String(b.number || '').localeCompare(String(a.number || '')));
-    const sum = rows.reduce((t, r) => ({ total: r2(t.total + (r.state === 'cancelled' ? 0 : r.totalMxn)), residual: r2(t.residual + r.residual) }), { total: 0, residual: 0 });
+    const sum = rows.reduce((t, r) => ({ total: r2(t.total + (r.state === 'cancelled' || r.state === 'erased' ? 0 : r.totalMxn)), residual: r2(t.residual + r.residual) }), { total: 0, residual: 0 });
     return { rows: rows.slice(0, 2000), count: rows.length, sum };
   }));
   app.get('/api/acc/docs/:id', R(req => {
@@ -68,7 +68,9 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   app.post('/api/acc/docs/:id/post', W(req => books.postDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/:id/draft', W(req => books.draftDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/:id/cancel', W(req => books.cancelDoc(req.params.id, who(req))));
-  app.delete('/api/acc/docs/:id', W(req => { books.deleteDraft(req.params.id, who(req)); return { ok: true }; }));
+  // every deletion leaves a crossed-out ghost with who and when
+  app.delete('/api/acc/docs/:id', W(req => { books.eraseDoc(req.params.id, who(req)); return { ok: true }; }));
+  app.post('/api/acc/docs/:id/erase', W(req => books.eraseDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/bulk-post', W(req => {
     const ok = [], failed = [];
     const ids = (req.body.ids || []).slice(0, 2000).map(id => books.doc(id)).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date) || String(a.folio).localeCompare(String(b.folio), 'es', { numeric: true })).map(d => d.id);
@@ -154,7 +156,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     const ql = String(req.query.q || '').toLowerCase();
     const ap = books.aging('ap'), ar = books.aging('ar');
     const owe = Object.fromEntries(ap.partners.map(p => [p.partnerId, p.total])), due = Object.fromEntries(ar.partners.map(p => [p.partnerId, p.total]));
-    const counts = {}; for (const d of books.db.docs) if (d.state !== 'cancelled') counts[d.partnerId] = (counts[d.partnerId] || 0) + 1;
+    const counts = {}; for (const d of books.db.docs) if (d.state !== 'cancelled' && d.state !== 'erased') counts[d.partnerId] = (counts[d.partnerId] || 0) + 1;
     return books.db.partners.filter(p => (!req.query.kind || p[req.query.kind]) && (!ql || (p.name + ' ' + p.rfc).toLowerCase().includes(ql)))
       .map(p => ({ ...p, payable: owe[p.id] || 0, receivable: due[p.id] || 0, docs: counts[p.id] || 0 }))
       .sort((a, b) => a.name.localeCompare(b.name, 'es'));

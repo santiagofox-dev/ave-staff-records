@@ -219,7 +219,7 @@ class Books {
   recomputeDue(partnerId, user) {
     let n = 0;
     for (const d of this.db.docs) {
-      if (d.partnerId !== partnerId || d.state === 'cancelled' || d.metodoPago === 'PUE') continue;
+      if (d.partnerId !== partnerId || d.state === 'cancelled' || d.state === 'erased' || d.metodoPago === 'PUE') continue;
       if (d.state === 'posted' && this.residual(d) <= 0.009) continue;
       const due = this.defaultDue(d); if (due !== d.due) { d.due = due; n++; }
     }
@@ -302,6 +302,21 @@ class Books {
     if (this.locked(d.date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
     if (this.paidOn(d).length) throw httpErr(400, 'Tiene pagos aplicados. Cancela o modifica esos pagos primero.');
     d.state = 'cancelled'; this.log(user, 'canceló', 'documento', d.id, d.number || 'borrador');
+    return d;
+  }
+  /* Erase: unlike cancel, the invoice leaves the books entirely (lines, files, UUID) and only a ghost stays in the
+     list, crossed out, saying who erased it and when. The UUID is released so the same CFDI can be imported again. */
+  eraseDoc(id, user) {
+    const d = this.doc(id);
+    if (!d) throw httpErr(404, 'No se encontró el documento.');
+    if (d.state === 'erased') throw httpErr(400, 'Este documento ya fue eliminado.');
+    if (d.number && this.locked(d.date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
+    if (this.paidOn(d).length) throw httpErr(400, 'Tiene pagos o notas de crédito aplicados. Cancela o elimina esos primero.');
+    for (const f of d.files || []) { try { fs.unlinkSync(path.join(this.filesDir, f.stored)); } catch (e) {} }
+    d.erased = { by: user, at: new Date().toISOString(), from: d.state, uuid: d.uuid || '' };
+    d.state = 'erased';
+    delete d.uuid; d.files = []; d.lines = []; d.warnings = []; delete d.portal;
+    this.log(user, 'eliminó', 'documento', d.id, d.number || `${d.serie || ''}${d.folio || ''}` || 'borrador');
     return d;
   }
   deleteDraft(id, user) {
