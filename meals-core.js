@@ -192,6 +192,11 @@ async function readNoRegistrados(file) {
 }
 
 /* ---------------- DELPHI ---------------- */
+// the report sheet: Hoja1 normally, otherwise whichever sheet has the FECHA header
+function delphiSheet(wb) {
+  const has = ws => { for (let r = 1; r <= Math.min(ws.rowCount, 10); r++) if (normName(txt(ws.getRow(r).getCell(1).value)) === 'FECHA') return true; return false; };
+  return [wb.getWorksheet('Hoja1'), ...wb.worksheets].find(ws => ws && has(ws)) || wb.getWorksheet('Hoja1') || wb.worksheets[0];
+}
 const COLS = 11; // A..K
 /**
  * Reads Hoja1 into blocks. FECHA is stored with day and month swapped (Nov 2 → 2026-02-11); we never rebuild it,
@@ -201,16 +206,20 @@ function readDelphi(ws) {
   let hdr = 0;
   for (let r = 1; r <= Math.min(ws.rowCount, 10); r++) if (normName(txt(ws.getRow(r).getCell(1).value)) === 'FECHA') { hdr = r; break; }
   if (!hdr) throw new Error('No encontré el encabezado FECHA en la hoja del reporte DELPHI.');
-  const blocks = []; let cur = []; let neto = null;
+  const blocks = []; let cur = []; let neto = null, missingNeto = false;
   for (let r = hdr + 1; r <= ws.rowCount; r++) {
     const row = ws.getRow(r);
     const a = txt(row.getCell(1).value), j = normName(txt(row.getCell(10).value));
-    if (normName(a) === 'SERVICIOS NETO') { neto = r; break; }
-    if (j === 'TOTAL SEGMENTO') { blocks.push({ rows: cur, totalRow: r }); cur = []; continue; }
+    // the label has shown up in different columns and spellings between exports: look across the whole row
+    const all = []; for (let c = 1; c <= COLS + 2; c++) all.push(normName(txt(row.getCell(c).value)));
+    if (all.some(v => /^(TOTAL )?SERVICIOS? NETOS?$/.test(v))) { neto = r; break; }
+    if (j === 'TOTAL SEGMENTO' || all.includes('TOTAL SEGMENTO')) { blocks.push({ rows: cur, totalRow: r }); cur = []; continue; }
     if (!a && !txt(row.getCell(5).value) && !txt(row.getCell(6).value)) continue;
     cur.push(r);
   }
-  if (neto == null) throw new Error('No encontré la fila SERVICIOS NETO en el reporte DELPHI.');
+  if (cur.length && blocks.length) throw new Error('Al último día del reporte DELPHI le falta su fila TOTAL SEGMENTO.');
+  if (!blocks.length) throw new Error('No encontré días (filas TOTAL SEGMENTO) en el reporte DELPHI.');
+  if (neto == null) { neto = blocks[blocks.length - 1].totalRow + 1; missingNeto = true; } // some exports omit it: we add it back
   for (const b of blocks) {
     const first = ws.getRow(b.rows[0]).getCell(1).value;
     const stored = cellVal(first);
@@ -220,7 +229,7 @@ function readDelphi(ws) {
     b.key = dayKey(b.real);
     b.count = b.rows.length;
   }
-  return { hdr, blocks, neto };
+  return { hdr, blocks, neto, missingNeto };
 }
 
 function snapshotRow(row) {
@@ -235,8 +244,8 @@ function snapshotRow(row) {
  * Existing rows are copied unchanged; only TOTAL SEGMENTO / SERVICIOS NETO values change.
  */
 function updateDelphi(wb, meals) {
-  const ws = wb.getWorksheet('Hoja1') || wb.worksheets[0];
-  const { hdr, blocks, neto } = readDelphi(ws);
+  const ws = delphiSheet(wb);
+  const { hdr, blocks, neto, missingNeto } = readDelphi(ws);
   const byKey = Object.fromEntries(blocks.map(b => [b.key, b]));
   const missing = [...new Set(meals.filter(m => !byKey[m.dayKey]).map(m => m.dayKey))];
   if (missing.length) throw new Error(`El reporte DELPHI no tiene los días: ${missing.join(', ')}.`);
@@ -300,6 +309,7 @@ function updateDelphi(wb, meals) {
   // SERVICIOS NETO
   const nrow = ws.getRow(r);
   netoSnap.cells.forEach((c, i) => { const cell = nrow.getCell(i + 1); cell.value = c.value; cell.style = c.style; });
+  if (missingNeto) { nrow.getCell(1).value = 'SERVICIOS NETO'; nrow.getCell(1).font = { name: 'Calibri', size: 11, bold: true }; nrow.getCell(4).font = { name: 'Calibri', size: 11, bold: true }; }
   const total = stats.reduce((s, x) => s + x.updated, 0);
   nrow.getCell(4).value = total;
   if (meals.length) nrow.getCell(4).fill = fill;
@@ -447,5 +457,5 @@ async function buildSummary(file, { label, dayKeys, people, cruce, delphiStats, 
 module.exports = {
   normName, tokenSortRatio, tokenSetRatio, score, matchName, unusualIds, FUZZY_MIN,
   toSeconds, toYMD, parseDayLabel, dayKey, resolveDay, hhmm, MON,
-  readRoster, readNoRegistrados, readDelphi, updateDelphi, reconcile, buildSummary, loadWorkbook,
+  readRoster, readNoRegistrados, readDelphi, delphiSheet, updateDelphi, reconcile, buildSummary, loadWorkbook,
 };
