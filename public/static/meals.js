@@ -2,6 +2,7 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let typedPeople = {};
 let run = null, readConf = null, genArmed = false, rows = [], curPhoto = 1, rot = 0, rosterOpts = '', unusual = new Set(), byId = {};
 
 async function api(method, url, body) {
@@ -25,7 +26,7 @@ $('#up').addEventListener('submit', async ev => {
   if (!photos.length) return showErr('#upErr', 'Elige al menos una foto de las hojas.');
   for (const f of photos) fd.append('photos', f);
   for (const [k, sel, label] of [['roster', '#f_roster', 'la lista de nuevos ingresos'], ['noreg', '#f_noreg', 'NO REGISTRADOS'], ['delphi', '#f_delphi', 'el reporte DELPHI']]) {
-    const f = $(sel).files[0]; if (!f) return showErr('#upErr', `Falta ${label}.`); fd.append(k, f);
+    const f = $(sel).files[0]; if (!f) { if (k === 'roster') continue; return showErr('#upErr', `Falta ${label}.`); } fd.append(k, f);
   }
   const b = $('#upBtn'); b.disabled = true; b.textContent = 'Subiendo…';
   try { run = await api('POST', '/api/meals/runs', fd); showRun(); }
@@ -35,7 +36,8 @@ $('#up').addEventListener('submit', async ev => {
 
 function showRun() {
   $('#s2').hidden = false; step(2);
-  $('#runInfo').innerHTML = `<b>${esc(run.label)}</b> · días en DELPHI: ${run.days.map(esc).join(', ')} · ${run.files.photos.length} foto(s) · ${run.rosterSize} nuevos ingresos en la lista · ${run.noRegSize} escaneos NO REGISTRADOS (${run.noRegMatches} de nuevos ingresos)`;
+  $('#runInfo').innerHTML = `<b>${esc(run.label)}</b> · días en DELPHI: ${run.days.map(esc).join(', ')} · ${run.files.photos.length} foto(s) · ${run.rosterSize} números de empleado guardados · ${run.noRegSize} escaneos NO REGISTRADOS (${run.noRegMatches} de nuevos ingresos)`;
+  $('#rosterUpd').innerHTML = rosterUpdHTML(run.rosterUpdate, run.rosterSize);
   history.replaceState(null, '', '#' + run.id);
 }
 
@@ -115,7 +117,7 @@ $('#onlyPhoto').addEventListener('change', renderGrid);
 function rowClass(r) { return [!r.id ? (r.reviewed.name ? '' : 'no') : (r.matchKind === 'fuzzy' && !r.reviewed.name ? 'fz' : ''), r.id && unusual.has(r.id) && !r.reviewed.id ? 'odd' : ''].join(' '); }
 function selectHTML(r) {
   const alts = (r.alternatives || []).filter(a => a.id).map(a => `<option value="${esc(a.id)}">${esc(a.name)} · ${a.score}%</option>`).join('');
-  return `<select data-k="${r.key}" aria-label="Nombre en la lista oficial"><option value="">— SIN ID —</option>${alts ? `<optgroup label="Más parecidos">${alts}</optgroup>` : ''}<optgroup label="Todos">${rosterOpts}</optgroup></select>`;
+  return `<select data-k="${r.key}" aria-label="Nombre en la lista oficial"><option value="">— SIN ID —</option><option value="__new">Escribir número de empleado…</option>${alts ? `<optgroup label="Más parecidos">${alts}</optgroup>` : ''}<optgroup label="Todos">${rosterOpts}</optgroup></select>`;
 }
 function renderGrid() {
   if (!run) return;
@@ -139,6 +141,18 @@ function renderGrid() {
 $('#grid').addEventListener('change', e => {
   const t = e.target, r = rows.find(x => x.key === +t.dataset.k); if (!r) return;
   if (t.matches('input[type=checkbox]')) { r.marks[t.dataset.d] = t.checked; if (!r.reviewed.days.includes(t.dataset.d)) r.reviewed.days.push(t.dataset.d); genArmed = false; renderGrid(); }
+  else if (t.matches('select') && t.value === '__new') {
+    const id = (prompt(`Número de empleado de "${r.nameAsWritten || 'esta persona'}":`, '') || '').replace(/\D/g, '');
+    if (!id) { t.value = r.id || ''; return; }
+    if (id.length < 3) { toast('Ese número es muy corto.'); t.value = r.id || ''; return; }
+    if (!byId[id]) {
+      const tecnico = confirm('¿Es TÉCNICO? Acepta = Técnico · Cancelar = Operador general');
+      const p = { id, name: (r.nameAsWritten || '').toUpperCase().trim() || id, type: tecnico ? 'TECNICO' : 'OPERADOR GENERAL' };
+      typedPeople[id] = p; byId[id] = p;
+      rosterOpts = `<option value="${esc(id)}">${esc(p.name)} · ${esc(id)} (nuevo)</option>` + rosterOpts;
+    }
+    r.id = id; r.matchKind = 'manual'; r.reviewed.name = true; r.reviewed.id = true; genArmed = false; renderGrid();
+  }
   else if (t.matches('select')) { r.id = t.value || null; r.matchKind = r.id ? (r.id === r.origId && r.matchKind !== 'manual' ? r.matchKind : 'manual') : null; r.reviewed.name = true; r.reviewed.id = true; genArmed = false; renderGrid(); }
   else if (t.matches('input.nm')) r.nameAsWritten = t.value;
 });
@@ -176,9 +190,10 @@ $('#genBtn').addEventListener('click', async () => {
   const pending = current().items.length;
   if (pending && !genArmed) { genArmed = true; showErr('#genErr', `${pending === 1 ? 'Queda 1 punto' : `Quedan ${pending} puntos`} sin revisar. Revísalos en la lista de arriba, o presiona Generar otra vez para generar de todos modos (quedarán anotados en el resumen).`); return; }
   genArmed = false;
+  const newPeople = Object.values(typedPeople).filter(p => rows.some(r => !r.deleted && r.id === p.id));
   const payload = rows.filter(r => !r.deleted).map(r => ({ source: r.source, photo: r.photo, row: r.row, nameAsWritten: r.nameAsWritten, id: r.id, marks: r.marks, uncertain: r.uncertain, disputed: r.disputed, reviewed: r.reviewed, note: r.note, matchKind: r.matchKind, matchScore: r.matchScore }));
   const b = $('#genBtn'); b.disabled = true; b.textContent = 'Generando…';
-  try { const out = await api('POST', `/api/meals/runs/${run.id}/generate`, { rows: payload }); showResult(out); loadHistory(); }
+  try { const out = await api('POST', `/api/meals/runs/${run.id}/generate`, { rows: payload, newPeople }); showResult(out); loadHistory(); loadRoster(); }
   catch (e) { showErr('#genErr', e.message); }
   finally { b.disabled = false; b.textContent = 'Generar'; }
 });
@@ -197,6 +212,35 @@ function showResult(out) {
 }
 
 /* ---------- history ---------- */
+function rosterUpdHTML(u, size) {
+  if (!u) return `<div class="rupd">No subiste lista nueva: se usan los <b>${size}</b> números guardados. Si alguien no aparece, en la revisión elige <b>Escribir número de empleado…</b>.</div>`;
+  const parts = [`<b>Lista ${esc(u.file || '')}</b>: ${u.added.length} persona${u.added.length === 1 ? '' : 's'} nueva${u.added.length === 1 ? '' : 's'} · ${u.changed.length} dato${u.changed.length === 1 ? '' : 's'} cambiado${u.changed.length === 1 ? '' : 's'} · ${u.unchanged} sin cambios`];
+  if (u.added.length) parts.push(`<details><summary>Nuevos (${u.added.length})</summary><ul>${u.added.map(p => `<li><span class="mono">${esc(p.id)}</span> ${esc(p.name)}${p.type ? ' · ' + esc(p.type) : ''}</li>`).join('')}</ul></details>`);
+  if (u.changed.length) parts.push(`<details open><summary>Cambios (${u.changed.length})</summary><ul>${u.changed.map(c => `<li><span class="mono">${esc(c.id)}</span> ${esc(c.field)}: <s>${esc(c.old)}</s> → <b>${esc(c.new)}</b></li>`).join('')}</ul></details>`);
+  if (u.otherId.length) parts.push(`<details open><summary class="warn">Mismo nombre con otro número (${u.otherId.length})</summary><ul>${u.otherId.map(c => `<li>${esc(c.name)}: nuevo <span class="mono">${esc(c.id)}</span>, ya estaba como <span class="mono">${c.otherIds.map(esc).join(', ')}</span> — confirma cuál es el correcto</li>`).join('')}</ul></details>`);
+  return `<div class="rupd">${parts.join('')}</div>`;
+}
+let rosterData = null;
+async function loadRoster() {
+  try { rosterData = await api('GET', '/api/meals/roster'); } catch (e) { $('#rosterMeta').textContent = e.message; return; }
+  $('#rosterMeta').textContent = `${rosterData.count} guardados${rosterData.updatedAt ? ' · actualizado ' + new Date(rosterData.updatedAt).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : ''}`;
+  $('#rosterHint').textContent = rosterData.count ? `Si no la tienes, se usan los ${rosterData.count} números ya guardados.` : 'Todavía no hay números guardados: sube la lista la primera vez o escribe los números en la revisión.';
+  $('#rosterUploads').innerHTML = rosterData.uploads.length ? `<ul class="rlog">${rosterData.uploads.slice(0, 6).map(u => `<li><b>${esc(new Date(u.at).toLocaleDateString('es-MX', { dateStyle: 'medium' }))}</b> · ${esc(u.file || u.source)} · ${u.added} nuevos · ${u.changed} cambios${u.otherId ? ` · <span class="warn">${u.otherId} con otro número</span>` : ''}${u.by ? ' · ' + esc(u.by) : ''}</li>`).join('')}</ul>` : '';
+  renderRosterTab();
+}
+function renderRosterTab() {
+  if (!rosterData) return;
+  const q = ($('#rosterQ').value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+  const list = rosterData.people.filter(p => !q || p.id.includes(q) || p.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().includes(q));
+  $('#rosterCount').textContent = q ? `${list.length} de ${rosterData.count}` : '';
+  const fdt = s => s ? new Date(s).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  $('#rosterTab').innerHTML = `<thead><tr><th>Número</th><th>Nombre</th><th>Tipo</th><th>Desde</th><th>Último cambio</th></tr></thead><tbody>${list.slice(0, 300).map(p => {
+    const c = p.changes[p.changes.length - 1];
+    return `<tr><td class="mono">${esc(p.id)}</td><td>${esc(p.name)}${p.source === 'captura manual' ? ' <span class="opt">a mano</span>' : ''}</td><td>${esc(p.type || '')}</td><td>${fdt(p.firstSeen)}</td><td class="small">${c ? `${esc(c.field)}: <s>${esc(c.old)}</s> → ${esc(c.new)} (${fdt(c.at)})` : ''}</td></tr>`;
+  }).join('')}${list.length > 300 ? `<tr><td colspan="5" class="muted">… ${list.length - 300} más; busca para encontrarlos.</td></tr>` : ''}</tbody>`;
+}
+$('#rosterQ').addEventListener('input', renderRosterTab);
+
 async function loadHistory() {
   try {
     const h = await api('GET', '/api/meals/history');
@@ -213,7 +257,7 @@ $('#hist').addEventListener('click', async e => {
 
 (async () => {
   try { const c = await api('GET', '/api/meals/config'); $('#keyWarn').hidden = c.hasKey; } catch (e) {}
-  loadHistory();
+  loadHistory(); loadRoster();
   const id = location.hash.slice(1);
   if (/^[a-f0-9]{16}$/.test(id)) {
     try { run = await api('GET', `/api/meals/runs/${id}`); showRun(); if (run.status === 'reading') poll(); else if (run.status === 'read' || run.status === 'generated') { $('#readBtn').textContent = 'Volver a leer fotos'; buildReview(); } }

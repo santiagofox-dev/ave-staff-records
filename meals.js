@@ -23,6 +23,63 @@ module.exports = function (app, { DATA_DIR, getUser }) {
   app.get('/api/meals/config', (req, res) => res.json({ hasKey: AI.hasKey(), model: AI.MODEL() }));
   app.get('/api/meals/history', (req, res) => res.json(history().slice(-50).reverse()));
 
+  /* ---------- saved employee numbers (every list ever uploaded, plus IDs typed in the review) ---------- */
+  const ROSTER = path.join(ROOT, 'roster.json');
+  const loadRoster = () => { try { return JSON.parse(fs.readFileSync(ROSTER, 'utf8')); } catch { return null; } };
+  const saveRoster = s => { fs.writeFileSync(ROSTER + '.tmp', JSON.stringify(s)); fs.renameSync(ROSTER + '.tmp', ROSTER); };
+  const cleanType = t => String(t || '').replace(/\s+/g, ' ').trim();
+  // Merge a list into the store; returns what was new and what changed compared with what we had
+  function mergeRoster(store, list, { file, by, at, source }) {
+    const diff = { file, at, by, source, added: [], changed: [], otherId: [], unchanged: 0 };
+    const byName = {};
+    for (const p of Object.values(store.people)) (byName[M.normName(p.name)] = byName[M.normName(p.name)] || []).push(p.id);
+    for (const r of list) {
+      const id = String(r.id), name = String(r.name).replace(/\s+/g, ' ').trim(), type = cleanType(r.type);
+      const cur = store.people[id];
+      if (!cur) {
+        store.people[id] = { id, name, type, firstSeen: at, lastSeen: at, source, changes: [] };
+        diff.added.push({ id, name, type });
+        const same = (byName[M.normName(name)] || []).filter(x => x !== id);
+        if (same.length) diff.otherId.push({ id, name, otherIds: same });
+        (byName[M.normName(name)] = byName[M.normName(name)] || []).push(id);
+        continue;
+      }
+      cur.lastSeen = at;
+      const ch = [];
+      if (M.normName(cur.name) !== M.normName(name)) ch.push(['nombre', cur.name, name]);
+      if (type && M.normName(cur.type) !== M.normName(type)) ch.push(['tipo', cur.type || '—', type]);
+      if (!ch.length) { diff.unchanged++; continue; }
+      for (const [field, old, nu] of ch) {
+        cur.changes.push({ at, field, old, new: nu, file: file || source, by });
+        diff.changed.push({ id, name, field, old, new: nu });
+        if (field === 'nombre') cur.name = nu; else cur.type = nu;
+      }
+    }
+    store.uploads.push({ ...diff, added: diff.added.length, changed: diff.changed.length, otherId: diff.otherId.length, details: { added: diff.added.slice(0, 300), changed: diff.changed.slice(0, 300), otherId: diff.otherId.slice(0, 100) } });
+    store.uploads = store.uploads.slice(-100);
+    store.updatedAt = at;
+    return diff;
+  }
+  // First run with this feature: build the store from the lists uploaded in earlier weeks
+  function rosterStore() {
+    let s = loadRoster();
+    if (s) return s;
+    s = { people: {}, uploads: [], updatedAt: null };
+    const runs = [];
+    for (const id of fs.existsSync(RUNS) ? fs.readdirSync(RUNS) : []) { const r = load(id); if (r && Array.isArray(r.roster) && r.roster.length) runs.push(r); }
+    runs.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    for (const r of runs) mergeRoster(s, r.roster, { file: (r.files && r.files.roster && r.files.roster.name) || 'semana anterior', by: r.by || '', at: r.createdAt, source: 'lista' });
+    saveRoster(s);
+    return s;
+  }
+  const rosterList = s => Object.values(s.people).map(p => ({ id: p.id, name: p.name, type: p.type }));
+  app.get('/api/meals/roster', (req, res) => {
+    const s = rosterStore();
+    res.json({ count: Object.keys(s.people).length, updatedAt: s.updatedAt,
+      people: Object.values(s.people).sort((a, b) => a.name.localeCompare(b.name, 'es')).map(p => ({ id: p.id, name: p.name, type: p.type, firstSeen: p.firstSeen, lastSeen: p.lastSeen, source: p.source, changes: p.changes.slice(-5) })),
+      uploads: s.uploads.slice(-15).reverse() });
+  });
+
   /* ---------- 1. upload ---------- */
   const upload = multer({
     storage: multer.diskStorage({
@@ -44,28 +101,32 @@ module.exports = function (app, { DATA_DIR, getUser }) {
       const f = req.files || {};
       if (!f.photos || !f.photos.length) return fail('Sube al menos una foto de las hojas INGRESOS.');
       if (/heic/i.test(f.photos.map(p => p.originalname).join())) return fail('Las fotos HEIC de iPhone no se pueden leer; envíalas como JPG (en el iPhone: Ajustes › Cámara › Formatos › Más compatible).');
-      if (!f.roster) return fail('Falta NUMEROS DE EMPLEADO NUEVOS INGRESOS.xlsx.');
       if (!f.noreg) return fail('Falta el archivo NO REGISTRADOS.');
       if (!f.delphi) return fail('Falta el reporte DELPHI.');
       try {
-        const roster = await M.readRoster(f.roster[0].path);
-        if (!roster.length) return fail('La lista de nuevos ingresos está vacía.');
+        const upRoster = f.roster ? await M.readRoster(f.roster[0].path) : null;
+        if (upRoster && !upRoster.length) return fail('La lista de nuevos ingresos está vacía.');
         const noReg = await M.readNoRegistrados(f.noreg[0].path);
         const dwb = await M.loadWorkbook(f.delphi[0].path);
         const { blocks } = M.readDelphi(M.delphiSheet(dwb));
         const delphiName = f.delphi[0].originalname.replace(/\.xlsx$/i, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
         const m = delphiName.match(/DELPHI\s*-\s*(.+?)\s*-\s*Detallado/i);
+        // the list is optional: merge it into the saved numbers and use everything we know
+        const store = rosterStore();
+        const rosterUpdate = upRoster ? mergeRoster(store, upRoster, { file: f.roster[0].originalname, by: getUser(req), at: new Date().toISOString(), source: 'lista' }) : null;
+        if (upRoster) saveRoster(store);
+        const roster = rosterList(store);
         const run = {
           id: req.runId, createdAt: new Date().toISOString(), by: getUser(req), status: 'uploaded',
           label: m ? m[1] : `${blocks[0].key} a ${blocks[blocks.length - 1].key}`,
           files: {
             photos: f.photos.map((p, i) => ({ n: i + 1, name: p.originalname, stored: path.basename(p.path) })),
-            roster: { name: f.roster[0].originalname, stored: path.basename(f.roster[0].path) },
+            roster: f.roster ? { name: f.roster[0].originalname, stored: path.basename(f.roster[0].path) } : null,
             noreg: { name: f.noreg[0].originalname, stored: path.basename(f.noreg[0].path) },
             delphi: { name: f.delphi[0].originalname, stored: path.basename(f.delphi[0].path), base: delphiName },
           },
           days: blocks.map(b => b.key), year: blocks[0].real.y, delphiCounts: Object.fromEntries(blocks.map(b => [b.key, b.count])),
-          roster, noReg, reading: { done: 0, total: f.photos.length, running: false, errors: [] }, photos: [],
+          roster, rosterUpdate: rosterUpdate && { file: rosterUpdate.file, added: rosterUpdate.added, changed: rosterUpdate.changed, otherId: rosterUpdate.otherId, unchanged: rosterUpdate.unchanged }, noReg, reading: { done: 0, total: f.photos.length, running: false, errors: [] }, photos: [],
         };
         save(run);
         res.json(publicRun(run));
@@ -119,6 +180,7 @@ module.exports = function (app, { DATA_DIR, getUser }) {
   }
   function publicRun(run) {
     const { roster, noReg, ...rest } = run;
+    rest.rosterUpdate = run.rosterUpdate || null;
     const sug = run.status === 'read' || run.status === 'generated' ? suggestions(run) : null;
     const rosterIds = new Set(roster.map(r => r.id));
     const unusualIds = M.unusualIds(roster.map(r => r.id));
@@ -141,6 +203,16 @@ module.exports = function (app, { DATA_DIR, getUser }) {
     if (!run) return res.status(404).json({ error: 'No existe esa conciliación.' });
     const rowsIn = Array.isArray(req.body && req.body.rows) ? req.body.rows : null;
     if (!rowsIn) return res.status(400).json({ error: 'Faltan los renglones revisados.' });
+    // IDs typed by hand in the review: remember them and use them like any other
+    const typed = (Array.isArray(req.body.newPeople) ? req.body.newPeople : []).slice(0, 200)
+      .map(p => ({ id: String(p.id || '').replace(/\D/g, ''), name: String(p.name || '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 120), type: /TECNICO/i.test(String(p.type || '')) ? 'TECNICO' : 'OPERADOR GENERAL' }))
+      .filter(p => /^\d{3,12}$/.test(p.id) && p.name);
+    if (typed.length) {
+      const store = rosterStore();
+      const fresh = typed.filter(p => !store.people[p.id]);
+      if (fresh.length) { mergeRoster(store, fresh, { file: '', by: getUser(req), at: new Date().toISOString(), source: 'captura manual' }); saveRoster(store); }
+      for (const p of typed) if (!run.roster.some(r => r.id === p.id)) run.roster.push(store.people[p.id] ? { id: p.id, name: store.people[p.id].name, type: store.people[p.id].type } : p);
+    }
     const byId = Object.fromEntries(run.roster.map(r => [r.id, r]));
     const review = [];
     for (const r of rowsIn.slice(0, 2000)) {
