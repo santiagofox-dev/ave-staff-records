@@ -86,6 +86,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     }
     return { ok, failed };
   }));
+  app.post('/api/acc/docs/pay-pue', W(req => books.payPue((req.body || {}).ids || [], who(req))));
   app.post('/api/acc/docs/bulk-account', W(req => {
     const { ids, account } = req.body || {};
     if (!books.account(account)) throw httpErr(400, 'La cuenta no existe.');
@@ -96,11 +97,11 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   }));
 
   /* ---------- import ---------- */
-  const upload = multer({ storage: multer.memoryStorage(), limits: { files: 80, fileSize: 30 * 1024 * 1024 } });
+  const upload = multer({ storage: multer.memoryStorage(), limits: { files: 80, fileSize: 60 * 1024 * 1024 } });
   app.post('/api/acc/import', (req, res, next) => {
     if (!canEdit(req)) return res.status(403).json({ error: 'Tu usuario es de solo consulta.' });
     upload.array('files', 80)(req, res, async err => {
-      if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pasa de 30 MB.' : 'No se pudieron recibir los archivos.' });
+      if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pasa de 60 MB.' : 'No se pudieron recibir los archivos.' });
       try {
         const files = (req.files || []).map(f => ({ name: Buffer.from(f.originalname, 'latin1').toString('utf8'), buf: f.buffer }));
         const out = await importFiles(books, files, who(req), pdf);

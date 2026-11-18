@@ -163,7 +163,7 @@
     }));
     const bankTotal = d.banks.reduce((a, b) => a + b.balance, 0);
     return h('div', { class: 'stack' },
-      phead('Inicio', `${META.company.name} · RFC ${META.company.rfc}`, canEdit() ? [h('button', { class: 'btn primary', type: 'button', onclick: () => pickFiles() }, 'Importar XML / PDF')] : []),
+      phead('Inicio', `${META.company.name} · RFC ${META.company.rfc}`, canEdit() ? [h('button', { class: 'btn primary', type: 'button', onclick: () => pickFiles() }, 'Carga masiva (ZIP / XML / PDF)')] : []),
       h('div', { class: 'kpis' },
         h('a', { class: 'kpi', href: '#/reportes/aging?side=ap' }, h('span', {}, 'Por pagar a proveedores'), h('b', {}, money(d.payable)), h('small', { class: d.payableOverdue > 0 ? 'bad' : '' }, d.payableOverdue > 0 ? `${money(d.payableOverdue)} vencido` : 'Nada vencido')),
         h('a', { class: 'kpi', href: '#/reportes/aging?side=ar' }, h('span', {}, 'Por cobrar a clientes'), h('b', {}, money(d.receivable)), h('small', { class: d.receivableOverdue > 0 ? 'bad' : '' }, d.receivableOverdue > 0 ? `${money(d.receivableOverdue)} vencido` : 'Nada vencido')),
@@ -256,7 +256,7 @@
       phead(side === 'ap' ? 'Facturas de proveedores' : 'Facturas a clientes', side === 'ap' ? 'Compras: facturas y notas de crédito que recibimos.' : 'Ventas: facturas y notas de crédito que emitimos.',
         canEdit() ? [h('button', { class: 'btn', type: 'button', onclick: () => go('doc/new/' + (side === 'ap' ? 'in_refund' : 'out_refund')) }, 'Nota de crédito'),
           h('button', { class: 'btn', type: 'button', onclick: () => go('doc/new/' + (side === 'ap' ? 'in_invoice' : 'out_invoice')) }, 'Capturar factura'),
-          h('button', { class: 'btn primary', type: 'button', onclick: () => pickFiles() }, 'Importar XML / PDF')] : []),
+          h('button', { class: 'btn primary', type: 'button', onclick: () => pickFiles() }, 'Carga masiva (ZIP / XML / PDF)')] : []),
       drop,
       h('div', { class: 'filters' }, search, fromI, h('span', { class: 'muted' }, 'a'), toI,
         st.partner ? h('button', { class: 'chipb', type: 'button', 'aria-pressed': 'true', onclick: () => { st.partner = ''; go('docs/' + side); } }, 'Contacto filtrado ✕') : null),
@@ -270,7 +270,7 @@
 
   /* ---------- import ---------- */
   function dropZone() {
-    const z = h('div', { class: 'drop' }, 'Arrastra aquí los XML, PDF o el ZIP de descarga masiva del SAT. Se clasifican solos: compras, ventas, notas de crédito y complementos de pago.');
+    const z = h('div', { class: 'drop' }, 'Arrastra aquí todos los ZIP y Excel del día (o de varias semanas) y XML o PDF sueltos. Cada ZIP se carga con su Excel; las facturas que ya estaban registradas se saltan solas.');
     z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('over'); });
     z.addEventListener('dragleave', () => z.classList.remove('over'));
     z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('over'); importFiles([...e.dataTransfer.files]); });
@@ -279,45 +279,69 @@
   const filePick = $('#filePick');
   const pickFiles = () => { filePick.value = ''; filePick.click(); };
   filePick.addEventListener('change', () => importFiles([...filePick.files]));
+  // Bulk load: any mix of ZIPs (each day's package), their Excel lists, loose XML/PDF. Each ZIP goes in its own
+  // request together with the Excel that has the same name, so big daily packages load one at a time.
   async function importFiles(files) {
     files = files.filter(f => /\.(xml|pdf|zip|xlsx)$/i.test(f.name));
     if (!files.length) return toast('Elige archivos XML, PDF, ZIP o el Excel del SAT.', true);
-    // XML first so PDFs find their invoice; batches keep each request small
-    const lists = files.filter(f => /\.xlsx$/i.test(f.name)); files = files.filter(f => !/\.xlsx$/i.test(f.name));
-    files.sort((a, b) => (/\.pdf$/i.test(a.name) ? 1 : 0) - (/\.pdf$/i.test(b.name) ? 1 : 0));
-    const batches = []; let cur = [], size = 0;
-    for (const f of files) { if (cur.length && (cur.length >= 40 || size + f.size > 40e6)) { batches.push(cur); cur = []; size = 0; } cur.push(f); size += f.size; }
-    if (cur.length) batches.push(cur);
-    const bar = h('i'), txt = h('span', {}, `0 de ${files.length}`);
+    const key = n => n.toLowerCase().replace(/\.(zip|xlsx)$/, '').replace(/\bexcel\b/g, '').replace(/^\d+_/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    const zips = files.filter(f => /\.zip$/i.test(f.name)), lists = files.filter(f => /\.xlsx$/i.test(f.name)), loose = files.filter(f => /\.(xml|pdf)$/i.test(f.name));
+    const used = new Set();
+    const groups = zips.sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true })).map(z => { const x = lists.find(l => !used.has(l) && key(l.name) === key(z.name)); if (x) used.add(x); return { label: z.name.replace(/\.zip$/i, ''), files: x ? [z, x] : [z], size: z.size }; });
+    loose.sort((a, b) => (/\.pdf$/i.test(a.name) ? 1 : 0) - (/\.pdf$/i.test(b.name) ? 1 : 0));
+    const leftLists = lists.filter(l => !used.has(l));
+    for (let i = 0; i < loose.length; i += 40) groups.push({ label: `Archivos sueltos ${i + 1}–${Math.min(i + 40, loose.length)}`, files: [...leftLists, ...loose.slice(i, i + 40)] });
+    if (!zips.length && !loose.length && leftLists.length) groups.push({ label: 'Excel', files: leftLists });
     const total = { created: [], payments: [], duplicates: [], skipped: [], errors: [], attached: [], missing: [] };
+    const perGroup = [];
+    const bar = h('i'), txt = h('span', {}, `0 de ${groups.length}`), now = h('div', { class: 'muted small' });
     const box = clear($('#dlgBody'));
-    add(box, [h('h2', {}, 'Importando…'), h('div', { class: 'progress' }, h('div', { class: 'bar2' }, bar), txt), h('p', { class: 'muted' }, 'No cierres esta página.')]);
+    add(box, [h('h2', {}, 'Carga masiva…'), h('div', { class: 'progress' }, h('div', { class: 'bar2' }, bar), txt), now, h('p', { class: 'muted' }, 'No cierres esta página. Las facturas que ya estaban registradas se saltan solas (por UUID).')]);
     dlg.onclose = null; dlg.showModal();
-    let done = 0;
-    if (!files.length && lists.length) batches.push([]);
-    for (const b of batches) {
-      const fd2 = new FormData(); [...lists, ...b].forEach(f => fd2.append('files', f, f.name));
-      try { const r = await api('POST', '/api/acc/import', fd2); for (const k in total) if (k !== 'missing') total[k].push(...(r[k] || [])); total.missing = r.missing || total.missing; }
-      catch (e) { total.errors.push({ file: b.map(f => f.name).join(', ').slice(0, 120), error: e.message }); }
-      done += b.length; bar.style.width = (done / files.length * 100) + '%'; txt.textContent = `${done} de ${files.length}`;
+    let i = 0;
+    for (const g of groups) {
+      now.textContent = g.label;
+      const fd2 = new FormData(); g.files.forEach(f => fd2.append('files', f, f.name));
+      const row = { label: g.label, created: 0, duplicates: 0, missing: 0, errors: 0 };
+      try {
+        const r = await api('POST', '/api/acc/import', fd2);
+        for (const k of ['created', 'payments', 'duplicates', 'skipped', 'errors', 'attached']) total[k].push(...(r[k] || []));
+        total.missing.push(...(r.missing || []));
+        Object.assign(row, { created: (r.created || []).length, duplicates: (r.duplicates || []).length, missing: (r.missing || []).length, errors: (r.errors || []).length });
+      } catch (e) { total.errors.push({ file: g.label, error: e.message }); row.errors++; }
+      perGroup.push(row);
+      i++; bar.style.width = (i / groups.length * 100) + '%'; txt.textContent = `${i} de ${groups.length}`;
     }
     dlg.close();
     await refreshMeta();
     const pdfOnly = total.created.filter(c => c.pdfOnly).length, fromPdf = total.created.filter(c => c.fromPdf).length;
+    const newIds = total.created.map(c => c.id).filter(Boolean);
     const lines = [
+      groups.length > 1 ? table([{ t: 'Archivo', k: 'label', cls: 'w' }, { t: 'Nuevas', k: 'created', n: 1, f: r => String(r.created) }, { t: 'Ya estaban', f: r => String(r.duplicates), n: 1 }, { t: 'Faltan en ZIP', f: r => r.missing ? h('b', { class: 'diff' }, String(r.missing)) : '0', n: 1 }, { t: 'Errores', f: r => r.errors ? h('b', { class: 'diff' }, String(r.errors)) : '0', n: 1 }], perGroup) : null,
       total.created.length - pdfOnly - fromPdf || total.payments.length ? h('div', { class: 'msg ok' }, `${total.created.length - pdfOnly - fromPdf} documentos creados desde XML como borrador${total.payments.length ? `, ${total.payments.length} pagos registrados desde complementos` : ''}.`) : null,
-      fromPdf ? h('div', { class: 'msg ok' }, `${fromPdf} facturas leídas del PDF impreso (sin XML) como borrador: conceptos, IVA y total completos.`) : null,
+      fromPdf ? h('div', { class: 'msg ok' }, `${fromPdf} facturas leídas del PDF impreso (sin XML) como borrador.`) : null,
       pdfOnly ? h('div', { class: 'msg' }, `${pdfOnly} PDF sin su XML: quedaron como borrador para capturar a mano o subir el XML.`) : null,
       total.attached.length ? h('div', { class: 'msg info' }, `${total.attached.length} PDF adjuntados a su factura.`) : null,
-      total.duplicates.length ? h('div', { class: 'msg info' }, `${total.duplicates.length} ya estaban registrados (se ignoraron).`) : null,
-      fromPdf ? h('div', { class: total.created.some(c => c.fromPdf && !c.ok) ? 'msg' : 'msg info' }, `${total.created.filter(c => c.fromPdf && c.ok).length} de ${fromPdf} leídas del PDF cuadran al centavo${lists.length ? ' con el Excel' : ''}; las demás quedan marcadas para revisar.`) : null,
-      total.missing.length ? h('div', { class: 'msg' }, `${total.missing.length} facturas del Excel no venían en archivos: `, total.missing.map(m => `${m.name || m.rfc} $${m.total} (${m.fecha})`).join('; '), '. Pide el PDF o XML al proveedor.') : null,
-      ...total.skipped.map(s => h('div', { class: 'msg info' }, `${s.file}: ${s.reason}`)),
-      ...total.errors.map(s => h('div', { class: 'msg bad' }, `${s.file}: ${s.error}`)),
+      total.duplicates.length ? h('div', { class: 'msg info' }, `${total.duplicates.length} ya estaban registradas (se ignoraron, no se duplican).`) : null,
+      total.missing.length ? h('div', { class: 'msg' }, `${total.missing.length} facturas del Excel no venían en los archivos: `, total.missing.slice(0, 30).map(m => `${m.name || m.rfc} $${m.total} (${m.fecha})`).join('; '), total.missing.length > 30 ? '…' : '', '. Pide el PDF o XML al proveedor.') : null,
+      ...total.skipped.slice(0, 20).map(s => h('div', { class: 'msg info' }, `${s.file}: ${s.reason}`)),
+      ...total.errors.slice(0, 30).map(s => h('div', { class: 'msg bad' }, `${s.file}: ${s.error}`)),
     ];
-    await dialog('Importación terminada', h('div', { class: 'list' }, lines), [{ label: 'Listo', primary: true }]);
+    const pue = h('input', { type: 'checkbox', checked: true });
+    const buttons = [{ label: 'Revisar borradores' }];
+    if (newIds.length && canEdit()) {
+      lines.push(h('label', { class: 'check' }, pue, 'Al publicar, registrar como pagadas las de contado (PUE): forma 01 desde Caja, las demás desde Banco, con la fecha de la factura.'));
+      buttons.push({ label: `Publicar las ${newIds.length} nuevas`, primary: true, run: async () => {
+        const r = await post('/api/acc/docs/bulk-post', { ids: newIds });
+        let msg = `${r.ok.length} publicadas`;
+        if (pue.checked) { const p = await post('/api/acc/docs/pay-pue', { ids: newIds }); if (p.done.length) msg += ` · ${p.done.length} de contado registradas como pagadas (${money(p.total)})`; }
+        if (r.failed.length) msg += ` · ${r.failed.length} no se pudieron publicar (quedan en borrador)`;
+        toast(msg + '.'); return 'posted';
+      } });
+    }
+    const res = await dialog('Carga terminada', h('div', { class: 'list' }, lines), buttons);
     const created = total.created[0];
-    go(created && created.type.startsWith('out') ? 'docs/ar' : 'docs/ap', { state: 'draft' });
+    go(created && created.type.startsWith('out') ? 'docs/ar' : 'docs/ap', res === 'posted' ? {} : { state: 'draft' });
     render();
   }
 

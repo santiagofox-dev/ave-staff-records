@@ -176,8 +176,8 @@ async function importFiles(books, files, user, pdf, opts = {}) {
     }
     if (target) {
       const sha = crypto.createHash('sha1').update(f.buf).digest('hex').slice(0, 16);
-      if (!(target.files || []).some(x => x.sha === sha)) { target.files.push(storeFile(books, f.name, f.buf)); }
-      res.attached.push({ file: f.name, id: target.id });
+      if (!(target.files || []).some(x => x.sha === sha)) { target.files.push(storeFile(books, f.name, f.buf)); res.attached.push({ file: f.name, id: target.id }); }
+      else if (!res.created.some(c => c.id === target.id) && !res.duplicates.some(x => x.uuid && x.uuid === target.uuid)) res.duplicates.push({ file: f.name, id: target.id, uuid: target.uuid, pdf: true }); // same PDF already on file
       continue;
     }
     // printed CFDI we could read completely: same as an XML import, flagged as read from the PDF

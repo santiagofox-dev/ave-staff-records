@@ -289,6 +289,25 @@ class Books {
     pay.cashSaleDoc = d.id; d.cashSale.paymentId = pay.id;
     return d;
   }
+  /* Invoices paid at issue (PUE) are already paid: record the payment on the invoice date, from Caja when the
+     forma de pago is cash (01) and from the bank otherwise. */
+  payPue(ids, user) {
+    const banks = this.db.banks, caja = banks.find(b => /caja/i.test(b.name)) || banks[0], bank = banks.find(b => !/caja/i.test(b.name)) || banks[0];
+    const done = [], skipped = [];
+    for (const id of ids || []) {
+      const d = this.doc(id);
+      if (!d || d.state !== 'posted' || d.metodoPago !== 'PUE' || TYPES[d.type].sign < 0) { skipped.push(id); continue; }
+      const due = this.residual(d);
+      if (due <= 0.009) { skipped.push(id); continue; }
+      const b = d.formaPago === '01' ? caja : bank;
+      try {
+        const side = TYPES[d.type].side;
+        const p = this.createPayment({ dir: side === 'ap' ? 'out' : 'in', partnerId: d.partnerId, date: d.date, bankId: b.id, amount: due, method: d.formaPago || '', ref: `PUE ${d.serie || ''}${d.folio || ''}`.trim(), allocations: [{ docId: d.id, amount: due }] }, user);
+        done.push({ id: d.id, payment: p.number, bank: b.name, amount: due });
+      } catch (e) { skipped.push(id); }
+    }
+    return { done, skipped: skipped.length, total: r2(done.reduce((a, x) => a + x.amount, 0)) };
+  }
   // a cash sale's own payment goes with it when it is cancelled or erased
   releaseCashPayment(d, user) {
     if (!d.cashSale || !d.cashSale.paymentId) return;
