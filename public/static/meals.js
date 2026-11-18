@@ -19,10 +19,38 @@ function showErr(sel, msg) { const e = $(sel); e.textContent = msg || ''; e.hidd
 function step(n) { document.querySelectorAll('#steps li').forEach(li => { const k = +li.dataset.step; li.className = k < n ? 'done' : k === n ? 'on' : ''; }); }
 
 /* ---------- 1. upload ---------- */
+// photos accumulate: every pick or drop adds to the list (duplicates by name+size ignored); × removes one
+let photoList = [];
+function addPhotos(files) {
+  for (const f of files) {
+    if (!/^image\/(jpeg|png|webp)$/i.test(f.type) && !/\.(jpe?g|png|webp)$/i.test(f.name)) { if (/heic/i.test(f.name + f.type)) toast('Las fotos HEIC no se pueden leer: envíalas como JPG.'); continue; }
+    if (!photoList.some(p => p.name === f.name && p.size === f.size)) photoList.push(f);
+  }
+  if (photoList.length > 40) { photoList = photoList.slice(0, 40); toast('Máximo 40 fotos por semana.'); }
+  renderPhotos();
+}
+function renderPhotos() {
+  $('#photoCount').textContent = photoList.length ? `${photoList.length} foto${photoList.length === 1 ? '' : 's'} lista${photoList.length === 1 ? '' : 's'} · toca para agregar más` : 'Toca para elegir fotos o arrástralas aquí (varias a la vez).';
+  const box = $('#pthumbs'); box.replaceChildren();
+  photoList.forEach((f, i) => {
+    const fig = document.createElement('figure'), img = document.createElement('img'), x = document.createElement('button'), cap = document.createElement('figcaption');
+    img.alt = f.name; const rd = new FileReader(); rd.onload = () => { img.src = rd.result; }; rd.readAsDataURL(f); // data: URLs (the page's CSP blocks blob:)
+    x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.title = 'Quitar foto'; x.setAttribute('aria-label', 'Quitar ' + f.name); x.onclick = () => { photoList.splice(i, 1); renderPhotos(); };
+    cap.textContent = `Foto ${i + 1}`;
+    fig.append(img, x, cap); box.append(fig);
+  });
+}
+$('#f_photos').addEventListener('change', e => { addPhotos([...e.target.files]); e.target.value = ''; });
+const pd = $('#photoDrop');
+['dragenter', 'dragover'].forEach(t => pd.addEventListener(t, e => { e.preventDefault(); pd.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => pd.addEventListener(t, e => { e.preventDefault(); pd.classList.remove('over'); }));
+pd.addEventListener('drop', e => addPhotos([...e.dataTransfer.files]));
+renderPhotos();
+
 $('#up').addEventListener('submit', async ev => {
   ev.preventDefault(); showErr('#upErr');
   const fd = new FormData();
-  const photos = $('#f_photos').files;
+  const photos = photoList;
   if (!photos.length) return showErr('#upErr', 'Elige al menos una foto de las hojas.');
   for (const f of photos) fd.append('photos', f);
   for (const [k, sel, label] of [['roster', '#f_roster', 'la lista de nuevos ingresos'], ['noreg', '#f_noreg', 'NO REGISTRADOS'], ['delphi', '#f_delphi', 'el reporte DELPHI']]) {

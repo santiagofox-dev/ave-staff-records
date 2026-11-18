@@ -86,13 +86,13 @@ module.exports = function (app, { DATA_DIR, getUser }) {
       destination: (req, file, cb) => { const d = runDir(req.runId); fs.mkdirSync(d, { recursive: true }); cb(null, d); },
       filename: (req, file, cb) => cb(null, `${file.fieldname}-${crypto.randomBytes(4).toString('hex')}${path.extname(file.originalname).toLowerCase()}`),
     }),
-    limits: { fileSize: 30 * 1024 * 1024, files: 30 },
+    limits: { fileSize: 30 * 1024 * 1024, files: 45 },
     fileFilter: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       if (file.fieldname === 'photos' ? /^\.(jpe?g|png|webp|heic)$/.test(ext) : ext === '.xlsx') return cb(null, true);
       cb(Object.assign(new Error(file.fieldname === 'photos' ? `"${file.originalname}" no es una foto (JPG o PNG).` : `"${file.originalname}" debe ser un archivo .xlsx.`), { status: 400 }));
     },
-  }).fields([{ name: 'photos', maxCount: 25 }, { name: 'roster', maxCount: 1 }, { name: 'noreg', maxCount: 1 }, { name: 'delphi', maxCount: 1 }]);
+  }).fields([{ name: 'photos', maxCount: 40 }, { name: 'roster', maxCount: 1 }, { name: 'noreg', maxCount: 1 }, { name: 'delphi', maxCount: 1 }]);
 
   app.post('/api/meals/runs', (req, res, next) => { req.runId = crypto.randomBytes(8).toString('hex'); next(); }, (req, res) => {
     upload(req, res, async err => {

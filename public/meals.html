@@ -7,7 +7,7 @@
 <title>Comidas de Nuevos Ingresos · AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/styles.css?v=10">
-<link rel="stylesheet" href="/static/meals.css?v=4">
+<link rel="stylesheet" href="/static/meals.css?v=5">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="/static/shell.css?v=3">
 </head>
@@ -43,7 +43,7 @@
   <section class="panel" id="s1">
     <h2>1. Archivos de la semana</h2>
     <form id="up" class="upgrid" novalidate>
-      <div class="field"><label for="f_photos">Fotos de las hojas INGRESOS (JPG/PNG, una o varias)</label><input id="f_photos" type="file" accept="image/jpeg,image/png,image/webp" multiple></div>
+      <div class="field full"><label for="f_photos">Fotos de las hojas INGRESOS (JPG/PNG): elige o arrastra varias a la vez, y puedes seguir agregando</label><div class="photodrop" id="photoDrop"><input id="f_photos" type="file" accept="image/jpeg,image/png,image/webp" multiple><span id="photoCount">Ninguna foto todavía.</span></div><div class="pthumbs" id="pthumbs"></div></div>
       <div class="field"><label for="f_roster">NUMEROS DE EMPLEADO NUEVOS INGRESOS.xlsx <span class="opt">opcional</span></label><input id="f_roster" type="file" accept=".xlsx"><div class="hint" id="rosterHint">Si no la tienes, se usan los números ya guardados.</div></div>
       <div class="field"><label for="f_noreg">NO REGISTRADOS (fechas).xlsx</label><input id="f_noreg" type="file" accept=".xlsx"></div>
       <div class="field"><label for="f_delphi">DELPHI - … - Detallado.xlsx (original)</label><input id="f_delphi" type="file" accept=".xlsx"></div>
@@ -113,7 +113,7 @@
 <div class="toast" id="toast" hidden></div>
 <script src="/static/meals-conf.js?v=1"></script>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/meals.js?v=8"></script>
+<script src="/static/meals.js?v=9"></script>
 <script src="/static/shell.js?v=2"></script>
 </body>
 </html>

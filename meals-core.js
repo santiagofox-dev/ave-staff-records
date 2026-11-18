@@ -115,15 +115,30 @@ function toSeconds(v) {
 }
 const hhmm = s => s == null ? '' : `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}`;
 /** A real calendar date {y,m,d} from a cell (Date, Excel serial, or dd/mm/yyyy text) */
-function toYMD(v) {
+const MONTH_WORDS = { ene: 1, jan: 1, feb: 2, mar: 3, abr: 4, apr: 4, may: 5, jun: 6, jul: 7, ago: 8, aug: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12, dec: 12 };
+const monthWord = w => MONTH_WORDS[strip(String(w)).toLowerCase().slice(0, 3)] || 0;
+/* Dates come in many shapes: real Excel dates, Spanish D/M/Y text, and English text ("11/09/2026", "Nov 9, 2026",
+   "9-Nov-26"). order: 'DMY' | 'MDY' tells how to read ambiguous a/b/yyyy text (decided per file). */
+function toYMD(v, order) {
   v = cellVal(v);
   if (v instanceof Date) return { y: v.getUTCFullYear(), m: v.getUTCMonth() + 1, d: v.getUTCDate() };
   if (typeof v === 'number' && v > 20000) { const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 864e5); return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() }; }
-  const s = String(v || '');
+  const s = String(v || '').trim();
+  const yr = y => (+y < 100 ? 2000 + +y : +y);
   let m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return { y: +m[1], m: +m[2], d: +m[3] };
-  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/); if (m) return { y: +m[3] < 100 ? 2000 + +m[3] : +m[3], m: +m[2], d: +m[1] };
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+  if (m) {
+    const a = +m[1], b = +m[2];
+    const mdy = a <= 12 && (b > 12 || (order === 'MDY' && a <= 12));
+    return mdy ? { y: yr(m[3]), m: a, d: b, text: 'MDY' } : { y: yr(m[3]), m: b, d: a, text: 'DMY' };
+  }
+  // "9-Nov-2026", "9 nov 2026", "09/Nov/26"
+  m = s.match(/^(\d{1,2})[\s\/.-]*([A-Za-zÁÉÍÓÚáéíóú]{3,})\.?[\s\/.,-]*(\d{2,4})/); if (m && monthWord(m[2])) return { y: yr(m[3]), m: monthWord(m[2]), d: +m[1] };
+  // "Nov 9, 2026", "Monday, November 9, 2026"
+  m = s.match(/([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2,4})/); if (m && monthWord(m[1])) return { y: yr(m[3]), m: monthWord(m[1]), d: +m[2] };
   return null;
 }
+const fmtDMY = f => (f ? `${String(f.d).padStart(2, '0')}/${String(f.m).padStart(2, '0')}/${f.y}` : '');
 /** "2-Nov", "2 nov", "02/11" … → {d, m} ; month by name (es/en) or number */
 function parseDayLabel(label) {
   const s = strip(label).toLowerCase();
@@ -218,10 +233,14 @@ async function readNoRegistrados(file) {
     const h = findHeader(ws, ['FECHA', 'HORA', 'CODIGO']);
     if (!h) continue;
     const c = { fecha: h.col('FECHA'), hora: h.col('HORA'), motivo: h.col('MOTIVO'), servicio: h.col('SERVICIO'), terminal: h.col('TERMINAL'), codigo: h.col('CODIGO') };
+    // the scanner exports dates in English (month first); text dates with a part > 12 tell which way the file goes
+    let mdy = 0, dmy = 0;
+    for (let r = h.row + 1; r <= ws.rowCount; r++) { const t = String(cellVal(ws.getRow(r).getCell(c.fecha).value) || ''); const m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-]\d{2,4}/); if (m) { if (+m[2] > 12) mdy++; else if (+m[1] > 12) dmy++; } }
+    const order = mdy >= dmy ? 'MDY' : 'DMY';
     const out = [];
     for (let r = h.row + 1; r <= ws.rowCount; r++) {
       const row = ws.getRow(r), get = k => (c[k] ? row.getCell(c[k]).value : '');
-      const fecha = toYMD(get('fecha'));
+      const fecha = toYMD(get('fecha'), order);
       if (!fecha && !txt(get('codigo'))) continue;
       out.push({ rowNum: r, fecha, hora: toSeconds(get('hora')), motivo: txt(get('motivo')), servicio: txt(get('servicio')), terminal: txt(get('terminal')),
         codigo: txt(get('codigo')).replace(/\.0+$/, '') });
@@ -388,8 +407,9 @@ function reconcile(review, noReg, roster, dayKeys) {
     const hit = /^\d+$/.test(code) ? byId[code] : null;
     const real = s.fecha;
     let dk = real ? dayKey(real) : '';
-    if (real && !dayKeys.includes(dk) && dayKeys.includes(dayKey({ d: real.m, m: real.d }))) dk = dayKey({ d: real.m, m: real.d });
-    const row = { ...s, enLista: !!hit, nombre: hit ? hit.name : '', dayKey: dk, accion: 'No aplica' };
+    let fecha = real;
+    if (real && !dayKeys.includes(dk) && dayKeys.includes(dayKey({ d: real.m, m: real.d }))) { dk = dayKey({ d: real.m, m: real.d }); fecha = { y: real.y, m: real.d, d: real.m }; } // day and month came swapped
+    const row = { ...s, fecha, fechaTxt: fmtDMY(fecha), enLista: !!hit, nombre: hit ? hit.name : '', dayKey: dk, accion: 'No aplica' };
     if (hit) {
       if (!dayKeys.includes(dk)) row.accion = 'Fecha fuera del reporte';
       else {
@@ -483,7 +503,7 @@ async function buildSummary(file, { label, dayKeys, people, cruce, delphiStats, 
   // Cruce
   cru.addRow(['Fecha', 'Hora', 'Motivo', 'Servicio', 'Terminal', 'Código', '¿En lista de nuevos ingresos?', 'Nombre', 'Acción']).eachCell(c => { c.font = bold; c.fill = head; });
   for (const s of cruce) {
-    const f = s.fecha ? `${String(s.fecha.d).padStart(2, '0')}/${String(s.fecha.m).padStart(2, '0')}/${s.fecha.y}` : '';
+    const f = fmtDMY(s.fecha);
     const row = cru.addRow([f, s.hora != null ? s.hora / 86400 : '', s.motivo, s.servicio, s.terminal, s.codigo, s.enLista ? 'SÍ' : 'NO', s.nombre, s.accion]);
     row.getCell(2).numFmt = 'h:mm:ss'; row.getCell(6).numFmt = '@';
     row.eachCell({ includeEmpty: true }, c => { c.font = font; if (s.enLista) c.fill = blue; });
@@ -495,7 +515,7 @@ async function buildSummary(file, { label, dayKeys, people, cruce, delphiStats, 
 }
 
 module.exports = {
-  normName, tokenSortRatio, tokenSetRatio, score, matchName, unusualIds, FUZZY_MIN,
+  toYMD, fmtDMY, normName, tokenSortRatio, tokenSetRatio, score, matchName, unusualIds, FUZZY_MIN,
   toSeconds, toYMD, parseDayLabel, dayKey, resolveDay, hhmm, MON,
   readRoster, readNoRegistrados, readDelphi, delphiSheet, updateDelphi, reconcile, buildSummary, loadWorkbook,
 };
