@@ -100,7 +100,8 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
   app.get('/api/portal/me', needVendor, (req, res) => {
     res.set('Cache-Control', 'no-store');
     const b = getBooks(), v = req.vendor;
-    const docs = b.db.docs.filter(d => d.partnerId === v.id && TYPES[d.type].side === 'ap').sort((a, c) => (c.received || c.date).localeCompare(a.received || a.date)).slice(0, 60)
+    // the supplier only sees what they uploaded themselves, and invoices of ours they sent too (to confirm or already confirmed)
+    const docs = b.db.docs.filter(d => d.partnerId === v.id && TYPES[d.type].side === 'ap' && d.state !== 'erased' && (d.portal || d.vendorReview)).sort((a, c) => (c.received || c.date).localeCompare(a.received || a.date)).slice(0, 60)
       .map(d => ({ ...reviewView(b, d), status: statusOf(b, d) }));
     res.json({ vendor: { name: v.name, rfc: v.rfc || '', terms: v.terms || 0, username: v.portal.account.username, test: !!v.portal.test }, company: { name: b.db.company.name }, plants: plantsFor(v), docs });
   });
@@ -109,7 +110,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
      the data we have, so they confirm it matches or say what's wrong. */
   const hasReceipt = d => (d.files || []).some(f => f.receipt);
   function reviewView(b, d) {
-    const r = d.vendorReview || (d.portal ? { status: 'ok' } : d.state !== 'cancelled' && !d.test ? { status: 'pending' } : null); // ones we loaded ourselves also need their sign-off
+    const r = d.vendorReview || (d.portal ? { status: 'ok' } : null);
     return { id: d.id, folio: `${d.serie || ''}${d.folio || ''}` || (d.uuid || '').slice(0, 8), date: d.date, received: d.received || d.date,
       plant: b.plantOf(d) || '', due: d.state === 'posted' ? d.due : addDays(d.received || d.date, (b.partner(d.partnerId) || {}).terms || 0),
       subtotal: Math.round(((d.subtotal || 0) - (d.discount || 0)) * 100) / 100, iva: d.traslados || 0, retenciones: d.retenciones || 0, total: d.total,
@@ -124,7 +125,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
         const b = getBooks(), v = req.vendor, body = req.body || {};
         const ok = body.ok === true || body.ok === 'true', comment = body.comment, plant = body.plant;
         const d = b.doc(String(body.id || ''));
-        if (!d || d.partnerId !== v.id || d.state === 'erased') return res.status(404).json({ error: 'No encontramos esa factura.' });
+        if (!d || d.partnerId !== v.id || d.state === 'erased' || !(d.portal || d.vendorReview)) return res.status(404).json({ error: 'No encontramos esa factura.' });
         const name = f => Buffer.from(f.originalname, 'latin1').toString('utf8');
         const recs = ((req.files || {}).recibo || []).filter(f => IMG.test(name(f)) || IMG_TYPES.test(f.mimetype));
         for (const f of recs) {
