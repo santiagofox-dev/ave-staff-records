@@ -58,3 +58,13 @@ body.pv{padding:0;background:var(--bg);min-height:100vh;display:flex;flex-direct
 .pv-who{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
 .pv-who button{border:0;background:none;color:var(--muted);text-decoration:underline;font-size:13px}
 .pv-test{display:inline-block;margin-top:8px;background:var(--warn-bg);color:var(--warn);font-weight:700;font-size:13px;padding:4px 10px;border-radius:999px}
+
+/* confirm an invoice we already had */
+.pv-review{border:2px solid var(--accent);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.pv-review b{font-size:17px}
+.pv-review p{margin:0;font-size:14px;color:var(--muted)}
+.pv-dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:4px 0;font-size:15px}
+.pv-dl dt{color:var(--muted)} .pv-dl dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums}
+.pv-review textarea{border:1px solid var(--line);border-radius:10px;padding:10px;font-size:15px;background:var(--surface);color:var(--fg)}
+.pv-warn{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-weight:600;font-size:14px}
+#toReview{gap:12px}

@@ -101,8 +101,39 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
     res.set('Cache-Control', 'no-store');
     const b = getBooks(), v = req.vendor;
     const docs = b.db.docs.filter(d => d.partnerId === v.id && TYPES[d.type].side === 'ap').sort((a, c) => (c.received || c.date).localeCompare(a.received || a.date)).slice(0, 60)
-      .map(d => ({ folio: `${d.serie || ''}${d.folio || ''}` || (d.uuid || '').slice(0, 8), date: d.date, received: d.received || d.date, plant: PLANTS[d.plant] || d.plant || '', due: d.state === 'posted' ? d.due : addDays(d.received || d.date, v.terms || 0), total: d.total, status: statusOf(b, d) }));
+      .map(d => ({ ...reviewView(b, d), status: statusOf(b, d) }));
     res.json({ vendor: { name: v.name, rfc: v.rfc || '', terms: v.terms || 0, username: v.portal.account.username, test: !!v.portal.test }, company: { name: b.db.company.name }, plants: plantsFor(v), docs });
+  });
+
+  /* An invoice our team already loaded (e.g. from the accountant's package) is shown back to the supplier with
+     the data we have, so they confirm it matches or say what's wrong. */
+  function reviewView(b, d) {
+    const r = d.vendorReview || null;
+    return { id: d.id, folio: `${d.serie || ''}${d.folio || ''}` || (d.uuid || '').slice(0, 8), date: d.date, received: d.received || d.date,
+      plant: b.plantOf(d) || '', due: d.state === 'posted' ? d.due : addDays(d.received || d.date, (b.partner(d.partnerId) || {}).terms || 0),
+      subtotal: Math.round(((d.subtotal || 0) - (d.discount || 0)) * 100) / 100, iva: d.traslados || 0, retenciones: d.retenciones || 0, total: d.total,
+      review: r ? { status: r.status, plant: r.plant || '', comment: r.comment || '', at: r.doneAt || r.at } : null };
+  }
+  app.post('/api/portal/review', needVendor, (req, res) => {
+    const b = getBooks(), v = req.vendor, { id, ok, comment, plant } = req.body || {};
+    const d = b.doc(String(id || ''));
+    if (!d || d.partnerId !== v.id || d.state === 'erased') return res.status(404).json({ error: 'No encontramos esa factura.' });
+    const now = new Date().toISOString(), day = localToday().split('-').reverse().join('/');
+    const r = d.vendorReview = { ...(d.vendorReview || {}), doneAt: now };
+    const pl = plantsFor(v).includes(String(plant || '')) ? String(plant) : (r.plant || '');
+    if (ok) {
+      r.status = 'ok'; r.comment = '';
+      if (pl && !d.plant) d.plant = pl;
+      d.warnings = [`El proveedor confirmó el ${day} que los datos coinciden${pl ? ` (planta ${pl})` : ''}.`, ...(d.warnings || []).filter(w => !/^El proveedor (confirmó|indicó)/.test(w))];
+    } else {
+      const c = String(comment || '').trim().slice(0, 500);
+      if (!c) return res.status(400).json({ error: 'Escribe qué no coincide.' });
+      r.status = 'disputed'; r.comment = c;
+      d.warnings = [`El proveedor indicó el ${day} que NO coincide: "${c}"`, ...(d.warnings || []).filter(w => !/^El proveedor (confirmó|indicó)/.test(w))];
+    }
+    b.log(`Proveedor: ${v.name}`, ok ? 'confirmó factura' : 'reportó diferencia en factura', 'documento', d.id, `${d.serie || ''}${d.folio || ''}${ok ? '' : ': ' + r.comment}`);
+    b.save();
+    res.json(reviewView(b, d));
   });
 
   app.post('/api/portal/upload', needVendor, (req, res, next) => {
@@ -135,9 +166,21 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
           d.warnings = [`Subida por el proveedor desde el portal el ${recv} para ${plantName}, con foto del recibo de entrega.`, ...(d.warnings || [])];
           if (v.portal.test) { d.test = true; d.warnings.unshift('FACTURA DE PRUEBA del proveedor fantasma: no la publiques; elimínala cuando termines.'); }
         }
-        b.log(`Proveedor: ${v.name}`, 'subió desde el portal', 'facturas', v.id, `${created.length} facturas para ${plantName}, ${recs.length} fotos`);
+        // already registered by us: attach their receipt photo and ask them to confirm our data
+        const keyU = s => String(s || '').toUpperCase();
+        const already = [...new Set(out.duplicates.map(x => x.id || (b.db.docs.find(d => x.uuid && keyU(d.uuid) === keyU(x.uuid) && d.state !== 'erased') || {}).id).filter(Boolean))]
+          .map(id => b.doc(id)).filter(d => d && d.partnerId === v.id && d.state !== 'erased');
+        for (const d of already) {
+          for (const f of recs) {
+            const sha = crypto.createHash('sha1').update(f.buffer).digest('hex').slice(0, 16);
+            if ((d.files || []).some(x => x.sha === sha)) continue;
+            d.files.push({ ...storeFile(b, `Recibo de entrega (proveedor)${(path.extname(name(f)) || '.jpg').toLowerCase()}`, f.buffer), kind: 'img', receipt: true });
+          }
+          if (!d.vendorReview || d.vendorReview.status !== 'ok') d.vendorReview = { ...(d.vendorReview || {}), status: d.vendorReview && d.vendorReview.status === 'disputed' ? 'disputed' : 'pending', at, plant: plantName };
+        }
+        b.log(`Proveedor: ${v.name}`, 'subió desde el portal', 'facturas', v.id, `${created.length} facturas nuevas, ${already.length} ya registradas, para ${plantName}, ${recs.length} fotos`);
         b.save();
-        res.json({ plant: plantName, created: created.map(d => ({ folio: `${d.serie || ''}${d.folio || ''}`, total: d.total, due: d.due })), duplicates: out.duplicates.length, errors: out.errors.map(e => e.error), skipped: out.skipped.map(s => s.reason), pdfOnly: out.created.filter(c => c.pdfOnly).length });
+        res.json({ plant: plantName, review: already.map(d => reviewView(b, d)), created: created.map(d => ({ folio: `${d.serie || ''}${d.folio || ''}`, total: d.total, due: d.due })), duplicates: out.duplicates.length, errors: out.errors.map(e => e.error), skipped: out.skipped.map(s => s.reason), pdfOnly: out.created.filter(c => c.pdfOnly).length });
       } catch (e) { next(e); }
     });
   });

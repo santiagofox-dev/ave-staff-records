@@ -236,7 +236,7 @@
     const cols = [
       ...(canEdit() ? [{ t: allBox, c: 1, f: r => pickable(r) ? inp({ type: 'checkbox', 'data-sel': r.id, 'aria-label': 'Seleccionar', onchange: e => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); updateSel(); } }) : '' }] : []),
       { t: 'Número', cls: 'nowrap', f: r => h('span', {}, r.number || h('span', { class: 'muted' }, 'Borrador'), r.type.endsWith('refund') ? h('div', { class: 'muted small' }, 'Nota de crédito') : null) },
-      { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.test ? [' ', badge('draft', 'Prueba')] : null) },
+      { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.test ? [' ', badge('draft', 'Prueba')] : null, r.review === 'ok' ? [' ', h('span', { class: 'badge posted', title: 'El proveedor confirmó en el portal que los datos coinciden' }, 'Confirmada')] : r.review === 'disputed' ? [' ', h('span', { class: 'badge cancelled', title: 'El proveedor dice que no coincide: ' + r.reviewNote }, 'No coincide')] : r.review === 'pending' ? [' ', h('span', { class: 'badge draft', title: 'Esperando que el proveedor confirme en el portal' }, 'Por confirmar')] : null) },
       ...(side === 'ap' ? [{ t: 'Planta', cls: 'nowrap', f: r => r.state === 'erased' ? '' : r.plant ? h('span', { class: r.plantSet ? '' : 'muted', title: r.plantSet ? 'Asignada en la factura' : 'Única planta del proveedor' }, r.plant) : h('span', { class: 'badge draft' }, 'Sin planta') }] : []),
       { t: side === 'ap' ? 'Proveedor' : 'Cliente', cls: 'w', f: r => r.partner || h('span', { class: 'warnmark' }, 'Sin contacto') },
       { t: 'Fecha', cls: 'nowrap', f: r => fd(r.date) },
@@ -260,7 +260,7 @@
       drop,
       h('div', { class: 'filters' }, search, fromI, h('span', { class: 'muted' }, 'a'), toI,
         st.partner ? h('button', { class: 'chipb', type: 'button', 'aria-pressed': 'true', onclick: () => { st.partner = ''; go('docs/' + side); } }, 'Contacto filtrado ✕') : null),
-      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados'], ['erased', 'Eliminadas']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal']]) : null,
+      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados'], ['erased', 'Eliminadas']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal'], ['disputed', 'Proveedor: no coincide']]) : null,
         side === 'ap' ? sel([['', 'Todas las plantas'], ['-', 'Sin planta'], ...plantOpts()], st.plant || '', { onchange: e => { st.plant = e.target.value; render(); } }) : null),
       selBar,
       table(cols, data.rows, { tall: 1, onRow: r => { if (r.state !== 'erased') go('doc/' + r.id); }, rowClass: r => r.state === 'cancelled' ? 'cx' : r.state === 'erased' ? 'ghost' : '', empty: st.q || st.state || st.pay ? 'Ningún documento coincide con el filtro.' : 'Aún no hay documentos. Importa los XML del SAT para empezar.' }),
