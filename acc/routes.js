@@ -37,13 +37,14 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { cash: d.cashSale ? d.cashSale.operation : '', plant: d.plant || '', test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
+    return { cash: d.cashSale ? d.cashSale.operation : '', plant: books.plantOf(d), plantSet: !!d.plant, test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
     const types = String(type || '').split(',').filter(t => TYPES[t]);
     const ql = String(q || '').toLowerCase().trim();
-    let rows = books.db.docs.filter(d => (req.query.origin !== 'portal' || d.portal) && (!types.length || types.includes(d.type)) && (!state || d.state === state) && (!from || d.date >= from) && (!to || d.date <= to) && (!partner || d.partnerId === partner)).map(docRow);
+    const plantQ = req.query.plant || '';
+    let rows = books.db.docs.filter(d => (req.query.origin !== 'portal' || d.portal) && (!plantQ || (plantQ === '-' ? !books.plantOf(d) : books.plantOf(d) === plantQ)) && (!types.length || types.includes(d.type)) && (!state || d.state === state) && (!from || d.date >= from) && (!to || d.date <= to) && (!partner || d.partnerId === partner)).map(docRow);
     if (pay) rows = rows.filter(r => pay === 'abierto' ? ['pendiente', 'vencido', 'parcial'].includes(r.pay) : r.pay === pay);
     if (ql) rows = rows.filter(r => [r.number, r.partner, r.rfc, r.uuid, r.serie + r.folio, String(r.total)].some(v => String(v || '').toLowerCase().includes(ql)));
     rows.sort((a, b) => b.date.localeCompare(a.date) || String(b.number || '').localeCompare(String(a.number || '')));
@@ -73,6 +74,9 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- cash sales typed by hand ---------- */
   app.get('/api/acc/cash-sales', R(req => { const r = books.cashSales(req.query.from || '', req.query.to || '', req.query.operation || ''); return { ...r, rows: r.rows.map(d => ({ ...docRow(d), operation: d.cashSale.operation, by: d.cashSale.by, subtotal: d.subtotal, iva: d.traslados, concept: (d.lines[0] || {}).description || '' })) }; }));
   app.post('/api/acc/cash-sales', W(req => { const d = books.recordCashSale(req.body || {}, who(req)); return docRow(d); }));
+  /* ---------- plants ---------- */
+  app.post('/api/acc/docs/plant', W(req => ({ updated: books.setPlant((req.body || {}).ids, (req.body || {}).plant, who(req)) })));
+  app.get('/api/acc/plant-spend', R(req => books.plantSpend(req.query.from || '', req.query.to || '')));
   app.post('/api/acc/docs/:id/erase', W(req => books.eraseDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/bulk-post', W(req => {
     const ok = [], failed = [];

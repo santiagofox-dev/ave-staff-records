@@ -32,14 +32,12 @@
 
   <form class="pv-card" id="form" hidden novalidate>
     <h2>Subir factura</h2>
-    <div class="pv-rule"><b>Importante:</b> cada factura debe ser <strong>solo para Jabil B1</strong> o <strong>solo para Jabil B3</strong>. Nunca facturen ambas plantas en la misma factura; si entregaron en las dos, hagan una factura para cada una.</div>
+    <div class="pv-rule" id="plantRule"><b>Importante:</b> cada factura debe ser <strong>para una sola planta</strong>. Nunca facturen dos plantas en la misma factura; si entregaron en varias, hagan una factura para cada una.</div>
     <div class="pv-step">
       <div class="pv-n">1</div>
       <div class="pv-body">
         <b>¿A qué planta va esta factura? <em>obligatorio</em></b>
         <div class="pv-plants" role="radiogroup" aria-label="Planta">
-          <label class="pv-plant"><input type="radio" name="plant" value="B1"><span>Jabil <strong>B1</strong></span></label>
-          <label class="pv-plant"><input type="radio" name="plant" value="B3"><span>Jabil <strong>B3</strong></span></label>
         </div>
       </div>
     </div>
@@ -87,6 +85,6 @@
 </main>
 <footer class="pv-foot">Grupo Industrial Fronterizo AVE 78 · Este enlace es personal; no lo compartas.</footer>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/proveedor.js?v=4"></script>
+<script src="/static/proveedor.js?v=5"></script>
 </body>
 </html>

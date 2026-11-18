@@ -63,8 +63,17 @@ function accountForClave(clave) {
   return null;
 }
 
+// Plants each supplier can serve, by city; every supplier invoice is charged to one of them
+const DEFAULT_PLANTS = [
+  { city: 'Juárez', plants: ['ONE', 'MTC', 'Jabil Torres', 'Wistron'] },
+  { city: 'Chihuahua', plants: ['Jabil B1', 'Jabil B3', 'Ford'] },
+  { city: 'Monclova', plants: ['Versigent'] },
+  { city: 'Tijuana', plants: ['Aptiv Tijuana'] },
+];
+const LEGACY_PLANT = { B1: 'Jabil B1', B3: 'Jabil B3' };
 const DEFAULT_SETTINGS = {
   lockDate: null,
+  plants: DEFAULT_PLANTS,
   iepsCreditable: false,
   accounts: {
     payable: '201.01.01', receivable: '105.01.01', sales: '401.01.01', expense: '601.84.01', salesReturns: '402.01.01',
@@ -153,10 +162,56 @@ class Books {
     if (!p && rfc) { const dup = this.findPartnerByRfc(rfc, data.name); if (dup && !['XAXX010101000', 'XEXX010101000'].includes(rfc)) throw httpErr(400, `Ya existe un contacto con el RFC ${rfc}: ${dup.name}.`); }
     if (!String(data.name || '').trim()) throw httpErr(400, 'Falta el nombre del contacto.');
     if (data.account && !this.account(data.account)) throw httpErr(400, 'La cuenta contable por defecto no existe.');
-    const fields = { rfc, name: String(data.name).trim(), supplier: !!data.supplier, customer: !!data.customer, terms: Math.max(0, Math.min(365, parseInt(data.terms, 10) || 0)), account: data.account || null, email: data.email || '', phone: data.phone || '', regimen: data.regimen || '', cp: data.cp || '', notes: data.notes || '' };
+    const known = new Set(this.plantNames());
+    const plants = Array.isArray(data.plants) ? [...new Set(data.plants.map(String))].filter(x => known.has(x)) : (p ? p.plants || [] : []);
+    const fields = { plants, rfc, name: String(data.name).trim(), supplier: !!data.supplier, customer: !!data.customer, terms: Math.max(0, Math.min(365, parseInt(data.terms, 10) || 0)), account: data.account || null, email: data.email || '', phone: data.phone || '', regimen: data.regimen || '', cp: data.cp || '', notes: data.notes || '' };
     if (p) { const termsChanged = p.terms !== fields.terms; Object.assign(p, fields); this.log(user, 'editó', 'contacto', p.id, p.name); if (termsChanged) this.recomputeDue(p.id, user); }
     else { p = { id: uid(), created: new Date().toISOString(), ...fields }; this.db.partners.push(p); this.log(user, 'creó', 'contacto', p.id, p.name); }
     return p;
+  }
+
+  /* ---------- plants ---------- */
+  plantNames() { return (this.db.settings.plants || DEFAULT_PLANTS).flatMap(c => c.plants); }
+  plantCity(name) { const c = (this.db.settings.plants || DEFAULT_PLANTS).find(x => x.plants.includes(name)); return c ? c.city : ''; }
+  // the plant an invoice is charged to: chosen on the invoice, or the supplier's only plant
+  plantOf(d) {
+    if (d.plant) return LEGACY_PLANT[d.plant] || d.plant;
+    const p = this.partner(d.partnerId);
+    return p && Array.isArray(p.plants) && p.plants.length === 1 ? p.plants[0] : '';
+  }
+  setPlant(ids, plant, user) {
+    if (plant && !this.plantNames().includes(plant)) throw httpErr(400, 'Esa planta no existe.');
+    let n = 0;
+    for (const id of ids || []) {
+      const d = this.doc(id);
+      if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
+      d.plant = plant || ''; n++;
+    }
+    this.log(user, 'asignó planta', 'documentos', '', `${n} → ${plant || 'sin planta'}`);
+    return n;
+  }
+  plantSpend(from, to) {
+    const groups = {}, vendors = {};
+    let unassigned = [];
+    for (const d of this.db.docs) {
+      if (d.state !== 'posted' || TYPES[d.type].side !== 'ap' || (from && d.date < from) || (to && d.date > to)) continue;
+      const sg = TYPES[d.type].sign, rate = d.rate || 1;
+      const sub = r2(sg * (d.subtotal - (d.discount || 0)) * rate), tax = r2(sg * (d.traslados - (d.retenciones || 0)) * rate), tot = r2(sg * d.totalMxn);
+      const plant = this.plantOf(d) || '';
+      const g = groups[plant] = groups[plant] || { plant: plant || 'Sin planta', city: plant ? this.plantCity(plant) : '', count: 0, subtotal: 0, taxes: 0, total: 0, vendors: {} };
+      g.count++; g.subtotal = r2(g.subtotal + sub); g.taxes = r2(g.taxes + tax); g.total = r2(g.total + tot);
+      const p = this.partner(d.partnerId), vk = d.partnerId || '-';
+      const v = g.vendors[vk] = g.vendors[vk] || { partnerId: d.partnerId, name: p ? p.name : '—', count: 0, total: 0 };
+      v.count++; v.total = r2(v.total + tot);
+      if (!plant) unassigned.push(d.id);
+    }
+    const list = Object.values(groups).map(g => ({ ...g, vendors: Object.values(g.vendors).sort((a, b) => b.total - a.total) }));
+    const order = this.plantNames();
+    list.sort((a, b) => (a.plant === 'Sin planta') - (b.plant === 'Sin planta') || order.indexOf(a.plant) - order.indexOf(b.plant));
+    const cities = {};
+    for (const g of list) if (g.city) { const c = cities[g.city] = cities[g.city] || { city: g.city, total: 0, subtotal: 0, count: 0 }; c.total = r2(c.total + g.total); c.subtotal = r2(c.subtotal + g.subtotal); c.count += g.count; }
+    const total = r2(list.reduce((a, g) => a + g.total, 0)), subtotal = r2(list.reduce((a, g) => a + g.subtotal, 0));
+    return { plants: list, cities: Object.values(cities), total, subtotal, unassignedCount: unassigned.length };
   }
 
   /* ---------- documents ---------- */

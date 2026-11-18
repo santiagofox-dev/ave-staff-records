@@ -93,6 +93,13 @@
     const list = META.partners.filter(p => !kind || p[kind] || p.id === value);
     return sel([['', '— Contacto —'], ...list.map(p => [p.id, `${p.name}${p.rfc ? ' · ' + p.rfc : ''}`])], value, attrs);
   }
+  const PLANTS = () => (META.settings && META.settings.plants) || [];
+  const plantOpts = (first) => [...(first || []), ...PLANTS().flatMap(c => c.plants.map(p => [p, `${p} · ${c.city}`]))];
+  function plantPicker(selected, onchange) {
+    const cur = new Set(selected || []);
+    return h('div', { class: 'plantpick' }, PLANTS().map(c => h('fieldset', {}, h('legend', {}, c.city),
+      c.plants.map(p => h('label', { class: 'check' }, inp({ type: 'checkbox', checked: cur.has(p), onchange: e => { e.target.checked ? cur.add(p) : cur.delete(p); onchange([...cur]); } }), p)))));
+  }
   const accName = code => { const a = META.accounts.find(x => x.code === code); return a ? a.name : ''; };
   async function refreshMeta() { META = await get('/api/acc/meta'); ME = META.user; }
 
@@ -181,11 +188,11 @@
   });
 
   /* ================= DOCUMENT LISTS ================= */
-  const listState = { ap: { state: '', pay: '', q: '', from: '', to: '', origin: '' }, ar: { state: '', pay: '', q: '', from: '', to: '', origin: '' } };
+  const listState = { ap: { state: '', pay: '', q: '', from: '', to: '', origin: '', plant: '' }, ar: { state: '', pay: '', q: '', from: '', to: '', origin: '' } };
   route(/^docs\/(ap|ar)$/, async (m, q) => {
     const side = m[1]; last.side = side;
     const st = listState[side];
-    for (const k of ['state', 'pay', 'q', 'from', 'to', 'partner', 'origin']) if (k in q) st[k] = q[k];
+    for (const k of ['state', 'pay', 'q', 'from', 'to', 'partner', 'origin', 'plant']) if (k in q) st[k] = q[k];
     const types = side === 'ap' ? 'in_invoice,in_refund' : 'out_invoice,out_refund';
     const data = await get('/api/acc/docs?' + qs({ type: types, ...st }));
     const selected = new Set();
@@ -216,16 +223,21 @@
         h('span', { class: 'muted' }, 'Cambiar cuenta a'), accSel,
         h('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!accSel.value) return toast('Elige una cuenta.', true); const r = await act(() => post('/api/acc/docs/bulk-account', { ids: dr.map(x => x.id), account: accSel.value })); if (r) { toast(`${r.updated} borradores actualizados.`); render(); } } }, 'Aplicar'));
       }
+      if (side === 'ap') {
+        const ps = sel([['', '— Planta —'], ...plantOpts([['*', 'Quitar planta']])], '', {});
+        parts.push(h('span', { class: 'muted' }, 'Asignar planta'), ps, h('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!ps.value) return toast('Elige una planta.', true); const r = await act(() => post('/api/acc/docs/plant', { ids: [...selected], plant: ps.value === '*' ? '' : ps.value })); if (r) { toast(`Planta asignada a ${r.updated} facturas.`); selected.clear(); render(); } } }, 'Asignar'));
+      }
       parts.push(h('button', { class: 'btn sm quiet', type: 'button', onclick: () => { selected.clear(); render(); } }, 'Quitar selección'));
       add(selBar, parts);
     };
-    const pickable = r => r.state === 'draft' || payable(r);
+    const pickable = r => r.state === 'draft' || payable(r) || (side === 'ap' && r.state === 'posted');
     const picks = data.rows.filter(pickable);
     const allBox = canEdit() && picks.length ? inp({ type: 'checkbox', title: 'Seleccionar todos (borradores y por pagar)', onchange: e => { picks.forEach(r => e.target.checked ? selected.add(r.id) : selected.delete(r.id)); document.querySelectorAll('input[data-sel]').forEach(b => { b.checked = e.target.checked; }); updateSel(); } }) : '';
     const cols = [
       ...(canEdit() ? [{ t: allBox, c: 1, f: r => pickable(r) ? inp({ type: 'checkbox', 'data-sel': r.id, 'aria-label': 'Seleccionar', onchange: e => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); updateSel(); } }) : '' }] : []),
       { t: 'Número', cls: 'nowrap', f: r => h('span', {}, r.number || h('span', { class: 'muted' }, 'Borrador'), r.type.endsWith('refund') ? h('div', { class: 'muted small' }, 'Nota de crédito') : null) },
-      { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.plant ? [' ', badge('parcial', r.plant)] : null, r.test ? [' ', badge('draft', 'Prueba')] : null) },
+      { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.test ? [' ', badge('draft', 'Prueba')] : null) },
+      ...(side === 'ap' ? [{ t: 'Planta', cls: 'nowrap', f: r => r.state === 'erased' ? '' : r.plant ? h('span', { class: r.plantSet ? '' : 'muted', title: r.plantSet ? 'Asignada en la factura' : 'Única planta del proveedor' }, r.plant) : h('span', { class: 'badge draft' }, 'Sin planta') }] : []),
       { t: side === 'ap' ? 'Proveedor' : 'Cliente', cls: 'w', f: r => r.partner || h('span', { class: 'warnmark' }, 'Sin contacto') },
       { t: 'Fecha', cls: 'nowrap', f: r => fd(r.date) },
       { t: 'Vence', cls: 'nowrap', f: r => fd(r.due) },
@@ -248,7 +260,8 @@
       drop,
       h('div', { class: 'filters' }, search, fromI, h('span', { class: 'muted' }, 'a'), toI,
         st.partner ? h('button', { class: 'chipb', type: 'button', 'aria-pressed': 'true', onclick: () => { st.partner = ''; go('docs/' + side); } }, 'Contacto filtrado ✕') : null),
-      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados'], ['erased', 'Eliminadas']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal']]) : null),
+      h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados'], ['erased', 'Eliminadas']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal']]) : null,
+        side === 'ap' ? sel([['', 'Todas las plantas'], ['-', 'Sin planta'], ...plantOpts()], st.plant || '', { onchange: e => { st.plant = e.target.value; render(); } }) : null),
       selBar,
       table(cols, data.rows, { tall: 1, onRow: r => { if (r.state !== 'erased') go('doc/' + r.id); }, rowClass: r => r.state === 'cancelled' ? 'cx' : r.state === 'erased' ? 'ghost' : '', empty: st.q || st.state || st.pay ? 'Ningún documento coincide con el filtro.' : 'Aún no hay documentos. Importa los XML del SAT para empezar.' }),
       h('div', { class: 'foot' }, h('span', {}, `${data.count} documentos${data.count > data.rows.length ? ` (se muestran ${data.rows.length})` : ''}`), h('span', {}, `Total ${money(data.sum.total)} · Saldo abierto ${money(data.sum.residual)}`)),
@@ -360,6 +373,13 @@
       field('Vencimiento', datesEditable ? dateIn('due') : f('due', 'date')),
       field('Serie', f('serie')), field('Folio', f('folio')),
       field('Moneda', f('currency', 'text', { maxlength: 3 })), field('Tipo de cambio', f('rate', 'number', { step: '0.0001', min: '0' })),
+      side === 'ap' ? field('Planta', (() => {
+        // the plant can be changed any time (it doesn't touch the accounting); vendor's plants first
+        const vp = (META.partners.find(p => p.id === d.partnerId) || {}).plants || [];
+        const eff = d.plant ? (d.plant === 'B1' ? 'Jabil B1' : d.plant === 'B3' ? 'Jabil B3' : d.plant) : '';
+        const opts = [['', vp.length === 1 ? `${vp[0]} (única planta del proveedor)` : '— Sin planta —'], ...vp.map(p => [p, p + ' · del proveedor']), ...plantOpts().filter(o => !vp.includes(o[0]))];
+        return sel(opts, eff, { disabled: !canEdit() || d.state === 'erased' || !d.id, onchange: async e => { const r = await act(() => post('/api/acc/docs/plant', { ids: [d.id], plant: e.target.value })); if (r) { d.plant = e.target.value; toast(e.target.value ? `Cargada a ${e.target.value}.` : 'Planta quitada.'); } } });
+      })()) : null,
       field('Referencia', f('ref'), 'span2'),
       field('Notas', h('textarea', { rows: 1, disabled: !editable, value: d.notes || '', onchange: e => { d.notes = e.target.value; } }), 'span2'),
     );
@@ -448,7 +468,7 @@
       xml && editable ? h('div', { class: 'msg info' }, 'Los importes vienen del XML timbrado y no se pueden cambiar. Solo elige la cuenta contable de cada concepto.') : null,
       !canEdit() ? h('div', { class: 'msg info' }, 'Tu usuario es de solo consulta.') : null);
 
-    const status = d.id ? h('span', {}, badge(d.state, STATE[d.state]), ' ', data.row.pay ? badge(data.row.pay, PAY[data.row.pay]) : null, d.plant ? [' ', badge('parcial', 'Jabil ' + d.plant)] : null, d.test ? [' ', badge('draft', 'Prueba')] : null) : badge('draft', 'Nuevo');
+    const status = d.id ? h('span', {}, badge(d.state, STATE[d.state]), ' ', data.row.pay ? badge(data.row.pay, PAY[data.row.pay]) : null, data.row.plant ? [' ', badge('parcial', data.row.plant)] : null, d.test ? [' ', badge('draft', 'Prueba')] : null) : badge('draft', 'Nuevo');
     const head = phead(h('span', {}, d.number || (d.id ? 'Borrador' : title)), h('span', {}, d.number || d.id ? title + ' · ' : '', status), actions);
 
     /* side info */
@@ -680,6 +700,32 @@
         ], data.rows, { onRow: r => { if (r.state !== 'erased') go('doc/' + r.id); }, rowClass: r => r.state === 'cancelled' ? 'cx' : r.state === 'erased' ? 'ghost' : '', empty: 'No hay ventas en efectivo en este periodo.', total: { date: 'Total', subtotal: tot.subtotal, iva: tot.iva, total: tot.total } })));
   });
 
+  /* ================= SPEND BY PLANT ================= */
+  route(/^plantas$/, async (m, q) => {
+    const mStart = today().slice(0, 8) + '01';
+    const st = { from: q.from || mStart, to: q.to || today() };
+    const r = await get('/api/acc/plant-spend?' + qs(st));
+    const quick = (label, f, t) => h('button', { class: 'chipb' + (st.from === f && st.to === t ? ' on' : ''), type: 'button', onclick: () => go('plantas', { from: f, to: t }) }, label);
+    const d0 = new Date(today() + 'T12:00:00'), ymd = x => x.toISOString().slice(0, 10);
+    const pm = new Date(d0.getFullYear(), d0.getMonth() - 1, 1), pmEnd = new Date(d0.getFullYear(), d0.getMonth(), 0);
+    const max = Math.max(1, ...r.plants.map(p => p.total));
+    const cards = r.plants.map(p => h('div', { class: 'plantcard' + (p.plant === 'Sin planta' ? ' none' : '') },
+      h('div', { class: 'ph' }, h('div', {}, h('b', {}, p.plant), p.city ? h('span', { class: 'muted small' }, ' · ' + p.city) : null), h('b', { class: 'amt' }, money(p.total))),
+      h('div', { class: 'pbar' }, h('i', { 'data-w': Math.round(p.total / max * 100) })),
+      h('div', { class: 'muted small' }, `${p.count} factura${p.count === 1 ? '' : 's'} · subtotal ${money(p.subtotal)} · impuestos ${money(p.taxes)}`),
+      h('ul', { class: 'pv' }, p.vendors.slice(0, 6).map(v => h('li', {}, h('span', {}, v.name), h('span', { class: 'n' }, money(v.total))))),
+      h('a', { class: 'small', href: '#/docs/ap?' + qs({ plant: p.plant === 'Sin planta' ? '-' : p.plant, from: st.from, to: st.to, state: 'posted' }) }, p.plant === 'Sin planta' ? 'Ver y asignar planta →' : 'Ver facturas →')));
+    const node = h('div', { class: 'stack' },
+      phead('Gasto por planta', 'Compras publicadas (facturas de proveedor menos notas de crédito) cargadas a cada planta. Una factura va a la planta elegida en ella o, si el proveedor surte una sola planta, a esa.'),
+      h('div', { class: 'filters' }, inp({ type: 'date', value: st.from, onchange: e => go('plantas', { ...st, from: e.target.value }) }), h('span', { class: 'muted' }, 'a'), inp({ type: 'date', value: st.to, onchange: e => go('plantas', { ...st, to: e.target.value }) }),
+        quick('Este mes', mStart, today()), quick('Mes pasado', ymd(pm), ymd(pmEnd)), quick('Este año', today().slice(0, 4) + '-01-01', today())),
+      r.unassignedCount ? h('div', { class: 'msg bad' }, `${r.unassignedCount} factura${r.unassignedCount === 1 ? '' : 's'} sin planta en este periodo. Asigna planta a sus proveedores en Contactos, o elígela en cada factura.`) : null,
+      h('div', { class: 'kpis' }, h('div', { class: 'kpi' }, h('span', {}, 'Total del periodo'), h('b', {}, money(r.total)), h('span', {}, `Subtotal ${money(r.subtotal)}`)), r.cities.map(c => h('div', { class: 'kpi' }, h('span', {}, c.city), h('b', {}, money(c.total)), h('span', {}, `${c.count} facturas`)))),
+      h('div', { class: 'plantgrid' }, cards.length ? cards : h('div', { class: 'empty2' }, 'No hay compras publicadas en este periodo.')));
+    node.querySelectorAll('.pbar i[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; });
+    return node;
+  });
+
   route(/^contactos$/, async () => {
     const rows = await get('/api/acc/partners?' + qs(cState));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar nombre o RFC', value: cState.q });
@@ -700,7 +746,8 @@
       h('label', { class: 'check' }, inp({ type: 'checkbox', checked: v.supplier, onchange: e => { v.supplier = e.target.checked; } }), 'Proveedor'),
       h('label', { class: 'check' }, inp({ type: 'checkbox', checked: v.customer, onchange: e => { v.customer = e.target.checked; } }), 'Cliente'),
       field('Cuenta de gasto por defecto (proveedores)', accSelect(v.account || '', { onchange: e => { v.account = e.target.value; } }, a => !['IN', 'IO', 'EQ', 'EU', 'OB', 'LP', 'AR', 'BK'].includes(a.type)), 'span2'),
-      t('email', 'Correo', { type: 'email' }), t('phone', 'Teléfono'), t('regimen', 'Régimen fiscal', { maxlength: 3 }), t('cp', 'C.P. fiscal', { maxlength: 5 }), t('notes', 'Notas', {}, 'span2'));
+      t('email', 'Correo', { type: 'email' }), t('phone', 'Teléfono'), t('regimen', 'Régimen fiscal', { maxlength: 3 }), t('cp', 'C.P. fiscal', { maxlength: 5 }), t('notes', 'Notas', {}, 'span2'),
+      h('div', { class: 'span4' }, h('div', { class: 'lbl' }, 'Plantas que surte (proveedores)'), h('div', { class: 'muted small' }, 'Si surte una sola, sus facturas se cargan a esa planta solas. Si surte varias, se elige la planta en cada factura.'), plantPicker(v.plants || [], list => { v.plants = list; })));
     return dialog(p ? 'Editar contacto' : 'Nuevo contacto', body, [{ label: 'Cancelar' }, { label: 'Guardar', primary: true, run: () => (p ? put('/api/acc/partners/' + p.id, v) : post('/api/acc/partners', v)) }]);
   }
 

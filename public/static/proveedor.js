@@ -30,13 +30,14 @@
     try { d = await api('GET', '/api/portal/me'); }
     catch (e) { return showLogin(e.status === 401 ? '' : e.message); }
     show('hello', 'form', 'mine', 'acct');
+    if (window.__plantButtons) window.__plantButtons(d.plants || ['Jabil B1', 'Jabil B3']);
     $('#hello').replaceChildren(h('div', { class: 'pv-who' }, h('span', {}, 'Usuario: ' + d.vendor.username), h('button', { type: 'button', id: 'out2' }, 'Salir')),
       h('div', { class: 'eyebrow' }, 'Proveedor de ' + d.company.name), h('h1', {}, d.vendor.name), h('p', {}, d.vendor.rfc ? 'RFC ' + d.vendor.rfc : 'Tu RFC se registra con tu primera factura.'),
       h('span', { class: 'pv-terms' }, d.vendor.terms ? `Crédito: ${d.vendor.terms} días desde que recibimos tu factura` : 'Pago de contado'),
       d.vendor.test ? h('div', {}, h('span', { class: 'pv-test' }, 'Cuenta de prueba')) : null);
     $('#out2').addEventListener('click', logout);
     $('#list').replaceChildren(...(d.docs.length ? d.docs.map(x => h('div', { class: 'pv-inv' },
-      h('span', { class: 'f' }, 'Factura ' + (x.folio || '—') + (x.plant ? ' · Jabil ' + x.plant : '')), h('span', { class: 't' }, NF.format(x.total)),
+      h('span', { class: 'f' }, 'Factura ' + (x.folio || '—') + (x.plant ? ' · ' + x.plant : '')), h('span', { class: 't' }, NF.format(x.total)),
       h('span', { class: 'm' }, `Recibida ${fd(x.received)}` + (x.status.key === 'pagada' ? '' : ` · vence ${fd(x.due)}`)), h('span', { class: 'pv-st ' + x.status.key }, x.status.label))) : [h('p', { class: 'pv-empty' }, 'Aún no has subido facturas.')]));
   }
   async function logout() { try { await api('POST', '/api/portal/logout'); } catch (e) {} $('#lgPw').value = ''; showLogin(); }
@@ -54,15 +55,22 @@
     const th = $('#thumbs'); th.replaceChildren();
     for (const f of rs.slice(0, 4)) { const img = h('img', { alt: 'Foto del recibo' }); const r = new FileReader(); r.onload = () => { img.src = r.result; }; r.readAsDataURL(f); th.append(img); }
     $('#send').disabled = !(plant() && fs.length && rs.length);
-    $('#send').textContent = plant() ? `Enviar factura para Jabil ${plant()}` : 'Enviar factura';
+    $('#send').textContent = plant() ? `Enviar factura para ${plant()}` : 'Enviar factura';
     $('#err').textContent = '';
   }
   fact.addEventListener('change', refresh); rec.addEventListener('change', refresh);
-  document.querySelectorAll('input[name=plant]').forEach(r => r.addEventListener('change', refresh));
+  // plant buttons come from the plants assigned to this supplier
+  function plantButtons(list) {
+    const box = document.querySelector('.pv-plants'), cur = plant();
+    box.replaceChildren(...list.map(p => { const i = h('input', { type: 'radio', name: 'plant', value: p }); if (p === cur || list.length === 1) i.checked = true; i.addEventListener('change', refresh); const parts = p.split(' '), last = parts.pop(); return h('label', { class: 'pv-plant' }, i, h('span', {}, parts.length ? parts.join(' ') + ' ' : '', h('strong', {}, last))); }));
+    $('#plantRule').hidden = list.length < 2;
+    refresh();
+  }
+  window.__plantButtons = plantButtons;
 
   $('#form').addEventListener('submit', async e => {
     e.preventDefault();
-    if (!plant()) { $('#err').textContent = 'Elige si la factura es para Jabil B1 o Jabil B3.'; return; }
+    if (!plant()) { $('#err').textContent = 'Elige la planta de esta factura.'; return; }
     if (!fact.files.length) { $('#err').textContent = 'Falta la factura (XML o PDF).'; return; }
     if (!rec.files.length) { $('#err').textContent = 'Falta la foto del recibo de entrega.'; return; }
     const body = new FormData(); body.append('plant', plant());

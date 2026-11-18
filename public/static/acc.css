@@ -179,3 +179,20 @@ body.acc.has-bar .shell{min-height:calc(100vh - 62px)}
 /* cash sales */
 .cash-prev{display:flex;gap:22px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:var(--sunk);margin:10px 0;font-variant-numeric:tabular-nums}
 .cash-prev b{font-size:17px}
+/* plants */
+.plantpick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:6px}
+.plantpick fieldset{border:1px solid var(--line);border-radius:8px;padding:6px 10px 8px;margin:0;display:flex;flex-direction:column;gap:4px}
+.plantpick legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 4px}
+.lbl{font-size:12.5px;font-weight:600;color:var(--muted)}
+.plantgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.plantcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px}
+.plantcard.none{border-color:var(--bad)}
+.plantcard .ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.plantcard .ph b{font-size:16px} .plantcard .amt{font-family:var(--f-display);font-size:22px;font-variant-numeric:tabular-nums}
+.plantcard .pbar{display:block;height:6px;background:var(--sunk);border-radius:99px;overflow:hidden}
+.plantcard .pbar i{display:block;height:100%;max-width:none;background:var(--accent);border-radius:99px}
+.plantcard ul.pv{list-style:none;margin:0;padding:0;font-size:13px;display:flex;flex-direction:column;gap:3px}
+.plantcard ul.pv li{display:flex;justify-content:space-between;gap:8px}
+.plantcard ul.pv li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plantcard .n{font-variant-numeric:tabular-nums}
+@media (max-width:760px){.plantpick{grid-template-columns:1fr 1fr}}

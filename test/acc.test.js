@@ -239,3 +239,19 @@ test('cash sale: posted, paid into Caja, IVA collected, exact total; cancel/eras
   assert.equal(b.cashSales('2026-11-01', '2026-11-30').byOp[0].total, 137.5 + 99.99 + 250 + 80);
   assert.throws(() => b.recordCashSale({ total: 10, operation: '' }, 'x'), /operación/);
 });
+
+test('plants: supplier plants, per-invoice plant, spend by plant', () => {
+  const b = freshBooks();
+  const one = b.upsertPartner({ name: 'Solo Torres', supplier: true, plants: ['Jabil Torres', 'No existe'] }, 'u');
+  const many = b.upsertPartner({ name: 'Varias', supplier: true, plants: ['Jabil B1', 'Jabil B3'] }, 'u');
+  assert.deepEqual(one.plants, ['Jabil Torres']);
+  const mk = (p, price, date = '2026-11-10') => { const d = b.newDoc('in_invoice', { partnerId: p.id, date, lines: [{ description: 'x', qty: 1, price, account: '601.84.01', taxCodes: ['IVA16'] }] }, 'u'); b.postDoc(d.id, 'u'); return d; };
+  const a = mk(one, 100), c = mk(many, 200), e = mk(many, 50);
+  assert.equal(b.plantOf(a), 'Jabil Torres'); assert.equal(b.plantOf(c), '');
+  b.setPlant([c.id], 'Jabil B3', 'u'); e.plant = 'B1'; // legacy portal value
+  const r = b.plantSpend('2026-11-01', '2026-11-30');
+  const get = n => r.plants.find(x => x.plant === n);
+  assert.equal(get('Jabil Torres').total, 116); assert.equal(get('Jabil B3').total, 232); assert.equal(get('Jabil B1').total, 58);
+  assert.equal(r.unassignedCount, 0); assert.equal(r.cities.find(x => x.city === 'Chihuahua').total, 290);
+  assert.throws(() => b.setPlant([a.id], 'Marte', 'u'), /no existe/);
+});

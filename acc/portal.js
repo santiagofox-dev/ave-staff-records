@@ -13,6 +13,8 @@ const { TYPES, addDays } = require('./core');
 const IMG = /\.(jpe?g|png|webp|heic|heif)$/i;
 const IMG_TYPES = /^image\/(jpeg|png|webp|heic|heif)$/i;
 const PLANTS = { B1: 'Jabil B1', B3: 'Jabil B3' };
+// plants a supplier can pick: the ones assigned to it in Contactos, otherwise Jabil B1 / B3
+const plantsFor = v => (Array.isArray(v.plants) && v.plants.length ? v.plants : Object.values(PLANTS));
 const WORDS = ['naranja', 'tortuga', 'ventana', 'canela', 'tomate', 'girasol', 'paloma', 'cereza', 'limonada', 'castillo', 'pradera', 'tortilla', 'mariposa', 'durazno', 'galleta', 'pelota', 'cometa', 'abanico', 'aguacate', 'ballena', 'bosque', 'caballo', 'camino', 'campana', 'cascada', 'cebolla', 'conejo', 'delfin', 'espiga', 'estrella', 'frijol', 'granero', 'guitarra', 'jardin', 'lechuga', 'lluvia', 'maceta', 'manzana', 'molino', 'nopal', 'oliva', 'panal', 'pepino', 'perico', 'pimienta', 'plátano', 'puente', 'rancho', 'sandia', 'semilla', 'sombrero', 'tambor', 'trigo', 'tulipan', 'verano', 'violeta', 'zanahoria', 'avena', 'brisa', 'cactus', 'colibri', 'coyote', 'elote', 'fogata', 'gaviota', 'higuera', 'laguna', 'mezquite', 'nogal', 'papaya', 'piñata'].map(w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ñ/g, 'n'));
 const pick = () => WORDS[crypto.randomInt(WORDS.length)];
 const twoWords = () => { let a = pick(), b = pick(); while (b === a) b = pick(); return `${a}.${b}`; };
@@ -99,8 +101,8 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
     res.set('Cache-Control', 'no-store');
     const b = getBooks(), v = req.vendor;
     const docs = b.db.docs.filter(d => d.partnerId === v.id && TYPES[d.type].side === 'ap').sort((a, c) => (c.received || c.date).localeCompare(a.received || a.date)).slice(0, 60)
-      .map(d => ({ folio: `${d.serie || ''}${d.folio || ''}` || (d.uuid || '').slice(0, 8), date: d.date, received: d.received || d.date, plant: d.plant || '', due: d.state === 'posted' ? d.due : addDays(d.received || d.date, v.terms || 0), total: d.total, status: statusOf(b, d) }));
-    res.json({ vendor: { name: v.name, rfc: v.rfc || '', terms: v.terms || 0, username: v.portal.account.username, test: !!v.portal.test }, company: { name: b.db.company.name }, plants: PLANTS, docs });
+      .map(d => ({ folio: `${d.serie || ''}${d.folio || ''}` || (d.uuid || '').slice(0, 8), date: d.date, received: d.received || d.date, plant: PLANTS[d.plant] || d.plant || '', due: d.state === 'posted' ? d.due : addDays(d.received || d.date, v.terms || 0), total: d.total, status: statusOf(b, d) }));
+    res.json({ vendor: { name: v.name, rfc: v.rfc || '', terms: v.terms || 0, username: v.portal.account.username, test: !!v.portal.test }, company: { name: b.db.company.name }, plants: plantsFor(v), docs });
   });
 
   app.post('/api/portal/upload', needVendor, (req, res, next) => {
@@ -109,8 +111,9 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
     upload.fields([{ name: 'factura', maxCount: 6 }, { name: 'recibo', maxCount: 4 }])(req, res, async err => {
       if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pasa de 15 MB.' : 'No se pudieron recibir los archivos.' });
       try {
-        const plant = String((req.body || {}).plant || '').toUpperCase();
-        if (!PLANTS[plant]) return res.status(400).json({ error: 'Elige si la factura es para Jabil B1 o Jabil B3.' });
+        const raw = String((req.body || {}).plant || '').trim(), allowed = plantsFor(v);
+        const plantName = allowed.find(x => x === raw) || PLANTS[raw.toUpperCase()] && allowed.includes(PLANTS[raw.toUpperCase()]) && PLANTS[raw.toUpperCase()] || (allowed.length === 1 ? allowed[0] : '');
+        if (!plantName) return res.status(400).json({ error: `Elige la planta de la factura: ${allowed.join(', ')}.` });
         const name = f => Buffer.from(f.originalname, 'latin1').toString('utf8');
         const fact = (req.files.factura || []).map(f => ({ name: name(f), buf: f.buffer })).filter(f => /\.(xml|pdf)$/i.test(f.name));
         const recs = (req.files.recibo || []).filter(f => IMG.test(name(f)) || IMG_TYPES.test(f.mimetype));
@@ -126,15 +129,15 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
             const ext = (path.extname(name(f)) || ('.' + (f.mimetype.split('/')[1] || 'jpg'))).toLowerCase();
             d.files.push({ ...storeFile(b, `Recibo de entrega${ext}`, f.buffer), kind: 'img', receipt: true });
           }
-          d.portal = { at, ip: req.ip }; d.plant = plant;
+          d.portal = { at, ip: req.ip }; d.plant = plantName;
           d.received = recv; d.due = b.defaultDue(d);
-          d.ref = d.ref || PLANTS[plant];
-          d.warnings = [`Subida por el proveedor desde el portal el ${recv} para ${PLANTS[plant]}, con foto del recibo de entrega.`, ...(d.warnings || [])];
+          d.ref = d.ref || plantName;
+          d.warnings = [`Subida por el proveedor desde el portal el ${recv} para ${plantName}, con foto del recibo de entrega.`, ...(d.warnings || [])];
           if (v.portal.test) { d.test = true; d.warnings.unshift('FACTURA DE PRUEBA del proveedor fantasma: no la publiques; elimínala cuando termines.'); }
         }
-        b.log(`Proveedor: ${v.name}`, 'subió desde el portal', 'facturas', v.id, `${created.length} facturas para ${PLANTS[plant]}, ${recs.length} fotos`);
+        b.log(`Proveedor: ${v.name}`, 'subió desde el portal', 'facturas', v.id, `${created.length} facturas para ${plantName}, ${recs.length} fotos`);
         b.save();
-        res.json({ plant: PLANTS[plant], created: created.map(d => ({ folio: `${d.serie || ''}${d.folio || ''}`, total: d.total, due: d.due })), duplicates: out.duplicates.length, errors: out.errors.map(e => e.error), skipped: out.skipped.map(s => s.reason), pdfOnly: out.created.filter(c => c.pdfOnly).length });
+        res.json({ plant: plantName, created: created.map(d => ({ folio: `${d.serie || ''}${d.folio || ''}`, total: d.total, due: d.due })), duplicates: out.duplicates.length, errors: out.errors.map(e => e.error), skipped: out.skipped.map(s => s.reason), pdfOnly: out.created.filter(c => c.pdfOnly).length });
       } catch (e) { next(e); }
     });
   });
