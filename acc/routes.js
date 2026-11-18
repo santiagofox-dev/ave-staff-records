@@ -37,7 +37,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { plant: d.plant || '', test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
+    return { cash: d.cashSale ? d.cashSale.operation : '', plant: d.plant || '', test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
@@ -70,6 +70,9 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   app.post('/api/acc/docs/:id/cancel', W(req => books.cancelDoc(req.params.id, who(req))));
   // every deletion leaves a crossed-out ghost with who and when
   app.delete('/api/acc/docs/:id', W(req => { books.eraseDoc(req.params.id, who(req)); return { ok: true }; }));
+  /* ---------- cash sales typed by hand ---------- */
+  app.get('/api/acc/cash-sales', R(req => { const r = books.cashSales(req.query.from || '', req.query.to || '', req.query.operation || ''); return { ...r, rows: r.rows.map(d => ({ ...docRow(d), operation: d.cashSale.operation, by: d.cashSale.by, subtotal: d.subtotal, iva: d.traslados, concept: (d.lines[0] || {}).description || '' })) }; }));
+  app.post('/api/acc/cash-sales', W(req => { const d = books.recordCashSale(req.body || {}, who(req)); return docRow(d); }));
   app.post('/api/acc/docs/:id/erase', W(req => books.eraseDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/bulk-post', W(req => {
     const ok = [], failed = [];

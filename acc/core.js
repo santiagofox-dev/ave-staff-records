@@ -10,7 +10,7 @@ const r2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const today = () => new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10); // Ciudad Juárez (UTC-7)
 const addDays = (d, n) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 const uid = () => crypto.randomBytes(6).toString('hex');
-const fixedAmounts = d => d.source === 'xml' || d.source === 'pdfcfdi'; // amounts come from a stamped CFDI
+const fixedAmounts = d => d.source === 'xml' || d.source === 'pdfcfdi' || d.source === 'efectivo'; // amounts come from a stamped CFDI
 const isDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 const TYPES = {
@@ -199,6 +199,55 @@ class Books {
     this.log(user, 'creó', 'documento', d.id, `${TYPES[type].label} ${d.serie}${d.folio}`.trim());
     return d;
   }
+  /* Cash sale ("Venta en efectivo") typed by hand for operations that sell in cash: a customer invoice to
+     Público en general, posted and paid at once into the cash account, tagged with the operation. */
+  cashPartner(user) {
+    let p = this.db.partners.find(x => x.rfc === 'XAXX010101000' && x.customer);
+    if (!p) p = this.db.partners.find(x => x.rfc === 'XAXX010101000');
+    if (!p) p = this.upsertPartner({ name: 'PÚBLICO EN GENERAL', rfc: 'XAXX010101000', customer: true, terms: 0, notes: 'Ventas en efectivo' }, user);
+    if (!p.customer) p.customer = true;
+    return p;
+  }
+  recordCashSale(data, user) {
+    const total = r2(data.total);
+    if (!(total > 0)) throw httpErr(400, 'El importe debe ser mayor a cero.');
+    const date = data.date || today();
+    if (!isDate(date)) throw httpErr(400, 'Falta la fecha.');
+    if (this.locked(date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
+    const operation = String(data.operation || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!operation) throw httpErr(400, 'Elige la operación.');
+    const tax = ['IVA16', 'IVA0', 'EXENTO'].includes(data.tax) ? data.tax : 'IVA16';
+    const bank = this.bank(data.bankId) || this.db.banks.find(b => /caja/i.test(b.name)) || this.db.banks[0];
+    if (!bank) throw httpErr(400, 'No hay cuenta de caja.');
+    const account = data.account && this.account(data.account) ? data.account : this.db.settings.accounts.sales;
+    // the typed amount is the total: base = total / 1.16, IVA = the rest, so it always lands exactly
+    const base = tax === 'IVA16' ? r2(total / 1.16) : total, iva = r2(total - base);
+    const p = this.cashPartner(user);
+    const concept = String(data.concept || '').trim().slice(0, 200) || `Venta en efectivo · ${operation}`;
+    const t = TAX_PRESETS[tax];
+    const d = this.newDoc('out_invoice', { partnerId: p.id, date, metodoPago: 'PUE', formaPago: '01', ref: `Venta en efectivo · ${operation}`, notes: String(data.notes || '').slice(0, 500), source: 'efectivo',
+      lines: [{ description: concept, qty: 1, price: base, discount: 0, amount: base, account, taxCodes: [tax], taxes: [{ kind: 'traslado', tax: 'IVA', rate: t.rate, factor: t.factor || 'Tasa', base, amount: tax === 'IVA16' ? iva : 0, code: tax }] }] }, user);
+    d.total = total; this.computeDoc(d);
+    d.cashSale = { operation, by: user, at: new Date().toISOString() };
+    this.postDoc(d.id, user);
+    const pay = this.createPayment({ dir: 'in', partnerId: p.id, date, bankId: bank.id, amount: d.total, method: '01', ref: `Venta en efectivo · ${operation}`, notes: d.number, allocations: [{ docId: d.id, amount: d.total }] }, user);
+    pay.cashSaleDoc = d.id; d.cashSale.paymentId = pay.id;
+    return d;
+  }
+  // a cash sale's own payment goes with it when it is cancelled or erased
+  releaseCashPayment(d, user) {
+    if (!d.cashSale || !d.cashSale.paymentId) return;
+    const pay = this.payment(d.cashSale.paymentId);
+    if (pay && pay.state === 'posted') { pay.state = 'cancelled'; this.log(user, 'canceló', 'pago', pay.id, `${pay.number} (venta en efectivo ${d.number || ''})`); }
+  }
+  cashSales(from, to, operation) {
+    const rows = this.db.docs.filter(d => d.cashSale && (!from || d.date >= from) && (!to || d.date <= to) && (!operation || d.cashSale.operation === operation))
+      .sort((a, b) => b.date.localeCompare(a.date) || String(b.number).localeCompare(String(a.number)));
+    const ops = {};
+    for (const d of rows) if (d.state === 'posted') { const o = ops[d.cashSale.operation] = ops[d.cashSale.operation] || { operation: d.cashSale.operation, count: 0, subtotal: 0, iva: 0, total: 0 }; o.count++; o.subtotal = r2(o.subtotal + d.subtotal); o.iva = r2(o.iva + d.traslados); o.total = r2(o.total + d.total); }
+    const known = [...new Set([...(this.db.settings.cashOps || []), ...this.db.docs.filter(d => d.cashSale).map(d => d.cashSale.operation)])].sort((a, b) => a.localeCompare(b, 'es'));
+    return { rows, byOp: Object.values(ops).sort((a, b) => b.total - a.total), operations: known };
+  }
   defaultDue(d) {
     const p = d.partnerId && this.partner(d.partnerId);
     if (d.metodoPago === 'PUE') return d.date;
@@ -300,6 +349,7 @@ class Books {
     const d = this.doc(id);
     if (!d) throw httpErr(404, 'No se encontró el documento.');
     if (this.locked(d.date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
+    if (d.cashSale) this.releaseCashPayment(d, user);
     if (this.paidOn(d).length) throw httpErr(400, 'Tiene pagos aplicados. Cancela o modifica esos pagos primero.');
     d.state = 'cancelled'; this.log(user, 'canceló', 'documento', d.id, d.number || 'borrador');
     return d;
@@ -311,6 +361,7 @@ class Books {
     if (!d) throw httpErr(404, 'No se encontró el documento.');
     if (d.state === 'erased') throw httpErr(400, 'Este documento ya fue eliminado.');
     if (d.number && this.locked(d.date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
+    if (d.cashSale && d.number && !this.locked(d.date)) this.releaseCashPayment(d, user);
     if (this.paidOn(d).length) throw httpErr(400, 'Tiene pagos o notas de crédito aplicados. Cancela o elimina esos primero.');
     for (const f of d.files || []) { try { fs.unlinkSync(path.join(this.filesDir, f.stored)); } catch (e) {} }
     d.erased = { by: user, at: new Date().toISOString(), from: d.state, uuid: d.uuid || '' };

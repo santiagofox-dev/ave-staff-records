@@ -629,6 +629,57 @@
       ], data.vendors, { empty: 'Aún no hay proveedores en el portal.' }));
   });
 
+  /* ================= CASH SALES ================= */
+  route(/^efectivo$/, async (m, q) => {
+    const mStart = today().slice(0, 8) + '01';
+    const st = { from: q.from || mStart, to: q.to || today(), operation: q.operation || '' };
+    const data = await get('/api/acc/cash-sales?' + qs(st));
+    const cashBanks = META.banks.filter(b => /caja|efectivo/i.test(b.name));
+    const banks = cashBanks.length ? cashBanks : META.banks;
+    const incomeAccs = a => ['IN', 'IO'].includes(a.type);
+    const opsList = h('datalist', { id: 'cashOps' }, data.operations.map(o => h('option', { value: o })));
+    const f = { date: today(), operation: st.operation || (data.operations.length === 1 ? data.operations[0] : ''), total: '', tax: 'IVA16', bankId: banks[0] && banks[0].id, concept: '', notes: '', account: META.settings && META.settings.accounts ? META.settings.accounts.sales : '' };
+    const preview = h('div', { class: 'cash-prev' });
+    const showPrev = () => { const t = +f.total || 0; const base = f.tax === 'IVA16' ? Math.round(t / 1.16 * 100) / 100 : t; clear(preview); add(preview, t ? [h('span', {}, 'Subtotal ', h('b', {}, money(base))), h('span', {}, 'IVA ', h('b', {}, money(Math.round((t - base) * 100) / 100))), h('span', {}, 'Total ', h('b', {}, money(t)))] : [h('span', { class: 'muted' }, 'Escribe el importe cobrado (con IVA incluido).')]); };
+    const totalI = inp({ type: 'number', step: '0.01', min: '0', placeholder: '0.00', oninput: e => { f.total = e.target.value; showPrev(); } });
+    const form = canEdit() ? h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'Registrar venta en efectivo')),
+      h('div', { class: 'form' },
+        field('Fecha', inp({ type: 'date', value: f.date, onchange: e => { f.date = e.target.value; } })),
+        field('Operación', inp({ list: 'cashOps', value: f.operation, placeholder: 'Ej. Jabil Torres', onchange: e => { f.operation = e.target.value; } })),
+        field('Importe cobrado (MXN)', totalI),
+        field('IVA', sel([['IVA16', 'IVA 16% incluido'], ['IVA0', 'Tasa 0%'], ['EXENTO', 'Exento']], f.tax, { onchange: e => { f.tax = e.target.value; showPrev(); } })),
+        field('Cuenta de efectivo', sel(banks.map(b => [b.id, b.name]), f.bankId, { onchange: e => { f.bankId = e.target.value; } })),
+        field('Cuenta de ingresos', accSelect(f.account, { onchange: e => { f.account = e.target.value; } }, incomeAccs)),
+        field('Concepto', inp({ placeholder: 'Ej. Venta de comidas del día', onchange: e => { f.concept = e.target.value; } }), 'span2'),
+        field('Notas', inp({ placeholder: 'Opcional: quién entregó, folio de corte…', onchange: e => { f.notes = e.target.value; } }), 'span2')),
+      opsList, preview,
+      h('div', { class: 'actions end' }, h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+        if (!f.operation) return toast('Elige la operación.', true);
+        if (!(+f.total > 0)) return toast('Escribe el importe.', true);
+        const r = await act(() => post('/api/acc/cash-sales', f), 'Venta en efectivo registrada.');
+        if (r) render();
+      } }, 'Registrar venta'))) : null;
+    showPrev();
+    const opFilter = sel([['', 'Todas las operaciones'], ...data.operations.map(o => [o, o])], st.operation, { onchange: e => go('efectivo', { ...st, operation: e.target.value }) });
+    const tot = data.byOp.reduce((a, o) => ({ count: a.count + o.count, subtotal: a.subtotal + o.subtotal, iva: a.iva + o.iva, total: a.total + o.total }), { count: 0, subtotal: 0, iva: 0, total: 0 });
+    return h('div', { class: 'stack' },
+      phead('Ventas en efectivo', 'Ventas cobradas en efectivo en las operaciones que lo permiten. Cada una queda como factura a Público en general, pagada en caja, con su IVA cobrado.'),
+      form,
+      h('section', { class: 'panel' },
+        h('div', { class: 'filters' }, inp({ type: 'date', value: st.from, onchange: e => go('efectivo', { ...st, from: e.target.value }) }), h('span', { class: 'muted' }, 'a'), inp({ type: 'date', value: st.to, onchange: e => go('efectivo', { ...st, to: e.target.value }) }), opFilter),
+        data.byOp.length ? h('div', { class: 'kpis' }, data.byOp.map(o => h('div', { class: 'kpi' }, h('span', {}, o.operation), h('b', {}, money(o.total)), h('span', {}, `${o.count} venta${o.count === 1 ? '' : 's'} · IVA ${money(o.iva)}`)))) : null,
+        table([
+          { t: 'Fecha', cls: 'nowrap', tk: 'date', f: r => fd(r.date) },
+          { t: 'Número', cls: 'nowrap', f: r => r.number },
+          { t: 'Operación', f: r => r.operation },
+          { t: 'Concepto', cls: 'w', f: r => r.concept },
+          { t: 'Subtotal', n: 1, tk: 'subtotal', f: r => r.state === 'posted' ? r.subtotal : '' },
+          { t: 'IVA', n: 1, tk: 'iva', f: r => r.state === 'posted' ? r.iva : '' },
+          { t: 'Total', n: 1, tk: 'total', f: r => r.total },
+          { t: 'Capturó', f: r => r.state === 'erased' ? h('span', { class: 'erased-note' }, `Eliminada por ${r.erasedBy} · ${fdt(r.erasedAt)}`) : r.state === 'cancelled' ? badge('cancelled', 'Cancelada') : r.by },
+        ], data.rows, { onRow: r => { if (r.state !== 'erased') go('doc/' + r.id); }, rowClass: r => r.state === 'cancelled' ? 'cx' : r.state === 'erased' ? 'ghost' : '', empty: 'No hay ventas en efectivo en este periodo.', total: { date: 'Total', subtotal: tot.subtotal, iva: tot.iva, total: tot.total } })));
+  });
+
   route(/^contactos$/, async () => {
     const rows = await get('/api/acc/partners?' + qs(cState));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar nombre o RFC', value: cState.q });

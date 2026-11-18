@@ -222,3 +222,20 @@ test('erase leaves a ghost with who/when, drops it from the books and frees the 
   const again = await importFiles(b, [{ name: 'a.xml', buf: xml }], 'u');
   assert.equal(again.created.length, 1, 'same CFDI can be imported again');
 });
+
+test('cash sale: posted, paid into Caja, IVA collected, exact total; cancel/erase release its payment', () => {
+  const b = freshBooks();
+  for (const [total, tax] of [[1000, 'IVA16'], [137.5, 'IVA16'], [99.99, 'IVA16'], [250, 'IVA0'], [80, 'EXENTO']]) {
+    const d = b.recordCashSale({ total, tax, operation: 'Jabil Torres', date: '2026-11-17' }, 'Vero');
+    assert.equal(d.total, total, `total ${total} ${tax}`);
+    assert.equal(d.state, 'posted'); assert.equal(b.payState(d), 'pagado'); assert.equal(d.cashSale.operation, 'Jabil Torres');
+  }
+  const r = b.cashSales('2026-11-01', '2026-11-30');
+  assert.equal(r.rows.length, 5); assert.equal(r.byOp[0].total, 1000 + 137.5 + 99.99 + 250 + 80);
+  const cash = b.balances(null, '2026-11-30');
+  const first = r.rows.find(x => x.total === 1000);
+  b.eraseDoc(first.id, 'Allan');
+  assert.equal(b.payment(first.cashSale.paymentId).state, 'cancelled');
+  assert.equal(b.cashSales('2026-11-01', '2026-11-30').byOp[0].total, 137.5 + 99.99 + 250 + 80);
+  assert.throws(() => b.recordCashSale({ total: 10, operation: '' }, 'x'), /operación/);
+});
