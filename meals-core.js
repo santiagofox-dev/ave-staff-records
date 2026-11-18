@@ -151,7 +151,47 @@ function resolveDay(label, days, year) {
 }
 
 /* ---------------- input readers ---------------- */
-async function loadWorkbook(file) { const wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(file); return wb; }
+/* Some Excel files come out of other tools in shapes ExcelJS can't parse ("reading 'sheets'"):
+   saved as "Strict Open XML", or with every tag prefixed (<x:workbook>, <x:sheet>…). Rewrite them to the
+   ordinary format in memory and try again. */
+const STRICT = [
+  ['http://purl.oclc.org/ooxml/spreadsheetml/main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'],
+  ['http://purl.oclc.org/ooxml/officeDocument/relationships', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'],
+  ['http://purl.oclc.org/ooxml/drawingml/main', 'http://schemas.openxmlformats.org/drawingml/2006/main'],
+  ['http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing', 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'],
+  ['http://purl.oclc.org/ooxml/officeDocument/extendedProperties', 'http://schemas.openxmlformats.org/officeDocument/2006/extended-properties'],
+];
+const MAIN_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+async function normalizeXlsx(buf) {
+  const JSZip = require('jszip');
+  const zip = await JSZip.loadAsync(buf);
+  for (const name of Object.keys(zip.files)) {
+    if (zip.files[name].dir || !/\.(xml|rels)$/i.test(name)) continue;
+    let x = await zip.file(name).async('string');
+    for (const [a, b] of STRICT) x = x.split(a).join(b);
+    x = x.replace(/\sconformance="strict"/g, '');
+    // drop a namespace prefix bound to the main spreadsheet namespace: <x:row> → <row>
+    const m = x.match(new RegExp(`xmlns:([A-Za-z0-9_]+)="${MAIN_NS.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}"`));
+    if (m) {
+      const p = m[1];
+      x = x.replace(new RegExp(`<(/?)${p}:`, 'g'), '<$1').replace(new RegExp(`xmlns:${p}="`), 'xmlns="');
+      if ((x.match(/\sxmlns="/g) || []).length > 1) x = x.replace(/(<[A-Za-z]+[^>]*?)\sxmlns="[^"]*"([^>]*?\sxmlns=")/, '$1$2'); // keep one default ns on the root
+    }
+    zip.file(name, x);
+  }
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+async function loadWorkbook(file) {
+  const wb = new ExcelJS.Workbook();
+  try { await wb.xlsx.readFile(file); if (wb.worksheets.length) return wb; } catch (e) { /* try the normalized copy */ }
+  const fs = require('fs');
+  let buf;
+  try { buf = await normalizeXlsx(fs.readFileSync(file)); } catch (e) { throw new Error(`"${require('path').basename(file)}" no es un Excel (.xlsx) válido. Ábrelo en Excel y guárdalo como "Libro de Excel (.xlsx)".`); }
+  const wb2 = new ExcelJS.Workbook();
+  try { await wb2.xlsx.load(buf); } catch (e) { throw new Error('No pude abrir uno de los Excel. Ábrelo en Excel y guárdalo de nuevo como "Libro de Excel (.xlsx)" (no "Strict Open XML").'); }
+  if (!wb2.worksheets.length) throw new Error('Uno de los Excel no tiene hojas.');
+  return wb2;
+}
 
 async function readRoster(file) {
   const wb = await loadWorkbook(file);

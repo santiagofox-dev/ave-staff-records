@@ -104,11 +104,12 @@ module.exports = function (app, { DATA_DIR, getUser }) {
       if (!f.noreg) return fail('Falta el archivo NO REGISTRADOS.');
       if (!f.delphi) return fail('Falta el reporte DELPHI.');
       try {
-        const upRoster = f.roster ? await M.readRoster(f.roster[0].path) : null;
+        const lab = (what, pr) => pr.catch(e => { throw new Error(`${what}: ${e.message}`); });
+        const upRoster = f.roster ? await lab(`Lista de nuevos ingresos (${f.roster[0].originalname})`, M.readRoster(f.roster[0].path)) : null;
         if (upRoster && !upRoster.length) return fail('La lista de nuevos ingresos está vacía.');
-        const noReg = await M.readNoRegistrados(f.noreg[0].path);
-        const dwb = await M.loadWorkbook(f.delphi[0].path);
-        const { blocks } = M.readDelphi(M.delphiSheet(dwb));
+        const noReg = await lab(`NO REGISTRADOS (${f.noreg[0].originalname})`, M.readNoRegistrados(f.noreg[0].path));
+        const dwb = await lab(`Reporte DELPHI (${f.delphi[0].originalname})`, M.loadWorkbook(f.delphi[0].path));
+        const { blocks } = await lab(`Reporte DELPHI (${f.delphi[0].originalname})`, (async () => M.readDelphi(M.delphiSheet(dwb)))());
         const delphiName = f.delphi[0].originalname.replace(/\.xlsx$/i, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
         const m = delphiName.match(/DELPHI\s*-\s*(.+?)\s*-\s*Detallado/i);
         // the list is optional: merge it into the saved numbers and use everything we know
