@@ -18,74 +18,108 @@ let toastT; function toast(m) { const el = $('#toast'); el.textContent = m; el.h
 function showErr(sel, msg) { const e = $(sel); e.textContent = msg || ''; e.hidden = !msg; }
 function step(n) { document.querySelectorAll('#steps li').forEach(li => { const k = +li.dataset.step; li.className = k < n ? 'done' : k === n ? 'on' : ''; }); }
 
-/* ---------- 1. upload ---------- */
-// photos accumulate: every pick or drop adds to the list (duplicates by name+size ignored); × removes one
-let photoList = [];
-function addPhotos(files) {
+/* ---------- 1. upload: one drop zone for everything ---------- */
+// Photos and Excel files go in together; the Excel kind is guessed by name here and confirmed by its columns on the server
+let photoList = [], xlsxList = []; // xlsxList: { file, kind: 'delphi'|'noreg'|'roster'|'?'|null }
+const guess = n => /delphi|detallado/i.test(n) ? 'delphi' : /no[\s_-]*registrad/i.test(n) ? 'noreg' : /numero|ingreso|listado|personal/i.test(n) ? 'roster' : '?';
+const kindOf = x => x.kind;
+async function sniff(x) {
+  const fd = new FormData(); fd.append('file', x.file, x.file.name);
+  try { const r = await api('POST', '/api/meals/sniff', fd); x.kind = r.kind; } catch (e) { x.kind = guess(x.file.name); }
+  if (!x.kind) toast(`No reconocí "${x.file.name}": no parece DELPHI, NO REGISTRADOS ni la lista.`);
+  // one file per kind: the newest wins
+  xlsxList = xlsxList.filter(y => y === x || !x.kind || y.kind !== x.kind);
+  renderFiles();
+}
+const KIND = { delphi: 'Reporte DELPHI', noreg: 'NO REGISTRADOS', roster: 'Lista de nuevos ingresos' };
+function addFiles(files) {
   for (const f of files) {
-    if (!/^image\/(jpeg|png|webp)$/i.test(f.type) && !/\.(jpe?g|png|webp)$/i.test(f.name)) { if (/heic/i.test(f.name + f.type)) toast('Las fotos HEIC no se pueden leer: envíalas como JPG.'); continue; }
+    if (/\.xlsx$/i.test(f.name)) { if (!xlsxList.some(x => x.file.name === f.name && x.file.size === f.size)) { const x = { file: f, kind: '?' }; xlsxList.push(x); sniff(x); } continue; }
+    if (/\.(xls|csv)$/i.test(f.name)) { toast(`"${f.name}": guárdalo como Excel .xlsx.`); continue; }
+    if (!/^image\/(jpeg|png|webp)$/i.test(f.type) && !/\.(jpe?g|png|webp)$/i.test(f.name)) { toast(/heic/i.test(f.name + f.type) ? 'Las fotos HEIC no se pueden leer: envíalas como JPG.' : `"${f.name}" no es foto ni Excel.`); continue; }
     if (!photoList.some(p => p.name === f.name && p.size === f.size)) photoList.push(f);
   }
   if (photoList.length > 40) { photoList = photoList.slice(0, 40); toast('Máximo 40 fotos por semana.'); }
-  renderPhotos();
+  renderFiles();
 }
-function renderPhotos() {
-  $('#photoCount').textContent = photoList.length ? `${photoList.length} foto${photoList.length === 1 ? '' : 's'} lista${photoList.length === 1 ? '' : 's'} · toca para agregar más` : 'Toca para elegir fotos o arrástralas aquí (varias a la vez).';
+function renderFiles() {
+  const has = k => { const x = xlsxList.find(y => y.kind === k); return x && x.file; };
+  const checking = xlsxList.some(x => x.kind === '?');
+  const item = (ok, label, detail, optional) => `<li class="${ok ? 'ok' : optional ? 'optional' : 'miss'}"><span class="ic" aria-hidden="true">${ok ? '✓' : optional ? '–' : '!'}</span><b>${label}</b><span class="d">${detail}</span></li>`;
+  $('#checklist').innerHTML =
+    item(photoList.length, 'Fotos de las hojas', photoList.length ? `${photoList.length} foto${photoList.length === 1 ? '' : 's'}` : 'falta al menos una') +
+    item(has('delphi'), 'Reporte DELPHI', has('delphi') ? esc(has('delphi').name) : 'falta “DELPHI … Detallado.xlsx”') +
+    item(has('noreg'), 'NO REGISTRADOS', has('noreg') ? esc(has('noreg').name) : 'falta') +
+    item(has('roster'), 'Lista de nuevos ingresos', has('roster') ? esc(has('roster').name) : (window.__savedNums ? `opcional: se usan los ${window.__savedNums} números guardados` : 'opcional: la primera vez conviene subirla'), true);
+  $('#dropTxt').textContent = photoList.length || xlsxList.length ? 'Toca o arrastra para agregar más' : 'Toca aquí o arrastra todos los archivos de la semana';
+  const ready = photoList.length && has('delphi') && has('noreg') && !checking;
+  $('#upBtn').disabled = !ready;
   const box = $('#pthumbs'); box.replaceChildren();
   photoList.forEach((f, i) => {
     const fig = document.createElement('figure'), img = document.createElement('img'), x = document.createElement('button'), cap = document.createElement('figcaption');
     img.alt = f.name; const rd = new FileReader(); rd.onload = () => { img.src = rd.result; }; rd.readAsDataURL(f); // data: URLs (the page's CSP blocks blob:)
-    x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.title = 'Quitar foto'; x.setAttribute('aria-label', 'Quitar ' + f.name); x.onclick = () => { photoList.splice(i, 1); renderPhotos(); };
+    x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.title = 'Quitar foto'; x.setAttribute('aria-label', 'Quitar ' + f.name); x.onclick = () => { photoList.splice(i, 1); renderFiles(); };
     cap.textContent = `Foto ${i + 1}`;
     fig.append(img, x, cap); box.append(fig);
   });
+  xlsxList.forEach((f, i) => {
+    const chip = document.createElement('figure'), x = document.createElement('button'), t = document.createElement('div');
+    chip.className = 'xchip' + (f.kind ? '' : ' bad'); t.innerHTML = `<b>${f.kind === '?' ? 'Revisando…' : f.kind ? esc(KIND[f.kind]) : 'No reconocido'}</b><span>${esc(f.file.name)}</span>`;
+    x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.title = 'Quitar'; x.onclick = () => { xlsxList.splice(i, 1); renderFiles(); };
+    chip.append(t, x); box.append(chip);
+  });
 }
-$('#f_photos').addEventListener('change', e => { addPhotos([...e.target.files]); e.target.value = ''; });
+$('#f_all').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
 const pd = $('#photoDrop');
 ['dragenter', 'dragover'].forEach(t => pd.addEventListener(t, e => { e.preventDefault(); pd.classList.add('over'); }));
 ['dragleave', 'drop'].forEach(t => pd.addEventListener(t, e => { e.preventDefault(); pd.classList.remove('over'); }));
-pd.addEventListener('drop', e => addPhotos([...e.dataTransfer.files]));
-renderPhotos();
+pd.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+renderFiles();
 
 $('#up').addEventListener('submit', async ev => {
   ev.preventDefault(); showErr('#upErr');
+  if (!photoList.length) return showErr('#upErr', 'Agrega al menos una foto de las hojas.');
   const fd = new FormData();
-  const photos = photoList;
-  if (!photos.length) return showErr('#upErr', 'Elige al menos una foto de las hojas.');
-  for (const f of photos) fd.append('photos', f);
-  for (const [k, sel, label] of [['roster', '#f_roster', 'la lista de nuevos ingresos'], ['noreg', '#f_noreg', 'NO REGISTRADOS'], ['delphi', '#f_delphi', 'el reporte DELPHI']]) {
-    const f = $(sel).files[0]; if (!f) { if (k === 'roster') continue; return showErr('#upErr', `Falta ${label}.`); } fd.append(k, f);
-  }
+  for (const f of photoList) fd.append('photos', f);
+  for (const x of xlsxList.filter(y => y.kind)) fd.append('xlsx', x.file, x.file.name);
   const b = $('#upBtn'); b.disabled = true; b.textContent = 'Subiendo…';
-  try { run = await api('POST', '/api/meals/runs', fd); showRun(); }
-  catch (e) { showErr('#upErr', e.message); }
-  finally { b.disabled = false; b.textContent = 'Subir archivos'; }
+  try {
+    run = await api('POST', '/api/meals/runs', fd); showRun();
+    // go straight on to reading the photos
+    b.textContent = 'Leyendo…'; await startRead();
+  } catch (e) { showErr('#upErr', e.message); }
+  finally { b.disabled = false; b.textContent = 'Subir y leer fotos'; }
 });
 
 function showRun() {
-  $('#s2').hidden = false; step(2);
+  $('#s2').hidden = false; step(1);
+  // this week is under way: fold the upload box into a one-line summary
+  $('#up').hidden = true; $('#s1 > p').hidden = true; $('#foldRow').hidden = false;
+  $('#s1 h2').textContent = `1. Semana ${run.label}`;
   $('#runInfo').innerHTML = `<b>${esc(run.label)}</b> · días en DELPHI: ${run.days.map(esc).join(', ')} · ${run.files.photos.length} foto(s) · ${run.rosterSize} números de empleado guardados · ${run.noRegSize} escaneos NO REGISTRADOS (${run.noRegMatches} de nuevos ingresos)`;
   $('#rosterUpd').innerHTML = rosterUpdHTML(run.rosterUpdate, run.rosterSize);
   history.replaceState(null, '', '#' + run.id);
 }
 
 /* ---------- 2. read ---------- */
-$('#readBtn').addEventListener('click', async () => {
+async function startRead() {
   showErr('#readErr'); $('#readBtn').disabled = true;
-  try { run = await api('POST', `/api/meals/runs/${run.id}/read`); poll(); }
+  try { run = await api('POST', `/api/meals/runs/${run.id}/read`); await poll(); }
   catch (e) { showErr('#readErr', e.message); $('#readBtn').disabled = false; }
-});
+}
+$('#readBtn').addEventListener('click', startRead);
+$('#newWeek').addEventListener('click', () => { location.href = location.pathname; });
 async function poll() {
   $('#prog').hidden = false;
   for (;;) {
     run = await api('GET', `/api/meals/runs/${run.id}`);
     const r = run.reading || { done: 0, total: 1 };
     $('#progBar').style.width = `${Math.round(100 * r.done / Math.max(1, r.total))}%`;
-    $('#progTxt').textContent = `${r.done} de ${r.total} fotos`;
+    $('#progTxt').textContent = r.done < r.total ? `Leyendo foto ${r.done + 1} de ${r.total}… (cada foto tarda unos segundos)` : `${r.total} de ${r.total} fotos leídas`;
     if (run.status === 'read' || run.status === 'generated') break;
     await new Promise(res => setTimeout(res, 2000));
   }
-  $('#readBtn').disabled = false; $('#readBtn').textContent = 'Volver a leer fotos';
+  $('#readBtn').disabled = false; $('#readBtn').textContent = 'Volver a leer fotos'; $('#readBtn').hidden = false; $('#prog').hidden = true;
   if (run.reading.errors.length) showErr('#readErr', run.reading.errors.join(' · '));
   buildReview();
   if (run.confidence) toast(`Lectura terminada · confianza ${run.confidence.pct}% · ${run.confidence.items.length} puntos por revisar`);
@@ -93,7 +127,8 @@ async function poll() {
 
 /* ---------- 3. review ---------- */
 function buildReview() {
-  $('#s3').hidden = false; step(3);
+  $('#s3').hidden = false; step(2); $('#s1').classList.add('compact');
+  setTimeout(() => $('#s3').scrollIntoView({ behavior: 'smooth' }), 50);
   byId = Object.fromEntries(run.roster.map(r => [r.id, r]));
   unusual = new Set(run.unusualIds);
   rosterOpts = run.roster.slice().sort((a, b) => a.name.localeCompare(b.name, 'es')).map(r => `<option value="${esc(r.id)}">${esc(r.name)} · ${esc(r.id)}</option>`).join('');
@@ -116,6 +151,9 @@ function current() { return MealsConf.assess(rows.map(r => ({ ...r, officialName
 function refreshConf() {
   const now = current();
   const pend = now.items.length;
+  $('#nextPt').hidden = !pend; $('#nextPt').textContent = pend ? `Ir al siguiente punto (${pend})` : '';
+  $('#genBtn').textContent = pend ? 'Generar de todos modos' : 'Generar DELPHI';
+  $('#genBtn').classList.toggle('ready', !pend);
   $('#conf').innerHTML = `<div class="confbox ${confClass(now.pct)}">
       <div class="big">${now.pct}%</div>
       <div><b>Confianza ${MealsConf.label(now.pct)}</b><br><span class="muted small">Lectura de la IA: ${readConf ? readConf.pct + '%' : '—'} · ahora, con tu revisión: ${now.pct}% · ${now.sure} de ${now.total} marcas seguras</span></div>
@@ -192,6 +230,7 @@ $('#addRow').addEventListener('click', () => {
 });
 
 $('#todoOnly').addEventListener('change', refreshConf);
+$('#nextPt').addEventListener('click', () => { const b = document.querySelector('#todo [data-go]'); if (b) { $('#todoOnly').checked = false; b.click(); } });
 $('#todo').addEventListener('click', e => {
   const ok = e.target.closest('[data-ok]'), go = e.target.closest('[data-go]');
   if (ok) {
@@ -216,17 +255,17 @@ $('#todo').addEventListener('click', e => {
 $('#genBtn').addEventListener('click', async () => {
   showErr('#genErr');
   const pending = current().items.length;
-  if (pending && !genArmed) { genArmed = true; showErr('#genErr', `${pending === 1 ? 'Queda 1 punto' : `Quedan ${pending} puntos`} sin revisar. Revísalos en la lista de arriba, o presiona Generar otra vez para generar de todos modos (quedarán anotados en el resumen).`); return; }
+  if (pending && !genArmed) { genArmed = true; showErr('#genErr', `${pending === 1 ? 'Queda 1 punto' : `Quedan ${pending} puntos`} sin revisar. Presiona de nuevo para generar así (quedan anotados en el resumen), o usa “Ir al siguiente punto”.`); return; }
   genArmed = false;
   const newPeople = Object.values(typedPeople).filter(p => rows.some(r => !r.deleted && r.id === p.id));
   const payload = rows.filter(r => !r.deleted).map(r => ({ source: r.source, photo: r.photo, row: r.row, nameAsWritten: r.nameAsWritten, id: r.id, marks: r.marks, uncertain: r.uncertain, disputed: r.disputed, reviewed: r.reviewed, note: r.note, matchKind: r.matchKind, matchScore: r.matchScore }));
   const b = $('#genBtn'); b.disabled = true; b.textContent = 'Generando…';
   try { const out = await api('POST', `/api/meals/runs/${run.id}/generate`, { rows: payload, newPeople }); showResult(out); loadHistory(); loadRoster(); }
   catch (e) { showErr('#genErr', e.message); }
-  finally { b.disabled = false; b.textContent = 'Generar'; }
+  finally { b.disabled = false; refreshConf(); }
 });
 function showResult(out) {
-  $('#s4').hidden = false; step(4);
+  $('#s4').hidden = false; step(3);
   const t = out.totals;
   $('#result').innerHTML = `<div class="res">
     <div class="dl"><a class="btn primary" href="/api/meals/runs/${run.id}/file/delphi">Descargar DELPHI actualizado</a><a class="btn" href="/api/meals/runs/${run.id}/file/summary">Descargar resumen</a></div>
@@ -252,7 +291,7 @@ let rosterData = null;
 async function loadRoster() {
   try { rosterData = await api('GET', '/api/meals/roster'); } catch (e) { $('#rosterMeta').textContent = e.message; return; }
   $('#rosterMeta').textContent = `${rosterData.count} guardados${rosterData.updatedAt ? ' · actualizado ' + new Date(rosterData.updatedAt).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : ''}`;
-  $('#rosterHint').textContent = rosterData.count ? `Si no la tienes, se usan los ${rosterData.count} números ya guardados.` : 'Todavía no hay números guardados: sube la lista la primera vez o escribe los números en la revisión.';
+  window.__savedNums = rosterData.count; renderFiles();
   $('#rosterUploads').innerHTML = rosterData.uploads.length ? `<ul class="rlog">${rosterData.uploads.slice(0, 6).map(u => `<li><b>${esc(new Date(u.at).toLocaleDateString('es-MX', { dateStyle: 'medium' }))}</b> · ${esc(u.file || u.source)} · ${u.added} nuevos · ${u.changed} cambios${u.otherId ? ` · <span class="warn">${u.otherId} con otro número</span>` : ''}${u.by ? ' · ' + esc(u.by) : ''}</li>`).join('')}</ul>` : '';
   renderRosterTab();
 }
@@ -288,7 +327,7 @@ $('#hist').addEventListener('click', async e => {
   loadHistory(); loadRoster();
   const id = location.hash.slice(1);
   if (/^[a-f0-9]{16}$/.test(id)) {
-    try { run = await api('GET', `/api/meals/runs/${id}`); showRun(); if (run.status === 'reading') poll(); else if (run.status === 'read' || run.status === 'generated') { $('#readBtn').textContent = 'Volver a leer fotos'; buildReview(); } }
+    try { run = await api('GET', `/api/meals/runs/${id}`); showRun(); if (run.status === 'reading') poll(); else if (run.status === 'read' || run.status === 'generated') { $('#readBtn').textContent = 'Volver a leer fotos'; buildReview(); } else if (run.status === 'uploaded') $('#readBtn').hidden = false; }
     catch (e) { history.replaceState(null, '', location.pathname); }
   }
 })();

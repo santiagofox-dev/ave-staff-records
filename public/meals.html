@@ -7,7 +7,7 @@
 <title>Comidas de Nuevos Ingresos · AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/styles.css?v=10">
-<link rel="stylesheet" href="/static/meals.css?v=5">
+<link rel="stylesheet" href="/static/meals.css?v=6">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="/static/shell.css?v=3">
 </head>
@@ -36,39 +36,39 @@
   <div class="err-banner" id="keyWarn" hidden>Falta configurar la clave de la API de Claude (<span class="mono">ANTHROPIC_API_KEY</span>) en Render. Sin ella no se pueden leer las fotos.</div>
 
   <ol class="steps" id="steps">
-    <li data-step="1" class="on">Subir archivos</li><li data-step="2">Leer fotos</li><li data-step="3">Revisar</li><li data-step="4">Descargar</li>
+    <li data-step="1" class="on">Subir</li><li data-step="2">Revisar</li><li data-step="3">Descargar</li>
   </ol>
 
-  <!-- 1. upload -->
+  <!-- 1. upload + read -->
   <section class="panel" id="s1">
-    <h2>1. Archivos de la semana</h2>
-    <form id="up" class="upgrid" novalidate>
-      <div class="field full"><label for="f_photos">Fotos de las hojas INGRESOS (JPG/PNG): elige o arrastra varias a la vez, y puedes seguir agregando</label><div class="photodrop" id="photoDrop"><input id="f_photos" type="file" accept="image/jpeg,image/png,image/webp" multiple><span id="photoCount">Ninguna foto todavía.</span></div><div class="pthumbs" id="pthumbs"></div></div>
-      <div class="field"><label for="f_roster">NUMEROS DE EMPLEADO NUEVOS INGRESOS.xlsx <span class="opt">opcional</span></label><input id="f_roster" type="file" accept=".xlsx"><div class="hint" id="rosterHint">Si no la tienes, se usan los números ya guardados.</div></div>
-      <div class="field"><label for="f_noreg">NO REGISTRADOS (fechas).xlsx</label><input id="f_noreg" type="file" accept=".xlsx"></div>
-      <div class="field"><label for="f_delphi">DELPHI - … - Detallado.xlsx (original)</label><input id="f_delphi" type="file" accept=".xlsx"></div>
-      <div class="actions end full"><button class="btn primary" id="upBtn" type="submit">Subir archivos</button></div>
+    <h2>1. Sube los archivos de la semana</h2>
+    <p class="muted small">Arrastra todo junto: las fotos de las hojas INGRESOS y los Excel (reporte DELPHI, NO REGISTRADOS y, si la tienes, la lista de nuevos ingresos). El sistema reconoce cada archivo y lee las fotos solo.</p>
+    <form id="up" novalidate>
+      <div class="photodrop big" id="photoDrop"><input id="f_all" type="file" accept="image/jpeg,image/png,image/webp,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple aria-label="Elegir fotos y archivos Excel"><span id="dropTxt"></span></div>
+      <ul class="checklist" id="checklist"></ul>
+      <div class="pthumbs" id="pthumbs"></div>
+      <div class="actions end"><button class="btn primary" id="upBtn" type="submit" disabled>Subir y leer fotos</button></div>
     </form>
     <div class="err" id="upErr" role="alert" hidden></div>
+    <div class="actions" id="foldRow" hidden><span class="muted small">Archivos subidos y leídos.</span><button class="btn" id="newWeek" type="button">Empezar otra semana</button></div>
   </section>
 
-  <!-- 2. read -->
   <section class="panel" id="s2" hidden>
-    <h2>2. Leer fotos</h2>
-    <div id="runInfo" class="muted"></div>
+    <div id="runInfo" class="muted small"></div>
     <div id="rosterUpd"></div>
-    <div class="actions"><span></span><button class="btn primary" id="readBtn">Leer fotos</button></div>
-    <div class="progress" id="prog" hidden><div class="bar"><i id="progBar"></i></div><span id="progTxt" class="mono"></span></div>
+    <div class="progress" id="prog" hidden><div class="bar"><i id="progBar"></i></div><span id="progTxt"></span></div>
+    <div class="actions"><span></span><button class="btn" id="readBtn" hidden>Leer fotos</button></div>
     <div class="err" id="readErr" role="alert" hidden></div>
   </section>
 
   <!-- 3. review -->
   <section class="panel" id="s3" hidden>
     <div class="panel-head">
-      <h2>3. Revisar antes de generar</h2>
+      <h2>2. Revisa y genera</h2>
       <div class="legend"><span class="lg unc">celda por revisar</span><span class="lg rv">revisada</span><span class="lg fz">nombre aproximado</span><span class="lg no">sin ID</span><span class="lg odd">ID fuera de patrón</span></div>
     </div>
-    <div class="muted small">Corrige las palomitas y los nombres comparando con la foto. Nada se guarda en DELPHI hasta que presiones <b>Generar</b>.</div>
+    <div class="muted small">Revisa solo los puntos marcados: compara con la foto y corrige la palomita o el nombre. Nada se guarda en DELPHI hasta que presiones <b>Generar</b>.</div>
+    <div class="actions"><button class="btn primary" id="nextPt" type="button" hidden></button></div>
     <div class="flags" id="flags"></div>
     <div id="conf" aria-live="polite"></div>
     <details class="todobox" open>
@@ -87,33 +87,33 @@
         <div class="tablewrap"><table class="mgrid" id="grid"></table></div>
       </div>
     </div>
-    <div class="actions"><span class="muted" id="countTxt"></span><button class="btn primary" id="genBtn">Generar</button></div>
+    <div class="actions"><span class="muted" id="countTxt"></span><button class="btn primary" id="genBtn">Generar DELPHI</button></div>
     <div class="err" id="genErr" role="alert" hidden></div>
   </section>
 
   <!-- 4. result -->
   <section class="panel" id="s4" hidden>
-    <h2>4. Listo</h2>
+    <h2>3. Listo: descarga tus archivos</h2>
     <div id="result"></div>
   </section>
 
-  <section class="panel">
-    <h2>Historial</h2>
+  <details class="panel fold">
+    <summary><h2>Historial de semanas</h2></summary>
     <div id="hist" class="muted">Cargando…</div>
-  </section>
+  </details>
 
-  <section class="panel" id="rosterPanel">
-    <div class="panel-head"><h2>Números de empleado guardados</h2><span class="muted small" id="rosterMeta"></span></div>
+  <details class="panel fold" id="rosterPanel">
+    <summary><h2>Números de empleado guardados</h2><span class="muted small" id="rosterMeta"></span></summary>
     <div class="muted small">Cada lista de nuevos ingresos que subes se guarda aquí. Al subir una nueva se marca qué personas son nuevas y qué datos cambiaron. Los números que escribes a mano en la revisión también se guardan.</div>
     <div id="rosterUploads"></div>
     <div class="actions"><input id="rosterQ" type="search" placeholder="Buscar nombre o número…" aria-label="Buscar empleado"><span class="muted small" id="rosterCount"></span></div>
     <div class="tw"><table class="rtab" id="rosterTab"></table></div>
-  </section>
+  </details>
 </div>
 <div class="toast" id="toast" hidden></div>
 <script src="/static/meals-conf.js?v=1"></script>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/meals.js?v=9"></script>
+<script src="/static/meals.js?v=11"></script>
 <script src="/static/shell.js?v=2"></script>
 </body>
 </html>

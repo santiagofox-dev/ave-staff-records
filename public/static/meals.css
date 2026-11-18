@@ -104,3 +104,25 @@ a.btn{text-decoration:none}
 .pthumbs img{width:92px;height:92px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
 .pthumbs figcaption{font-size:11px;color:var(--muted);text-align:center}
 .pthumbs .x{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:15px;line-height:22px;padding:0;cursor:pointer}
+
+/* simpler flow */
+.photodrop.big{padding:34px 16px;font-size:16px}
+.checklist{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.checklist li{display:grid;grid-template-columns:26px 1fr;gap:0 8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.checklist .ic{grid-row:span 2;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px}
+.checklist li.ok .ic{background:var(--ok-bg);color:var(--ok)} .checklist li.miss .ic{background:var(--bad-bg);color:var(--bad)} .checklist li.optional .ic{background:var(--sunk);color:var(--muted)}
+.checklist .d{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.checklist li.miss .d{color:var(--bad)}
+.xchip{position:relative;margin:0;width:210px;height:92px;border:1px solid var(--line);border-radius:8px;padding:10px 26px 10px 10px;background:var(--sunk);display:flex;align-items:center}
+.xchip div{display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:0} .xchip b{font-size:13px} .xchip span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xchip .x{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:15px;line-height:22px;padding:0;cursor:pointer}
+#s1.compact .photodrop.big{padding:14px}
+#s1.compact .pthumbs{display:none}
+#genBtn.ready{box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 35%,transparent)}
+details.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:12px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary h2{margin:0}
+details.fold>summary::after{content:'Mostrar';margin-left:auto;font-size:13px;color:var(--muted)}
+details.fold[open]>summary::after{content:'Ocultar'}
+@media (max-width:640px){.checklist{grid-template-columns:1fr}}
+.xchip.bad{border-color:var(--bad);background:var(--bad-bg)}

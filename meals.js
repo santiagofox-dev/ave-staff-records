@@ -92,7 +92,23 @@ module.exports = function (app, { DATA_DIR, getUser }) {
       if (file.fieldname === 'photos' ? /^\.(jpe?g|png|webp|heic)$/.test(ext) : ext === '.xlsx') return cb(null, true);
       cb(Object.assign(new Error(file.fieldname === 'photos' ? `"${file.originalname}" no es una foto (JPG o PNG).` : `"${file.originalname}" debe ser un archivo .xlsx.`), { status: 400 }));
     },
-  }).fields([{ name: 'photos', maxCount: 40 }, { name: 'roster', maxCount: 1 }, { name: 'noreg', maxCount: 1 }, { name: 'delphi', maxCount: 1 }]);
+  }).fields([{ name: 'photos', maxCount: 40 }, { name: 'roster', maxCount: 1 }, { name: 'noreg', maxCount: 1 }, { name: 'delphi', maxCount: 1 }, { name: 'xlsx', maxCount: 6 }]);
+
+  // Tell what an Excel is from its columns (so the page can show the right checklist before uploading)
+  async function sniffKind(file) {
+    try { await M.readNoRegistrados(file); return 'noreg'; } catch (e) {}
+    try { await M.readRoster(file); return 'roster'; } catch (e) {}
+    try { const wb = await M.loadWorkbook(file); M.readDelphi(M.delphiSheet(wb)); return 'delphi'; } catch (e) {}
+    return null;
+  }
+  const sniffUp = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 1 } }).single('file');
+  app.post('/api/meals/sniff', (req, res) => sniffUp(req, res, async err => {
+    if (err || !req.file) return res.status(400).json({ error: 'No se pudo recibir el archivo.' });
+    const tmp = path.join(require('os').tmpdir(), 'sniff-' + crypto.randomBytes(6).toString('hex') + '.xlsx');
+    try { fs.writeFileSync(tmp, req.file.buffer); res.json({ kind: await sniffKind(tmp) }); }
+    catch (e) { res.json({ kind: null }); }
+    finally { fs.rmSync(tmp, { force: true }); }
+  }));
 
   app.post('/api/meals/runs', (req, res, next) => { req.runId = crypto.randomBytes(8).toString('hex'); next(); }, (req, res) => {
     upload(req, res, async err => {
@@ -100,9 +116,17 @@ module.exports = function (app, { DATA_DIR, getUser }) {
       if (err) return fail(err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pesa más de 30 MB.' : err.message);
       const f = req.files || {};
       if (!f.photos || !f.photos.length) return fail('Sube al menos una foto de las hojas INGRESOS.');
+      // Excel files dropped together: tell them apart by their columns (NO REGISTRADOS: Fecha/Hora/Código;
+      // list: ID Empleado/Nombre Completo; DELPHI: the report with FECHA … NO-RELOJ)
+      for (const x of f.xlsx || []) {
+        const kind = await sniffKind(x.path);
+        if (!kind) return fail(`No reconocí "${x.originalname}": no parece el reporte DELPHI, NO REGISTRADOS ni la lista de nuevos ingresos.`);
+        if (f[kind]) return fail(`Subiste dos archivos de ${kind === 'delphi' ? 'reporte DELPHI' : kind === 'noreg' ? 'NO REGISTRADOS' : 'lista de nuevos ingresos'}: "${f[kind][0].originalname}" y "${x.originalname}". Deja solo uno.`);
+        f[kind] = [x];
+      }
       if (/heic/i.test(f.photos.map(p => p.originalname).join())) return fail('Las fotos HEIC de iPhone no se pueden leer; envíalas como JPG (en el iPhone: Ajustes › Cámara › Formatos › Más compatible).');
-      if (!f.noreg) return fail('Falta el archivo NO REGISTRADOS.');
-      if (!f.delphi) return fail('Falta el reporte DELPHI.');
+      if (!f.delphi) return fail('Falta el reporte DELPHI (el Excel “DELPHI … Detallado”).');
+      if (!f.noreg) return fail('Falta el Excel de NO REGISTRADOS.');
       try {
         const lab = (what, pr) => pr.catch(e => { throw new Error(`${what}: ${e.message}`); });
         const upRoster = f.roster ? await lab(`Lista de nuevos ingresos (${f.roster[0].originalname})`, M.readRoster(f.roster[0].path)) : null;
