@@ -287,7 +287,13 @@
     const key = n => n.toLowerCase().replace(/\.(zip|xlsx)$/, '').replace(/\bexcel\b/g, '').replace(/^\d+_/, '').replace(/[^a-z0-9]+/g, ' ').trim();
     const zips = files.filter(f => /\.zip$/i.test(f.name)), lists = files.filter(f => /\.xlsx$/i.test(f.name)), loose = files.filter(f => /\.(xml|pdf)$/i.test(f.name));
     const used = new Set();
-    const groups = zips.sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true })).map(z => { const x = lists.find(l => !used.has(l) && key(l.name) === key(z.name)); if (x) used.add(x); return { label: z.name.replace(/\.zip$/i, ''), files: x ? [z, x] : [z], size: z.size }; });
+    // pair by name; if the names differ a little ("del 23 al 25" vs "del 23 al 24"), by shared numbers and month
+    const toks = n => new Set((n.toLowerCase().match(/\d+|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre/g) || []).filter(t => t !== '2026' && t !== '2025' && t !== '2027'));
+    const near = (z, l) => { const a = toks(z), b = toks(l); let n = 0; a.forEach(t => { if (b.has(t)) n++; }); return n; };
+    const zs = zips.sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true })), pair = new Map();
+    for (const z of zs) { const x = lists.find(l => !used.has(l) && key(l.name) === key(z.name)); if (x) { used.add(x); pair.set(z, x); } }
+    for (const z of zs) if (!pair.has(z)) { const best = lists.filter(l => !used.has(l)).map(l => [l, near(z.name, l.name)]).sort((a, b) => b[1] - a[1])[0]; if (best && best[1] >= 2) { used.add(best[0]); pair.set(z, best[0]); } }
+    const groups = zs.map(z => { const x = pair.get(z); return { label: z.name.replace(/\.zip$/i, ''), files: x ? [z, x] : [z], size: z.size }; });
     loose.sort((a, b) => (/\.pdf$/i.test(a.name) ? 1 : 0) - (/\.pdf$/i.test(b.name) ? 1 : 0));
     const leftLists = lists.filter(l => !used.has(l));
     for (let i = 0; i < loose.length; i += 40) groups.push({ label: `Archivos sueltos ${i + 1}–${Math.min(i + 40, loose.length)}`, files: [...leftLists, ...loose.slice(i, i + 40)] });
