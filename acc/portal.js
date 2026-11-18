@@ -107,33 +107,50 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
 
   /* An invoice our team already loaded (e.g. from the accountant's package) is shown back to the supplier with
      the data we have, so they confirm it matches or say what's wrong. */
+  const hasReceipt = d => (d.files || []).some(f => f.receipt);
   function reviewView(b, d) {
-    const r = d.vendorReview || null;
+    const r = d.vendorReview || (d.portal ? { status: 'ok' } : d.state !== 'cancelled' && !d.test ? { status: 'pending' } : null); // ones we loaded ourselves also need their sign-off
     return { id: d.id, folio: `${d.serie || ''}${d.folio || ''}` || (d.uuid || '').slice(0, 8), date: d.date, received: d.received || d.date,
       plant: b.plantOf(d) || '', due: d.state === 'posted' ? d.due : addDays(d.received || d.date, (b.partner(d.partnerId) || {}).terms || 0),
       subtotal: Math.round(((d.subtotal || 0) - (d.discount || 0)) * 100) / 100, iva: d.traslados || 0, retenciones: d.retenciones || 0, total: d.total,
-      review: r ? { status: r.status, plant: r.plant || '', comment: r.comment || '', at: r.doneAt || r.at } : null };
+      hasReceipt: hasReceipt(d), review: r ? { status: r.status, plant: r.plant || '', comment: r.comment || '', at: r.doneAt || r.at } : null };
   }
-  app.post('/api/portal/review', needVendor, (req, res) => {
-    const b = getBooks(), v = req.vendor, { id, ok, comment, plant } = req.body || {};
-    const d = b.doc(String(id || ''));
-    if (!d || d.partnerId !== v.id || d.state === 'erased') return res.status(404).json({ error: 'No encontramos esa factura.' });
-    const now = new Date().toISOString(), day = localToday().split('-').reverse().join('/');
-    const r = d.vendorReview = { ...(d.vendorReview || {}), doneAt: now };
-    const pl = plantsFor(v).includes(String(plant || '')) ? String(plant) : (r.plant || '');
-    if (ok) {
-      r.status = 'ok'; r.comment = '';
-      if (pl && !d.plant) d.plant = pl;
-      d.warnings = [`El proveedor confirmó el ${day} que los datos coinciden${pl ? ` (planta ${pl})` : ''}.`, ...(d.warnings || []).filter(w => !/^El proveedor (confirmó|indicó)/.test(w))];
-    } else {
-      const c = String(comment || '').trim().slice(0, 500);
-      if (!c) return res.status(400).json({ error: 'Escribe qué no coincide.' });
-      r.status = 'disputed'; r.comment = c;
-      d.warnings = [`El proveedor indicó el ${day} que NO coincide: "${c}"`, ...(d.warnings || []).filter(w => !/^El proveedor (confirmó|indicó)/.test(w))];
-    }
-    b.log(`Proveedor: ${v.name}`, ok ? 'confirmó factura' : 'reportó diferencia en factura', 'documento', d.id, `${d.serie || ''}${d.folio || ''}${ok ? '' : ': ' + r.comment}`);
-    b.save();
-    res.json(reviewView(b, d));
+  /* Confirm or dispute an invoice we already have. Confirming needs the delivery-receipt photo (sent now, or
+     already attached when they uploaded it); multipart so the photo comes with the answer. */
+  app.post('/api/portal/review', needVendor, (req, res, next) => {
+    upload.fields([{ name: 'recibo', maxCount: 4 }])(req, res, err => {
+      if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'La foto pasa de 15 MB.' : 'No se pudo recibir la foto.' });
+      try {
+        const b = getBooks(), v = req.vendor, body = req.body || {};
+        const ok = body.ok === true || body.ok === 'true', comment = body.comment, plant = body.plant;
+        const d = b.doc(String(body.id || ''));
+        if (!d || d.partnerId !== v.id || d.state === 'erased') return res.status(404).json({ error: 'No encontramos esa factura.' });
+        const name = f => Buffer.from(f.originalname, 'latin1').toString('utf8');
+        const recs = ((req.files || {}).recibo || []).filter(f => IMG.test(name(f)) || IMG_TYPES.test(f.mimetype));
+        for (const f of recs) {
+          const sha = crypto.createHash('sha1').update(f.buffer).digest('hex').slice(0, 16);
+          if ((d.files || []).some(x => x.sha === sha)) continue;
+          d.files.push({ ...storeFile(b, `Recibo de entrega (proveedor)${(path.extname(name(f)) || '.jpg').toLowerCase()}`, f.buffer), kind: 'img', receipt: true });
+        }
+        if (ok && !hasReceipt(d)) return res.status(400).json({ error: 'Sube la foto del recibo de entrega de esta factura para confirmarla.' });
+        const now = new Date().toISOString(), day = localToday().split('-').reverse().join('/');
+        const r = d.vendorReview = { ...(d.vendorReview || {}), doneAt: now };
+        const pl = plantsFor(v).includes(String(plant || '')) ? String(plant) : (r.plant || '');
+        if (ok) {
+          r.status = 'ok'; r.comment = '';
+          if (pl && !d.plant) d.plant = pl;
+          d.warnings = [`El proveedor confirmó el ${day} que los datos coinciden${pl ? ` (planta ${pl})` : ''}, con foto del recibo de entrega.`, ...(d.warnings || []).filter(w => !/^El proveedor (confirmó|indicó)/.test(w))];
+        } else {
+          const c = String(comment || '').trim().slice(0, 500);
+          if (!c) return res.status(400).json({ error: 'Escribe qué no coincide.' });
+          r.status = 'disputed'; r.comment = c;
+          d.warnings = [`El proveedor indicó el ${day} que NO coincide: "${c}"`, ...(d.warnings || []).filter(w => !/^El proveedor (confirmó|indicó)/.test(w))];
+        }
+        b.log(`Proveedor: ${v.name}`, ok ? 'confirmó factura' : 'reportó diferencia en factura', 'documento', d.id, `${d.serie || ''}${d.folio || ''}${ok ? '' : ': ' + r.comment}`);
+        b.save();
+        res.json(reviewView(b, d));
+      } catch (e) { next(e); }
+    });
   });
 
   app.post('/api/portal/upload', needVendor, (req, res, next) => {

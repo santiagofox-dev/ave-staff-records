@@ -284,11 +284,23 @@ function readDelphi(ws) {
     const stored = cellVal(first);
     if (!(stored instanceof Date)) throw new Error('La columna FECHA del reporte DELPHI no contiene fechas.');
     b.stored = stored;
-    b.real = { y: stored.getUTCFullYear(), m: stored.getUTCDate(), d: stored.getUTCMonth() + 1 }; // swapped
-    b.key = dayKey(b.real);
-    b.count = b.rows.length;
   }
-  return { hdr, blocks, neto, missingNeto };
+  // The system's export stores FECHA with day and month swapped (Nov 2 → 2026-02-11); a file someone corrected in
+  // Excel has them right. Pick the reading where the days run in sequence and fall near today.
+  const asIs = blocks.map(b => ({ y: b.stored.getUTCFullYear(), m: b.stored.getUTCMonth() + 1, d: b.stored.getUTCDate() }));
+  const swapped = blocks.map(b => ({ y: b.stored.getUTCFullYear(), m: b.stored.getUTCDate(), d: b.stored.getUTCMonth() + 1 }));
+  const score = list => {
+    if (list.some(x => x.m < 1 || x.m > 12)) return -1e9;
+    const t = list.map(x => Date.UTC(x.y, x.m - 1, x.d));
+    let sc = 0;
+    for (let i = 1; i < t.length; i++) { const gap = (t[i] - t[i - 1]) / 864e5; sc += gap >= 1 && gap <= 4 ? 10 : -10; }
+    const near = Math.abs(t[0] - Date.now()) / 864e5; sc += near <= 60 ? 5 : near <= 400 ? 0 : -5;
+    if (new Set(list.map(x => x.m)).size === 1) sc += 3; // one week's report is normally inside one month
+    return sc;
+  };
+  const useSwap = score(swapped) >= score(asIs);
+  blocks.forEach((b, i) => { b.real = useSwap ? swapped[i] : asIs[i]; b.key = dayKey(b.real); b.count = b.rows.length; });
+  return { hdr, blocks, neto, missingNeto, swappedDates: useSwap };
 }
 
 function snapshotRow(row) {

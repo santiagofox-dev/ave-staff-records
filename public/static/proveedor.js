@@ -40,7 +40,7 @@
       d.vendor.test ? h('div', {}, h('span', { class: 'pv-test' }, 'Cuenta de prueba')) : null);
     $('#out2').addEventListener('click', logout);
     const pending = d.docs.filter(x => x.review && x.review.status === 'pending');
-    $('#toReview').replaceChildren(...pending.map(x => reviewCard(x)));
+    put($('#toReview'), pending.length ? h('h2', {}, `Facturas por confirmar (${pending.length})`) : null, pending.length ? h('p', { class: 'pv-fine' }, 'Confírmalas con la foto de su recibo de entrega para que entren a pago.') : null, ...pending.map(x => reviewCard(x)));
     $('#toReview').hidden = !pending.length;
     $('#list').replaceChildren(...(d.docs.length ? d.docs.map(x => h('div', { class: 'pv-inv' },
       h('span', { class: 'f' }, 'Factura ' + (x.folio || '—') + (x.plant ? ' · ' + x.plant : '')), h('span', { class: 't' }, NF.format(x.total)),
@@ -108,24 +108,43 @@
     try { await api('POST', '/api/portal/password', { current: $('#pwCur').value, next: $('#pwNew').value }); $('#pwCur').value = ''; $('#pwNew').value = ''; $('#pwErr').textContent = ''; alertOk(); }
     catch (err) { $('#pwErr').textContent = err.message; }
   });
-  // Card asking the supplier to confirm an invoice we already had
+  // Card asking the supplier to confirm an invoice we already had; the delivery-receipt photo is required to confirm
   function reviewCard(x) {
     const mine = plant();
     const rows = [['Folio', x.folio], ['Fecha', fd(x.date)], ['Subtotal', NF.format(x.subtotal)], ['IVA', NF.format(x.iva)], x.retenciones ? ['Retenciones', NF.format(x.retenciones)] : null, ['Total', NF.format(x.total)], ['Planta', x.plant || 'Sin planta asignada'], ['Vence', fd(x.due)]].filter(Boolean);
     const err = h('div', { class: 'pv-err' }), why = h('textarea', { rows: '3', placeholder: 'Ej. el total es otro, la fecha no es esa, es para otra planta…' });
     why.hidden = true;
+    const id = 'rv' + x.id;
+    const photo = h('input', { type: 'file', id, accept: 'image/*', capture: 'environment', multiple: 'multiple', class: 'pv-hidden' });
+    const thumbs = h('div', { class: 'pv-thumbs' });
+    const pick = h('label', { class: 'pv-pick cam', for: id }, h('span', {}, 'Tomar o elegir foto del recibo'));
+    photo.addEventListener('change', () => {
+      thumbs.replaceChildren();
+      for (const f of [...photo.files].slice(0, 4)) { const img = h('img', { alt: 'Foto del recibo' }); const r = new FileReader(); r.onload = () => { img.src = r.result; }; r.readAsDataURL(f); thumbs.append(img); }
+      pick.classList.toggle('ok', photo.files.length > 0); pick.firstChild.textContent = photo.files.length ? `${photo.files.length} foto${photo.files.length > 1 ? 's' : ''} · cambiar` : 'Tomar o elegir foto del recibo';
+      err.textContent = '';
+    });
+    const send = async (ok) => {
+      if (ok && !x.hasReceipt && !photo.files.length) { err.textContent = 'Falta la foto del recibo de entrega de esta factura.'; return; }
+      if (!ok && !why.value.trim()) { err.textContent = 'Escribe qué no coincide.'; return; }
+      const body = new FormData(); body.append('id', x.id); body.append('ok', ok ? 'true' : 'false'); body.append('plant', (x.review && x.review.plant) || mine || ''); body.append('comment', why.value);
+      for (const f of photo.files) body.append('recibo', f, f.name || 'recibo.jpg');
+      try {
+        await api('POST', '/api/portal/review', body);
+        card.replaceWith(ok ? h('div', { class: 'pv-done ok' }, h('b', {}, `Factura ${x.folio} confirmada.`), h('div', {}, '¡Gracias! Quedó marcada como correcta con su foto del recibo.')) : h('div', { class: 'pv-done bad' }, h('b', {}, `Reportaste una diferencia en la factura ${x.folio}.`), h('div', {}, 'Grupo AVE la va a revisar.')));
+        load();
+      } catch (e) { err.textContent = e.message; }
+    };
     const card = h('div', { class: 'pv-review' },
       h('b', {}, `Confirma la factura ${x.folio}`),
-      h('p', {}, 'Esta factura ya la tenía registrada Grupo AVE. Revisa que estos datos coincidan con tu factura:'),
+      h('p', {}, 'Grupo AVE ya tiene registrada esta factura. Revisa que los datos coincidan con tu factura y sube la foto del recibo de entrega firmado o sellado.'),
       h('dl', { class: 'pv-dl' }, rows.map(([k, v]) => [h('dt', {}, k), h('dd', {}, String(v))])),
       x.review && x.review.plant && x.plant && x.review.plant !== x.plant ? h('div', { class: 'pv-warn' }, `Tú elegiste ${x.review.plant}, pero la tenemos en ${x.plant}.`) : null,
+      x.hasReceipt ? h('div', { class: 'pv-okline' }, 'Ya tenemos tu foto del recibo de esta factura.') : [h('div', { class: 'pv-req' }, 'Foto del recibo de entrega ', h('em', {}, 'obligatoria')), pick, photo, thumbs],
       why, err,
       h('div', { class: 'pv-row' },
-        h('button', { class: 'btn primary', type: 'button', onclick: async () => { try { await api('POST', '/api/portal/review', { id: x.id, ok: true, plant: (x.review && x.review.plant) || mine }); card.replaceWith(h('div', { class: 'pv-done ok' }, h('b', {}, `Factura ${x.folio} confirmada.`), h('div', {}, '¡Gracias! Quedó marcada como correcta.'))); load(); } catch (e) { err.textContent = e.message; } } }, 'Sí, los datos coinciden'),
-        h('button', { class: 'btn', type: 'button', onclick: async e => {
-          if (why.hidden) { why.hidden = false; why.focus(); e.target.textContent = 'Enviar diferencia'; return; }
-          try { await api('POST', '/api/portal/review', { id: x.id, ok: false, comment: why.value }); card.replaceWith(h('div', { class: 'pv-done bad' }, h('b', {}, `Reportaste una diferencia en la factura ${x.folio}.`), h('div', {}, 'Grupo AVE la va a revisar.'))); load(); } catch (er) { err.textContent = er.message; }
-        } }, 'No coincide')));
+        h('button', { class: 'btn primary', type: 'button', onclick: () => send(true) }, 'Sí, los datos coinciden'),
+        h('button', { class: 'btn', type: 'button', onclick: e => { if (why.hidden) { why.hidden = false; why.focus(); e.target.textContent = 'Enviar diferencia'; return; } send(false); } }, 'No coincide')));
     return card;
   }
   function alertOk() { const d = $('#done'); d.className = 'pv-done ok'; put(d, h('b', {}, 'Contraseña cambiada.'), h('div', {}, 'Úsala la próxima vez que entres.')); d.hidden = false; d.scrollIntoView({ behavior: 'smooth', block: 'center' }); }

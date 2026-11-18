@@ -68,3 +68,10 @@ body.pv{padding:0;background:var(--bg);min-height:100vh;display:flex;flex-direct
 .pv-review textarea{border:1px solid var(--line);border-radius:10px;padding:10px;font-size:15px;background:var(--surface);color:var(--fg)}
 .pv-warn{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-weight:600;font-size:14px}
 #toReview{gap:12px}
+
+.pv-hidden{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.pv-req{font-weight:700;font-size:14px} .pv-req em{font-style:normal;font-size:11px;color:var(--bad);text-transform:uppercase;letter-spacing:.04em;margin-left:4px}
+.pv-okline{color:var(--ok);font-weight:600;font-size:14px}
+.pv-review .pv-thumbs img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.pv-review .pv-thumbs{display:flex;gap:6px;flex-wrap:wrap}
+#toReview h2{font-size:21px} #toReview .pv-fine{margin:0;text-align:left}
