@@ -238,7 +238,7 @@ module.exports = function (app, { DATA_DIR }) {
     if (!rows.length) return { nothingRead: true };
     const byId = {}; for (const p of Object.values(w.people)) for (const id of p.ids || [p.id]) byId[id] = p;
     const turnosRead = excel ? null : [...new Set(rows.map(r => r.turno || (byId[r.id] && byId[r.id].turno)).filter(Boolean))];
-    const cmp = A.compare(rows, w.people, run.monday, { turnosRead, plant: pl, settings: settings(pl), sheetLabel: excel ? 'incidencias' : 'la hoja' });
+    const cmp = A.compare(rows, w.people, run.monday, { turnosRead, plant: pl, settings: settings(pl), sheetLabel: excel ? 'incidencias' : 'la hoja', overrides: run.overrides || {} });
     const codes = (run.photos || []).map(p => p.sheet_code).filter(Boolean);
     const wrongWeek = codes.filter(c => { const m = /-(\d{6})-/.exec(c); return m && m[1] !== run.monday.replace(/-/g, '').slice(2); });
     return { ...cmp, turnosRead: turnosRead || [...new Set(cmp.results.map(r => r.turno))], wrongWeek, checador: { file: w.file, uploadedAt: w.uploadedAt } };
@@ -272,6 +272,23 @@ module.exports = function (app, { DATA_DIR }) {
     if (t != null && !(t >= 0 && t < 24)) return res.status(400).json({ error: 'TE debe ser un número de horas entre 0 y 24.' });
     r.edits = r.edits || {}; r.edits[key] = r.edits[key] || {};
     r.edits[key][day] = { clave: c, te: t, ok: true, by: who(req), at: new Date().toISOString(), ...(ok ? { confirmed: true } : {}) };
+    saveRun(r); res.json(publicRun(r));
+  });
+  /* Admin decision for one person-day: overrides what the checador says (e.g. "sí asistió", with hours). */
+  const FINALS = ['A', 'DT', 'FI', 'INC', 'VAC', 'PSS', 'PCS', 'MAT', 'DFD', 'D', 'BAJ'];
+  app.put('/api/asis/runs/:id/override', (req, res) => {
+    const r = loadRun(req.params.id); if (!r) return res.status(404).json({ error: 'No existe esa revisión.' });
+    const { person, day, final, hours, note } = req.body || {};
+    if (!/^\d{1,12}$/.test(String(person || '')) || !A.DAYS7.includes(day)) return res.status(400).json({ error: 'Celda no válida.' });
+    r.overrides = r.overrides || {};
+    const k = `${person}:${day}`;
+    if (!final) delete r.overrides[k];
+    else {
+      if (!FINALS.includes(final)) return res.status(400).json({ error: 'Resultado no válido.' });
+      const h = hours === '' || hours == null ? null : +String(hours).replace(',', '.');
+      if (h != null && !(h >= 0 && h <= 24)) return res.status(400).json({ error: 'Las horas deben estar entre 0 y 24.' });
+      r.overrides[k] = { final, hours: h, note: String(note || '').slice(0, 200), by: who(req), at: new Date().toISOString() };
+    }
     saveRun(r); res.json(publicRun(r));
   });
   app.delete('/api/asis/runs/:id', (req, res) => {
@@ -309,7 +326,7 @@ module.exports = function (app, { DATA_DIR }) {
       for (const p of an.results) for (const d of p.days) {
         const ymd = dates.find(x => x.key === d.key).ymd;
         wd.addRow({ id: p.id, name: p.name, f: `${ymd.slice(8)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}`, d: A.DAY_LABEL[d.key], in: d.clock.in || '', out: d.clock.out || '', h: d.clock.hours || 0, x: d.clock.extra || 0,
-          c: d.sheet ? d.sheet.clave : '', t: d.sheet && d.sheet.te ? d.sheet.te : '', r: RES[d.final] || '', n: p.flags.filter(f => f.day === d.key).map(f => f.msg).join(' | ') });
+          c: d.sheet ? d.sheet.clave : '', t: d.sheet && d.sheet.te ? d.sheet.te : '', r: (RES[d.final] || '') + (d.manual ? ' (manual)' : ''), n: p.flags.filter(f => f.day === d.key).map(f => f.msg).join(' | ') });
       }
       const wa = wb.addWorksheet('Alertas');
       head(wa, [{ header: 'Nivel', key: 'l', width: 10 }, { header: 'ID', key: 'id', width: 9 }, { header: 'Nombre', key: 'name', width: 34 }, { header: 'Día', key: 'd', width: 12 }, { header: 'Alerta', key: 'm', width: 110 }]);

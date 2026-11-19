@@ -236,16 +236,17 @@
     let k;
     if (c.status === 'trabajo' || c.status === 'descanso-trabajado') k = h('span', { class: 'k' }, `${c.in}–${c.out}`, h('br'), `${num(c.hours)} h${c.extra ? ` · +${num(c.extra)}` : ''}`);
     else if (c.status === 'incompleto') k = h('span', { class: 'k' }, h('b', {}, 'Incompleto'), h('br'), [c.in, c.out].filter(Boolean).join('–') || '');
-    else if (c.status === 'falta') k = h('span', { class: 'k' }, h('b', {}, d.final === 'FI' ? 'Falta (FI)' : `Falta · ${d.final}`));
+    else if (c.status === 'falta') k = h('span', { class: 'k' }, h('b', {}, d.manual ? 'Sin registro' : d.final === 'FI' ? 'Falta (FI)' : `Falta · ${d.final}`));
     else if (c.status === 'descanso') k = h('span', { class: 'k' }, 'Descanso');
     else k = h('span', { class: 'k muted' }, '—');
     const onSheet = (RUN.sheetDays || []).includes(d.key);
     const s = !onSheet ? null : !sh ? h('span', { class: 's none' }, RUN.source === 'excel' ? 'sin renglón' : 'sin hoja') : h('span', { class: 's' + (sh.clave || sh.te ? '' : ' none') }, [sh.clave, sh.te ? `TE ${num(sh.te)}` : ''].filter(Boolean).join(' · ') || 'vacío');
     const lv = d.flags.includes('bad') ? 'bad' : d.flags.includes('warn') ? 'warn' : '';
-    const editable = !!(sh && p.sheetRow && onSheet);
+    const editable = c.status !== 'sin-dato';
     const tol = RUN.tolMin ?? 15;
     if (k && (c.late > tol || c.early > tol) && RUN.source === 'excel') k.append(h('br'), [c.late > tol ? `+${c.late} min entrada` : '', c.early > tol ? `-${c.early} min salida` : ''].filter(Boolean).join(' · '));
-    const td = h('td', { class: `c ${lv} ${sh && sh.uncertain ? 'unc' : ''} ${c.status === 'descanso' ? 'rest' : ''} f-${d.final} ${editable ? '' : 'nos'}`, title: p.flags.filter(f => f.day === d.key).map(f => f.msg).join('\n') || null }, k, s);
+    const man = d.manual ? h('span', { class: 'm' }, `Manual: ${{ A: 'asistió', DT: 'descanso trabajado', D: 'descanso' }[d.manual.final] || d.manual.final}${d.manual.final === 'A' || d.manual.final === 'DT' ? ' ' + num(d.manual.hours) + ' h' : ''}`) : null;
+    const td = h('td', { class: `c ${d.manual ? 'man' : lv} ${sh && sh.uncertain ? 'unc' : ''} ${c.status === 'descanso' ? 'rest' : ''} f-${d.final} ${editable ? '' : 'nos'}`, title: p.flags.filter(f => f.day === d.key).map(f => f.msg).join('\n') || null }, k, s, man);
     if (editable) td.addEventListener('click', e => { e.stopPropagation(); editCell(p, d); });
     return td;
   }
@@ -273,24 +274,38 @@
 
   let editing = null;
   function editCell(p, d) {
-    editing = { key: p.sheetRow.key, day: d.key };
+    const sheetOk = !!(d.sheet && p.sheetRow && (RUN.sheetDays || []).includes(d.key));
+    editing = { key: sheetOk ? p.sheetRow.key : null, day: d.key, person: p.id, sheet0: sheetOk ? { clave: d.sheet.clave || '', te: d.sheet.te || '' } : null, final0: d.manual ? d.manual.final : '', hours0: d.manual ? d.manual.hours : '', note0: d.manual ? d.manual.note : '' };
+    $('#sheetFields').hidden = !sheetOk; $('#cellHelp').hidden = !sheetOk;
     $('#cellTitle').textContent = `${p.id} ${p.name} · ${DL[d.key]} ${dm(d.ymd)}`;
     const c = d.clock;
-    $('#cellClock').textContent = 'Checador: ' + ({ trabajo: `${c.in}–${c.out} (${num(c.hours)} h)`, 'descanso-trabajado': `descanso trabajado ${c.in}–${c.out} (${num(c.hours)} h)`, incompleto: `incompleto (${[c.in, c.out].filter(Boolean).join('–')})`, falta: 'sin registro', descanso: 'descanso' }[c.status] || '—') + (d.sheet.uncertain ? '. La lectura de la foto es dudosa: compárala con la foto.' : '');
+    $('#cellClock').textContent = 'Checador: ' + ({ trabajo: `${c.in}–${c.out} (${num(c.hours)} h)`, 'descanso-trabajado': `descanso trabajado ${c.in}–${c.out} (${num(c.hours)} h)`, incompleto: `incompleto (${[c.in, c.out].filter(Boolean).join('–')})`, falta: 'sin registro', descanso: 'descanso' }[c.status] || '—') + (d.sheet && d.sheet.uncertain ? '. La lectura de la foto es dudosa: compárala con la foto.' : '');
     const X = RUN.source === 'excel';
     $('#cClaveL').textContent = X ? 'Incidencia' : 'Clave en la hoja';
     $('#cTeL').textContent = X ? 'TE en incidencias (horas)' : 'TE en la hoja (horas)';
     $('#cellHelp').textContent = X ? 'Corrige la incidencia si el Excel venía mal. El resultado lo sigue decidiendo el checador.' : 'Corrige solo lo que está escrito en el papel. El resultado lo sigue decidiendo el checador.';
     document.querySelectorAll('#cClave .xo').forEach(o => { o.hidden = !X; o.disabled = !X; });
-    $('#cClave').value = [...$('#cClave').options].some(o => o.value === d.sheet.clave && !o.disabled) ? d.sheet.clave : '';
-    $('#cTe').value = d.sheet.te || '';
+    if (sheetOk) {
+      $('#cClave').value = [...$('#cClave').options].some(o => o.value === d.sheet.clave && !o.disabled) ? d.sheet.clave : '';
+      $('#cTe').value = d.sheet.te || '';
+    }
+    $('#cFinal').value = editing.final0; $('#cHours').value = editing.hours0 ?? ''; $('#cNote').value = editing.note0 || '';
+    if (!d.manual && (c.status === 'falta' || c.status === 'incompleto')) $('#cHours').placeholder = p.shift && p.shift.hours ? String(p.shift.hours) : '';
+    hoursVis();
     $('#cellDlg').showModal();
   }
   $('#cellDlg').addEventListener('close', async () => {
     if ($('#cellDlg').returnValue !== 'save' || !editing) return;
-    try { RUN = await api(`/api/asis/runs/${RUN.id}/cell`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...editing, clave: $('#cClave').value, te: $('#cTe').value }) }); renderRun(); }
-    catch (e) { alert(e.message); }
+    const J = (u, b) => api(u, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+    try {
+      if (editing.sheet0 && ($('#cClave').value !== editing.sheet0.clave || String($('#cTe').value) !== String(editing.sheet0.te))) RUN = await J(`/api/asis/runs/${RUN.id}/cell`, { key: editing.key, day: editing.day, clave: $('#cClave').value, te: $('#cTe').value });
+      const fin = $('#cFinal').value, hrs = $('#cHours').value, note = $('#cNote').value.trim();
+      if (fin !== editing.final0 || String(hrs) !== String(editing.hours0 ?? '') || note !== (editing.note0 || '')) RUN = await J(`/api/asis/runs/${RUN.id}/override`, { person: editing.person, day: editing.day, final: fin, hours: (fin === 'A' || fin === 'DT') ? hrs : '', note });
+      renderRun();
+    } catch (e) { alert(e.message); }
   });
+  function hoursVis() { const f = $('#cFinal').value; $('#cHoursF').hidden = !(f === 'A' || f === 'DT'); }
+  $('#cFinal').addEventListener('change', hoursVis);
   $('#back').addEventListener('click', () => { location.hash = ''; });
   $('#delRun').addEventListener('click', async e => {
     const b = e.currentTarget;

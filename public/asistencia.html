@@ -7,7 +7,7 @@
 <title>Asistente asistencia · AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/styles.css?v=10">
-<link rel="stylesheet" href="/static/asis.css?v=3">
+<link rel="stylesheet" href="/static/asis.css?v=4">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="/static/shell.css?v=3">
 </head>
@@ -120,17 +120,24 @@
   <form method="dialog" id="cellForm">
     <h3 id="cellTitle"></h3>
     <p class="muted small" id="cellClock"></p>
-    <div class="fields">
+    <div class="fields" id="sheetFields">
       <div class="field"><label for="cClave" id="cClaveL">Clave en la hoja</label><select id="cClave"><option value="">Vacío (asistió)</option><option>FI</option><option>INC</option><option>VAC</option><option>PSS</option><option class="xo">PCS</option><option class="xo">MAT</option><option class="xo">RET</option><option class="xo">BAJ</option><option class="xo">DFD</option></select></div>
       <div class="field"><label for="cTe" id="cTeL">TE en la hoja (horas)</label><input id="cTe" type="number" min="0" max="23.5" step="0.5" inputmode="decimal"></div>
     </div>
     <p class="muted small" id="cellHelp">Corrige solo lo que está escrito en el papel. El resultado lo sigue decidiendo el checador.</p>
+    <h4 class="sub">Resultado final</h4>
+    <div class="fields">
+      <div class="field"><label for="cFinal">Decisión</label><select id="cFinal"><option value="">Automático (según el checador)</option><option value="A">Sí asistió</option><option value="DT">Trabajó su día de descanso</option><option value="FI">FI</option><option value="INC">INC</option><option value="VAC">VAC</option><option value="PSS">PSS</option><option value="PCS">PCS</option><option value="MAT">MAT</option><option value="BAJ">Baja</option><option value="D">Descanso</option></select></div>
+      <div class="field" id="cHoursF"><label for="cHours">Horas trabajadas</label><input id="cHours" type="number" min="0" max="24" step="0.5" inputmode="decimal"></div>
+      <div class="field full"><label for="cNote">Motivo (opcional)</label><input id="cNote" maxlength="200" placeholder="ej. olvidó checar, confirmado con supervisor"></div>
+    </div>
+    <p class="muted small">Usa "Sí asistió" cuando el checador no registró a alguien que sí trabajó. Queda guardado quién lo cambió.</p>
     <div class="actions end"><button class="btn" value="cancel" type="submit">Cancelar</button><button class="btn primary" id="cellSave" value="save" type="submit">Guardar</button></div>
   </form>
 </dialog>
 
 <script src="/static/shell.js?v=2"></script>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/asis.js?v=9"></script>
+<script src="/static/asis.js?v=11"></script>
 </body>
 </html>

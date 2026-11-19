@@ -144,11 +144,12 @@ function dayFromClock(d) {
   if (d.in != null && d.out != null) {
     let span = d.out - d.in; if (span < 0) span += 1440;
     if (span < 20) return { ...base, status: 'incompleto', hours: d.rest ? 0 : (d.sched || 0), extra: 0, note: 'Entrada y salida casi iguales' };
-    // 16+ hours between punches is almost always a missed punch the clock paired wrongly (e.g. 00:02–23:53)
-    if (span > 16 * 60) return { ...base, status: 'incompleto', hours: d.rest ? 0 : (d.sched || 0), extra: 0, note: `Registro de ${r1(span / 60)} h seguidas, probablemente falta una checada` };
+    // 20+ hours between punches is a missed punch the clock paired wrongly (e.g. 00:02–23:53).
+    // 15–20 h shifts do happen (Allan, Nov 19 2026): count them, but flag for review.
+    if (span > 20 * 60) return { ...base, status: 'incompleto', hours: d.rest ? 0 : (d.sched || 0), extra: 0, note: `Registro de ${r1(span / 60)} h seguidas, probablemente falta una checada` };
     const hours = r1(span / 60);
     const extra = d.rest ? hours : Math.max(0, r1(hours - (d.sched || 0)));
-    return { ...base, status: d.rest ? 'descanso-trabajado' : 'trabajo', hours, extra: extra >= 0.25 ? extra : 0 };
+    return { ...base, status: d.rest ? 'descanso-trabajado' : 'trabajo', hours, extra: extra >= 0.25 ? extra : 0, long: span >= 15 * 60 };
   }
   if (d.in != null || d.out != null) return { ...base, status: 'incompleto', hours: d.rest ? 0 : (d.sched || 0), extra: 0, note: d.in != null ? 'Solo hay entrada' : 'Solo hay salida' };
   return { ...base, status: d.rest ? 'descanso' : 'falta', hours: 0, extra: 0 };
@@ -261,7 +262,7 @@ const diffMin = (a, b) => { let d = a - b; if (d > 720) d -= 1440; if (d < -720)
  * week: { personId: { id, ids, name, turno, horario, days: { ymd: clockDay } } } for that Monday.
  * opts: { plant, settings, turnosRead, sheetLabel }. Turnos with no sheet read are left out.
  */
-function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', settings = null, sheetLabel = 'la hoja' } = {}) {
+function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', settings = null, sheetLabel = 'la hoja', overrides = {} } = {}) {
   const P = PLANTS[plant] || PLANTS.monclova, H = sheetLabel;
   const tol = settings && Number.isFinite(+settings.tolMin) ? +settings.tolMin : 15;
   const exList = exemptFor(plant, settings).map(parseExempt).filter(Boolean);
@@ -326,7 +327,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
       let final; const f = [];
       const st = clock.status, span = `${clock.in}–${clock.out}`;
       // lateness / early exit (Jabil reports both as RET)
-      let late = 0, early = 0;
+      let late = 0, early = 0, retHit = false;
       if (P.trackLate && raw && !raw.rest && (st === 'trabajo' || st === 'incompleto')) {
         const s0 = toM(rule.start) ?? raw.start, e0 = toM(rule.end) ?? raw.end;
         if (raw.in != null && s0 != null) late = Math.max(0, diffMin(raw.in, s0));
@@ -356,7 +357,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
         if (schedOff.has(p.turno)) early = 0;
         const bad = late > tol || early > tol;
         const why = [late > tol ? `entró ${late} min tarde (${clock.in}, turno ${rule.start})` : '', early > tol ? `salió ${early} min antes (${clock.out}, turno ${rule.end})` : ''].filter(Boolean).join(' y ');
-        if (bad) count.RET++;
+        if (bad) { count.RET++; retHit = true; }
         if (bad && clave !== 'RET') f.push(['warn', `El checador marca que ${why} y ${H} no reporta RET.`]);
         if (!bad && clave === 'RET') f.push(['warn', `${H} reporta RET, pero en el checador llegó y salió a tiempo (${span}).`]);
       }
@@ -364,9 +365,22 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
       if (te && (st === 'falta' || st === 'incompleto')) f.push(['bad', `${H} anota ${te} h de TE en un día sin jornada completa en el checador.`]);
       if (clave.startsWith('OTRO')) f.push(['warn', `Clave no reconocida en ${H}: "${clave.slice(5)}".`]);
       if (unc) f.push(['warn', 'Lectura dudosa de la foto: confirma esta celda.']);
+      if (clock.long) f.push(['warn', `Jornada de ${clock.hours} h (${span}). Se contaron las horas; revisa que sea correcta.`]);
+      // Manual decision by an admin replaces what the checador says for that day
+      const ov = overrides[`${p.id}:${key}`];
+      let manual = null;
+      if (ov && ov.final) {
+        const before = clock.hours || 0;
+        const h = ov.final === 'A' || ov.final === 'DT' ? (ov.hours != null ? +ov.hours : (st === 'trabajo' || st === 'descanso-trabajado' ? before : (raw && raw.rest ? 0 : rule.hours || 0))) : 0;
+        hours += h - before;
+        if (retHit) count.RET--;
+        final = ov.final; f.length = 0;
+        f.push(['info', `Corregido a mano por ${ov.by || 'admin'}: ${ov.final === 'A' ? `asistió, ${h} h` : ov.final === 'DT' ? `trabajó su descanso, ${h} h` : ov.final}${ov.note ? ` (${ov.note})` : ''}.`]);
+        manual = { final: ov.final, hours: h, by: ov.by, at: ov.at, note: ov.note || '' };
+      }
       if (final && final !== 'RET') count[final] = (count[final] || 0) + 1;
       for (const [lvl, msg] of f) flags.push({ lvl, day: key, ymd, msg });
-      days.push({ key, ymd, clock: { ...clock, late, early }, sheet: row && onSheet ? { clave, te, uncertain: unc } : null, final, flags: f.map(x => x[0]) });
+      days.push({ key, ymd, clock: { ...clock, late, early }, sheet: row && onSheet ? { clave, te, uncertain: unc } : null, final, manual, flags: f.map(x => x[0]) });
     }
     hours = r1(hours); teSheet = r1(teSheet);
     const teChk = Math.max(0, r1(hours - limit));

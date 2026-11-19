@@ -95,3 +95,6 @@ body[data-tool="asistencia"] .wrap{max-width:1360px}
 .field.inline input{width:80px}
 .agrid td.c.edited .s::after{content:" (corregido)";font-weight:400;color:var(--muted)}
 dialog[open]{position:fixed;inset:0;margin:auto;height:fit-content;max-height:90vh}
+.sub{margin:14px 0 6px;font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.agrid td.c.man{box-shadow:inset 0 0 0 2px #2f6fb3;background:color-mix(in srgb,#2f6fb3 10%,var(--surface))}
+.agrid td.c .m{display:block;margin-top:3px;font-size:11.5px;font-weight:700;color:#2f6fb3}
