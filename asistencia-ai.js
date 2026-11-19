@@ -110,7 +110,7 @@ function mergeReads(a, b) {
 async function readAttendancePhoto(file, sheets) {
   if (!hasKey()) throw new Error('Falta la variable ANTHROPIC_API_KEY en Render.');
   const b64 = await prepareImage(file);
-  const ctx = sheets && sheets.length ? '\n\nHojas impresas esta semana (código → renglones "ID NOMBRE"):\n' + sheets.map(s => `${s.code} (${s.turno}):\n` + s.rows.map(r => `  ${r.id} ${r.name}`).join('\n')).join('\n') : '';
+  let ctx = sheets && sheets.length ? '\n\nHojas impresas esta semana (código → renglones "ID NOMBRE"):\n' + sheets.map(s => `${s.code} (${s.turno}):\n` + s.rows.map(r => `  ${r.id} ${r.name}`).join('\n')).join('\n') : '';
   ctx += '\n\nIMPORTANTE: responde únicamente llamando a la herramienta registrar_lista.';
   const once = () => callClaude(b64, ctx).catch(e => { if (/overloaded|529|rate|no regresó/i.test(e.message)) return callClaude(b64, ctx); throw e; });
   const [x, y] = await Promise.allSettled([once(), once()]);
