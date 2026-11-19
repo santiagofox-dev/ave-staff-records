@@ -308,7 +308,7 @@ module.exports = function (app, { DATA_DIR }) {
       const head = (ws, cols) => { ws.columns = cols; const h = ws.getRow(1); h.font = { bold: true, color: { argb: 'FFFFFFFF' } }; h.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2328' } }; ws.views = [{ state: 'frozen', ySplit: 1 }]; };
       const ws = wb.addWorksheet('Nómina');
       head(ws, [{ header: 'ID', key: 'id', width: 9 }, { header: 'Nombre', key: 'name', width: 38 }, { header: 'Turno', key: 'turno', width: 14 },
-        { header: 'Días asistidos', key: 'A', width: 9 }, { header: 'Descanso trabajado', key: 'DT', width: 10 }, { header: 'FI', key: 'FI', width: 6 }, { header: 'INC', key: 'INC', width: 6 }, { header: 'VAC', key: 'VAC', width: 6 }, { header: 'PSS', key: 'PSS', width: 6 }, ...(excel ? [{ header: 'PCS', key: 'PCS', width: 6 }, { header: 'MAT', key: 'MAT', width: 6 }, { header: 'BAJ', key: 'BAJ', width: 6 }, { header: 'RET (checador)', key: 'RET', width: 9 }, { header: 'Min. retardo (después de tolerancia)', key: 'retMin', width: 12 }] : []), { header: 'Checador incompleto', key: 'INCOMP', width: 11 },
+        { header: 'Días asistidos', key: 'A', width: 9 }, { header: 'Descanso trabajado', key: 'DT', width: 10 }, { header: 'FI', key: 'FI', width: 6 }, { header: 'INC', key: 'INC', width: 6 }, { header: 'VAC', key: 'VAC', width: 6 }, { header: 'PSS', key: 'PSS', width: 6 }, ...(excel ? [{ header: 'PCS', key: 'PCS', width: 6 }, { header: 'MAT', key: 'MAT', width: 6 }, { header: 'BAJ', key: 'BAJ', width: 6 }, { header: 'RET (checador)', key: 'RET', width: 9 }, { header: 'Min. retardo (después de tolerancia)', key: 'retMin', width: 12 }, { header: 'Min. salida antes (sin tolerancia)', key: 'earlyMin', width: 12 }] : []), { header: 'Checador incompleto', key: 'INCOMP', width: 11 },
         { header: 'Horas checador', key: 'hours', width: 10 }, { header: 'Límite semanal', key: 'limit', width: 9 }, { header: 'TE checador', key: 'teChk', width: 10 }, { header: `TE ${L}`, key: 'teSheet', width: 9 }, { header: `Diferencia (${L} - checador)`, key: 'teDiff', width: 12 },
         { header: 'Estado', key: 'lvl', width: 10 }, { header: 'Observaciones', key: 'obs', width: 90 }]);
       for (const p of an.results) {
@@ -325,7 +325,7 @@ module.exports = function (app, { DATA_DIR }) {
       const RES = { A: 'Asistió', DT: 'Descanso trabajado', D: 'Descanso', FI: 'FI', INC: 'INC', VAC: 'VAC', PSS: 'PSS', PCS: 'PCS', MAT: 'MAT', DFD: 'DFD', BAJ: 'Baja', INCOMP: 'Incompleto' };
       for (const p of an.results) for (const d of p.days) {
         const ymd = dates.find(x => x.key === d.key).ymd;
-        wd.addRow({ id: p.id, name: p.name, f: `${ymd.slice(8)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}`, d: A.DAY_LABEL[d.key], in: d.clock.in || '', out: d.clock.out || '', h: d.clock.hours || 0, x: d.clock.extra || 0, rm: d.clock.retMin || '', em: d.clock.early > (settings(pl).tolMin ?? 15) ? d.clock.early : '',
+        wd.addRow({ id: p.id, name: p.name, f: `${ymd.slice(8)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}`, d: A.DAY_LABEL[d.key], in: d.clock.in || '', out: d.clock.out || '', h: d.clock.hours || 0, x: d.clock.extra || 0, rm: d.clock.retMin || '', em: d.clock.early > 0 && !d.manual ? d.clock.early : '',
           c: d.sheet ? d.sheet.clave : '', t: d.sheet && d.sheet.te ? d.sheet.te : '', r: (RES[d.final] || '') + (d.manual ? ' (manual)' : ''), n: p.flags.filter(f => f.day === d.key).map(f => f.msg).join(' | ') });
       }
       const wa = wb.addWorksheet('Alertas');

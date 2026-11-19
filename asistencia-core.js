@@ -290,7 +290,6 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
   const allDates = DAYS7.map((key, i) => ({ key, ymd: addDays(monday, i) }));
   const results = [], notices = [];
   // If most of a turno leaves early by a similar amount, the schedule is probably wrong, not the people.
-  const schedOff = new Set();
   if (P.trackLate) {
     const byT = {};
     for (const p of people) {
@@ -299,13 +298,12 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
       for (const d of Object.values(p.days)) if (!d.rest && d.in != null && d.out != null) {
         const span = (d.out - d.in + 1440) % 1440; if (span < 20 || span > 960) continue;
         const t = byT[p.turno] || (byT[p.turno] = { end: rule.end, n: 0, early: [] }); t.n++;
-        const e = diffMin(e0, d.out); if (e > tol) t.early.push(d.out);
+        const e = diffMin(e0, d.out); if (e > 0) t.early.push(d.out);
       }
     }
     for (const [t, v] of Object.entries(byT)) if (v.n >= 10 && v.early.length / v.n >= 0.5) {
       const outs = v.early.slice().sort((a, b) => a - b), med = outs[Math.floor(outs.length / 2)];
-      schedOff.add(t);
-      notices.push({ turno: t, msg: `${t}: en ${v.early.length} de ${v.n} jornadas salieron antes de las ${v.end} (salida típica ${hhmm(med)}). Parece que el horario real termina antes; ajústalo en "Turnos y límites". Mientras tanto, las salidas anticipadas de este turno no se marcan como RET.` });
+      notices.push({ turno: t, msg: `${t}: en ${v.early.length} de ${v.n} jornadas salieron antes de las ${v.end} (salida típica ${hhmm(med)}). Esos minutos se descuentan porque la salida no tiene tolerancia. Si el horario real termina antes, ajústalo en "Turnos y límites".` });
     }
   }
   for (const p of people) {
@@ -314,7 +312,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
     const rule = ruleFor(plant, settings, p.turno, p.horario), limit = rule.limit;
     const flags = [], days = [];
     let hours = 0, teSheet = 0;
-    const count = { A: 0, FI: 0, INC: 0, VAC: 0, PSS: 0, PCS: 0, MAT: 0, DFD: 0, D: 0, DT: 0, INCOMP: 0, BAJ: 0, RET: 0, retMin: 0 };
+    const count = { A: 0, FI: 0, INC: 0, VAC: 0, PSS: 0, PCS: 0, MAT: 0, DFD: 0, D: 0, DT: 0, INCOMP: 0, BAJ: 0, RET: 0, retMin: 0, earlyMin: 0 };
     for (const { key, ymd } of allDates) {
       const raw = p.days[ymd];
       const clock = dayFromClock(raw && !raw.rest && rule.hours ? { ...raw, sched: rule.hours } : raw);
@@ -363,11 +361,12 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
         if (te) f.push(['bad', `${H} anota ${te} h de TE en su día de descanso, pero el checador no tiene registro.`]);
       } else final = '';
       if (P.trackLate && row && (final === 'A' || final === 'INCOMP')) {
-        if (schedOff.has(p.turno)) early = 0;
-        const bad = late > tol || early > tol;
-        const why = [late > tol ? `entró ${late} min tarde (${clock.in}, turno ${rule.start}): ${retMin} min de retardo después de los ${tol} de tolerancia` : '', early > tol ? `salió ${early} min antes (${clock.out}, turno ${rule.end})` : ''].filter(Boolean).join(' y ');
+        // Leaving early has no tolerance (Allan, Nov 19 2026): every minute before the shift end is deducted.
+        const bad = late > tol || early > 0;
+        const why = [late > tol ? `entró ${late} min tarde (${clock.in}, turno ${rule.start}): ${retMin} min de retardo después de los ${tol} de tolerancia` : '', early > 0 ? `salió ${early} min antes (${clock.out}, turno ${rule.end}), se descuentan ${early} min` : ''].filter(Boolean).join(' y ');
         if (bad) { count.RET++; retHit = true; }
-        if (bad && clave !== 'RET') f.push(['warn', `El checador marca que ${why} y ${H} no reporta RET.`]);
+        // A few minutes early is common: shown and deducted, but only flagged as "Atención" past the late tolerance
+        if (bad && clave !== 'RET') f.push([late > tol || early > tol ? 'warn' : 'info', `El checador marca que ${why} y ${H} no reporta RET.`]);
         if (!bad && clave === 'RET') f.push(['warn', `${H} reporta RET, pero en el checador llegó y salió a tiempo (${span}).`]);
       }
       if (te && (st === 'trabajo' || st === 'descanso-trabajado') && te > clock.extra + 0.5) f.push(['warn', `${H} anota ${te} h de TE; el checador da ${clock.extra} h ese día.`]);
@@ -389,7 +388,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
         manual = { final: ov.final, hours: h, by: ov.by, at: ov.at, note: ov.note || '' };
       }
       if (final && final !== 'RET') count[final] = (count[final] || 0) + 1;
-      count.retMin += retMin;
+      count.retMin += retMin; count.earlyMin += manual ? 0 : early;
       for (const [lvl, msg] of f) flags.push({ lvl, day: key, ymd, msg });
       days.push({ key, ymd, clock: { ...clock, late, early, retMin, graceMin }, sheet: row && onSheet ? { clave, te, uncertain: unc } : null, final, manual, flags: f.map(x => x[0]) });
     }
