@@ -142,6 +142,8 @@
       if (p.codeDiffers) fl.push(h('div', { class: 'msg warn' }, `Foto ${p.n}: las dos lecturas no coinciden en el código de hoja.`));
       if (r.status === 'read' && p.manager_signed === false) fl.push(h('div', { class: 'msg warn' }, `Foto ${p.n} (${p.sheet_code || 'sin código'}): falta la firma del gerente.`));
     }
+    if (r.status === 'read' && r.photos.some(p => p.error)) fl.push(h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: async e => { e.currentTarget.disabled = true; try { await api(`/api/asis/runs/${r.id}/reread`, { method: 'POST' }); showRun(r.id); } catch (err) { alert(err.message); } } }, 'Volver a leer las fotos')));
+    if (an && an.nothingRead) fl.push(h('div', { class: 'msg bad' }, 'No se pudo leer ninguna foto, así que todavía no hay comparación.'));
     if (an && an.missingWeek) fl.push(h('div', { class: 'msg bad' }, 'Falta el Excel del checador de esta semana. Súbelo en la pantalla principal y vuelve a abrir esta revisión.'));
     if (an && an.wrongWeek && an.wrongWeek.length) fl.push(h('div', { class: 'msg bad' }, `La hoja ${an.wrongWeek.join(', ')} es de otra semana.`));
     $('#runFlags').replaceChildren(...fl);

@@ -156,6 +156,7 @@ module.exports = function (app, { DATA_DIR }) {
     const w = week(run.monday);
     if (!w) return { missingWeek: true };
     const rows = sheetRows(run);
+    if (!rows.length) return { nothingRead: true };
     const byId = {}; for (const p of Object.values(w.people)) for (const id of p.ids || [p.id]) byId[id] = p;
     const turnosRead = new Set(rows.map(r => r.turno || (byId[r.id] && byId[r.id].turno)).filter(Boolean));
     const cmp = A.compare(rows, w.people, run.monday, { turnosRead: [...turnosRead] });

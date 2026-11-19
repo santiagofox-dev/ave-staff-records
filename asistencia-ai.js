@@ -73,15 +73,19 @@ async function callClaude(b64, context) {
   const r = await fetch((process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages', {
     method: 'POST', signal: AbortSignal.timeout(10 * 60 * 1000),
     headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL(), max_tokens: 16000, tools: [TOOL], tool_choice: { type: 'tool', name: TOOL.name },
+    body: JSON.stringify({ model: MODEL(), max_tokens: 16000, tools: [TOOL], tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: PROMPT + context }] }] }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`API de Claude: ${(j.error && j.error.message) || r.status}`);
   if (j.stop_reason === 'max_tokens') throw new Error('La respuesta se cortó; toma la foto de una hoja a la vez.');
   const tool = (j.content || []).find(c => c.type === 'tool_use');
-  if (!tool) throw new Error('La lectura no regresó datos.');
-  return { ...clean(tool.input), usage: j.usage || {} };
+  if (tool) return { ...clean(tool.input), usage: j.usage || {} };
+  // fallback: JSON written as text
+  const t = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a < 0 || b < a) throw new Error('La lectura no regresó datos.');
+  return { ...clean(JSON.parse(t.slice(a, b + 1))), usage: j.usage || {} };
 }
 
 const keyOf = r => r.id ? 'id:' + String(r.id).replace(/^0+(?=\d)/, '') : 'n:' + normName(r.name);
@@ -107,6 +111,7 @@ async function readAttendancePhoto(file, sheets) {
   if (!hasKey()) throw new Error('Falta la variable ANTHROPIC_API_KEY en Render.');
   const b64 = await prepareImage(file);
   const ctx = sheets && sheets.length ? '\n\nHojas impresas esta semana (código → renglones "ID NOMBRE"):\n' + sheets.map(s => `${s.code} (${s.turno}):\n` + s.rows.map(r => `  ${r.id} ${r.name}`).join('\n')).join('\n') : '';
+  ctx += '\n\nIMPORTANTE: responde únicamente llamando a la herramienta registrar_lista.';
   const once = () => callClaude(b64, ctx).catch(e => { if (/overloaded|529|rate|no regresó/i.test(e.message)) return callClaude(b64, ctx); throw e; });
   const [x, y] = await Promise.allSettled([once(), once()]);
   if (x.status === 'rejected' && y.status === 'rejected') throw x.reason;
