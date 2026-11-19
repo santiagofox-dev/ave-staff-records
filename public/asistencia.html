@@ -86,6 +86,7 @@
       <div class="actions" id="tolRow"><div class="field inline"><label for="tolMin">Tolerancia para retardo / salida anticipada (min)</label><input id="tolMin" type="number" min="0" max="120" step="1"></div></div>
       <div class="field"><label for="exempt">No usan checador (gerentes): número de empleado, y si hace falta el nombre, separados por coma</label><input id="exempt" placeholder="ej. 116, 232 JOHANA JANETH OCHOA BRISEÑO"></div>
       <div class="muted small" id="exemptNames"></div>
+      <div class="field"><label for="inactive">Ya no trabajan aquí (no salen en la lista ni en la revisión): número y/o nombre, separados por coma</label><input id="inactive" placeholder="ej. 123 ALEJANDRA CALDERA SILVA, NANCY RAMOS"></div>
       <div class="actions"><button class="btn primary" id="setSave" type="button">Guardar</button><span id="setMsg" class="small" aria-live="polite"></span></div>
     </details>
   </section>
@@ -138,6 +139,6 @@
 
 <script src="/static/shell.js?v=2"></script>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/asis.js?v=13"></script>
+<script src="/static/asis.js?v=14"></script>
 </body>
 </html>

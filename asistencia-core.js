@@ -17,10 +17,13 @@ const PLANTS = {
   monclova: { id: 'monclova', name: 'Monclova', print: 'MONCLOVA', code: 'MVA', source: 'foto', sheetDays: DAYS, trackLate: false,
     // Allan, Nov 19 2026
     defaults: [{ re: /TURNO\s*2/i, start: '15:20', end: '23:30', limit: 45 }, { re: /TURNO\s*1/i, start: '06:00', end: '15:30', limit: 48 }] },
-  'mtc-juarez': { id: 'mtc-juarez', name: 'MTC Juárez', print: 'MTC JUÁREZ', code: 'MTC', source: 'foto', sheetDays: DAYS, trackLate: false, defaults: [] },
+  'mtc-juarez': { id: 'mtc-juarez', name: 'MTC Juárez', print: 'MTC JUÁREZ', code: 'MTC', source: 'foto', sheetDays: DAYS, trackLate: false, defaults: [],
+    inactive: ['123 ALEJANDRA CALDERA SILVA', 'NANCY RAMOS'] },
   'jabil-chih': { id: 'jabil-chih', name: 'Jabil Chihuahua', print: 'JABIL CHIHUAHUA', code: 'JCH', source: 'excel', sheetDays: DAYS7, trackLate: true,
     // Managers who don't use the checador (Allan, Nov 19 2026): Olivas Jaramillo, Velarde Manuel, Venegas Velarde Mayra, Holguín Omar, Ochoa Yohana
-    exempt: ['116', '172', '127', '242', '232 JOHANA JANETH OCHOA BRISEÑO'],
+    exempt: ['172', '127', '242', '232 JOHANA JANETH OCHOA BRISEÑO'],
+    // No longer work at the plant (Allan, Nov 19 2026)
+    inactive: ['116 OLIVAS JARAMILLO JAIME IVAN'],
     // Allan, Nov 19 2026
     defaults: [{ re: /TURNO\s*1\b/i, start: '06:00', end: '15:00', limit: 45 }, { re: /TURNO\s*2\b/i, start: '15:00', end: '23:00', limit: 45 },
       { re: /TURNO\s*3\b/i, limit: 45 }, { re: /TURNO\s*4\b/i, limit: 36 }] },
@@ -37,7 +40,15 @@ const horarioTimes = h => { const m = /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/.ex
 /** IDs of people who don't use the checador (managers): saved list wins over the plant default. */
 // Each entry is "ID" or "ID NAME"; with a name, only that person under that ID is exempt (two people can share an ID across files).
 const exemptFor = (plant, settings) => (settings && Array.isArray(settings.exempt) ? settings.exempt : (PLANTS[plant] || {}).exempt || []).map(x => String(x).trim()).filter(Boolean);
-const parseExempt = e => { const m = /^0*(\d+)\s*(.*)$/.exec(String(e).trim()); return m ? { id: m[1], name: m[2].trim().toUpperCase() } : null; };
+const parseExempt = e => { const t = String(e).trim(); const m = /^0*(\d+)\s*(.*)$/.exec(t); return m ? { id: m[1], name: m[2].trim().toUpperCase() } : t ? { id: null, name: t.toUpperCase() } : null; };
+const inactiveFor = (plant, settings) => (settings && Array.isArray(settings.inactive) ? settings.inactive : (PLANTS[plant] || {}).inactive || []).map(x => String(x).trim()).filter(Boolean);
+/** Matcher for a list of "ID", "ID NAME" or "NAME" entries. A name alone must have all its words in the person's name. */
+function listMatcher(list) {
+  const L = list.map(parseExempt).filter(Boolean);
+  const words = s => normName(s).split(' ').filter(Boolean);
+  return (id, name) => { const k = String(id || '').replace(/^0+(?=\d)/, '');
+    return L.some(e => e.id ? e.id === k && (!e.name || nameScore(e.name, name || '') >= 0.6) : words(e.name).every(w => words(name || '').includes(w))); };
+}
 /** Rules for one turno: saved settings win, then the plant defaults, then the CHECADOR's own schedule. */
 function ruleFor(plant, settings, turno, horario) {
   const P = PLANTS[plant] || PLANTS.monclova;
@@ -266,12 +277,18 @@ const diffMin = (a, b) => { let d = a - b; if (d > 720) d -= 1440; if (d < -720)
 function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', settings = null, sheetLabel = 'la hoja', overrides = {} } = {}) {
   const P = PLANTS[plant] || PLANTS.monclova, H = sheetLabel;
   const tol = settings && Number.isFinite(+settings.tolMin) ? +settings.tolMin : 15;
-  const exList = exemptFor(plant, settings).map(parseExempt).filter(Boolean);
-  const exMatch = (id, name) => { const k = String(id || '').replace(/^0+(?=\d)/, ''); return exList.some(e => e.id === k && (!e.name || nameScore(e.name, name || '') >= 0.6)); };
+  const exMatch = listMatcher(exemptFor(plant, settings)), inMatch = listMatcher(inactiveFor(plant, settings));
   const isEx = x => (x.ids || [x.id]).some(id => exMatch(id, x.name));
-  const exemptList = [];
-  const people = Object.values(week || {}).filter(p => { if (isEx(p)) { exemptList.push({ id: p.id, name: p.name, source: 'checador' }); return false; } return true; });
-  sheetRows = sheetRows.filter(r => { if (r.id && exMatch(r.id, r.name)) { if (!exemptList.some(x => x.id === r.id)) exemptList.push({ id: r.id, name: r.name, source: 'hoja' }); return false; } return true; });
+  const isIn = x => (x.ids || [x.id]).some(id => inMatch(id, x.name));
+  const exemptList = [], inactiveList = [];
+  const people = Object.values(week || {}).filter(p => {
+    if (isIn(p)) { const pun = Object.values(p.days || {}).some(d => d.in != null || d.out != null); inactiveList.push({ id: p.id, name: p.name, source: 'checador', punches: pun }); return false; }
+    if (isEx(p)) { exemptList.push({ id: p.id, name: p.name, source: 'checador' }); return false; } return true;
+  });
+  sheetRows = sheetRows.filter(r => {
+    if (inMatch(r.id, r.name)) { const codes = Object.values(r.days || {}).some(d => d.clave || d.te); if (!inactiveList.some(x => x.id === r.id)) inactiveList.push({ id: r.id, name: r.name, source: 'hoja', marked: codes }); else inactiveList.find(x => x.id === r.id).marked = codes; return false; }
+    if (exMatch(r.id, r.name)) { if (!exemptList.some(x => x.id === r.id)) exemptList.push({ id: r.id, name: r.name, source: 'hoja' }); return false; } return true;
+  });
   const byId = {};
   for (const p of people) for (const id of p.ids || [p.id]) byId[String(id)] = p;
   const used = new Map();
@@ -413,8 +430,9 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
     teChk: r1(results.reduce((a, r) => a + r.totals.teChk, 0)), teSheet: r1(results.reduce((a, r) => a + r.totals.teSheet, 0)),
     FI: results.reduce((a, r) => a + r.totals.FI, 0), INC: results.reduce((a, r) => a + r.totals.INC, 0), RET: results.reduce((a, r) => a + r.totals.RET, 0), extras: extras.length,
   };
-  return { results, extras, summary, notices, exempt: exemptList };
+  for (const x of inactiveList) if (x.punches || x.marked) notices.push({ msg: `${x.id || ''} ${x.name} está marcado como que ya no trabaja aquí, pero ${x.punches ? 'tiene checadas esta semana' : `tiene marcas en ${sheetLabel}`}. Revísalo.` });
+  return { results, extras, summary, notices, exempt: exemptList, inactive: inactiveList };
 }
 
-module.exports = { exemptFor, parseExempt, readChecador, readIncidencias, mergeDuplicates, dayFromClock, splitWeeks, restPattern, layoutSheets, compare, normClave, nameScore, ruleFor, legalLimit, horarioTimes,
+module.exports = { exemptFor, inactiveFor, listMatcher, parseExempt, readChecador, readIncidencias, mergeDuplicates, dayFromClock, splitWeeks, restPattern, layoutSheets, compare, normClave, nameScore, ruleFor, legalLimit, horarioTimes,
   mondayOf, addDays, weekDates, dowKey, ddmm, DAYS, DAYS7, DAY_LABEL, CODES, CODE_LABEL, JUSTIFIED, PLANTS, LIMITS, limitFor, SHIFTS, shiftFor, turnoShort, hhmm };

@@ -63,6 +63,7 @@ module.exports = function (app, { DATA_DIR }) {
     for (const mon of listDir(pl, 'incidencias').slice(0, 1)) for (const r of incid(pl, mon).rows) if (!names[r.id]) names[r.id] = r.name;
     return A.exemptFor(pl, settings(pl)).map(A.parseExempt).filter(Boolean).map(e => ({ id: e.id, name: e.name || names[e.id] || '', named: !!e.name }));
   }
+  const inactiveView = pl => A.inactiveFor(pl, settings(pl));
   app.get('/api/asis/state', (req, res) => {
     const pl = plantOf(req), P = A.PLANTS[pl];
     const ro = roster(pl), people = Object.values(ro.people);
@@ -75,7 +76,7 @@ module.exports = function (app, { DATA_DIR }) {
     const inc = incWeeks.slice(0, 20).map(mon => { const x = incid(pl, mon); return { monday: mon, rows: x.rows.length, file: x.file, sheet: x.sheet, uploadedAt: x.uploadedAt, checador: fs.existsSync(path.join(dir(pl, 'weeks'), mon + '.json')) }; });
     res.json({ plant: { id: pl, name: P.name, source: P.source }, plants: Object.values(A.PLANTS).map(x => ({ id: x.id, name: x.name, source: x.source })),
       hasKey: AI.hasKey(), model: AI.MODEL(), nextMonday: nextMonday(), thisMonday: A.mondayOf(todayCJ()),
-      turnos: turnoTable(pl), tolMin: settings(pl).tolMin ?? 15, exempt: exemptView(pl),
+      turnos: turnoTable(pl), tolMin: settings(pl).tolMin ?? 15, exempt: exemptView(pl), inactive: inactiveView(pl),
       roster: { count: people.length, turnos, week: ro.week, updatedAt: ro.updatedAt || null, merged: people.filter(p => (p.ids || []).length > 1).map(p => ({ name: p.name, ids: p.ids })) },
       uploads: (ro.uploads || []).slice(-5).reverse(), weeks, incidencias: inc, runs });
   });
@@ -91,10 +92,12 @@ module.exports = function (app, { DATA_DIR }) {
     }
     st.turnos = turnos;
     if (body.tolMin != null) { const t = +body.tolMin; if (!(t >= 0 && t <= 120)) return res.status(400).json({ error: 'La tolerancia debe estar entre 0 y 120 minutos.' }); st.tolMin = t; st.tolVer = 2; }
+    const cleanList = a => [...new Set(a.map(x => String(x).replace(/\s+/g, ' ').trim().slice(0, 80)).filter(x => /^(\d{1,10}( [^\d,;]+)?|[^\d,;]{3,})$/.test(x)))];
+    if (Array.isArray(body.inactive)) st.inactive = cleanList(body.inactive);
     if (Array.isArray(body.exempt)) st.exempt = [...new Set(body.exempt.map(x => String(x).replace(/\s+/g, ' ').trim().slice(0, 80)).filter(x => /^\d{1,10}( [^\d,;]+)?$/.test(x)))];
     st.updatedAt = new Date().toISOString(); st.by = who(req);
     writeJ(path.join(base(pl), 'settings.json'), st);
-    res.json({ ok: true, turnos: turnoTable(pl), tolMin: st.tolMin, exempt: exemptView(pl) });
+    res.json({ ok: true, turnos: turnoTable(pl), tolMin: st.tolMin, exempt: exemptView(pl), inactive: inactiveView(pl) });
   });
 
   /* ---------- 1. CHECADOR upload ---------- */
@@ -146,7 +149,8 @@ module.exports = function (app, { DATA_DIR }) {
   app.get('/api/asis/lista.pdf', (req, res) => {
     const pl = plantOf(req), P = A.PLANTS[pl];
     const mon = A.mondayOf(YMD.test(req.query.semana || '') ? req.query.semana : nextMonday());
-    const ro = roster(pl), people = Object.values(ro.people);
+    const ro = roster(pl), inM = A.listMatcher(A.inactiveFor(pl, settings(pl)));
+    const people = Object.values(ro.people).filter(p => !(p.ids || [p.id]).some(id => inM(id, p.name)));
     if (!people.length) return res.status(400).send('Primero sube el Excel del checador para tener la lista del personal.');
     const sheets = A.layoutSheets(people, mon, { plant: P.print, code: P.code });
     const st = settings(pl), hor = {}; for (const p of people) if (p.horario && !hor[p.turno]) hor[p.turno] = p.horario;
@@ -171,7 +175,8 @@ module.exports = function (app, { DATA_DIR }) {
 
   function sheetsFor(pl, mon) {
     const p = prints(pl, mon); if (p) return p.sheets;
-    const people = Object.values(roster(pl).people), P = A.PLANTS[pl];
+    const inM = A.listMatcher(A.inactiveFor(pl, settings(pl)));
+    const people = Object.values(roster(pl).people).filter(p => !(p.ids || [p.id]).some(id => inM(id, p.name))), P = A.PLANTS[pl];
     return people.length ? A.layoutSheets(people, mon, { plant: P.print, code: P.code }) : [];
   }
   function startRead(run) {
