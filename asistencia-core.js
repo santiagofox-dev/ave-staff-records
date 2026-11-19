@@ -256,7 +256,7 @@ const diffMin = (a, b) => { let d = a - b; if (d > 720) d -= 1440; if (d < -720)
  */
 function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', settings = null, sheetLabel = 'la hoja' } = {}) {
   const P = PLANTS[plant] || PLANTS.monclova, H = sheetLabel;
-  const tol = settings && Number.isFinite(+settings.tolMin) ? +settings.tolMin : 10;
+  const tol = settings && Number.isFinite(+settings.tolMin) ? +settings.tolMin : 15;
   const people = Object.values(week || {});
   const byId = {};
   for (const p of people) for (const id of p.ids || [p.id]) byId[String(id)] = p;

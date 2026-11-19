@@ -24,7 +24,8 @@ module.exports = function (app, { DATA_DIR }) {
   const RUN_ID = /^[a-f0-9]{16}$/;
   const who = req => (req.user && (req.user.name || req.user.username)) || 'admin';
   const roster = pl => readJ(path.join(base(pl), 'roster.json'), { people: {}, uploads: [], week: null });
-  const settings = pl => readJ(path.join(base(pl), 'settings.json'), { turnos: {}, tolMin: 10 });
+  // Tolerance: 15 min (Allan, Nov 19 2026). Settings saved before that rule get 15 too.
+  const settings = pl => { const st = readJ(path.join(base(pl), 'settings.json'), { turnos: {} }); if (st.tolVer !== 2) { st.tolMin = 15; st.tolVer = 2; } return st; };
   const week = (pl, mon) => readJ(path.join(dir(pl, 'weeks'), mon + '.json'), null);
   const prints = (pl, mon) => readJ(path.join(dir(pl, 'prints'), mon + '.json'), null);
   const incid = (pl, mon) => readJ(path.join(dir(pl, 'incidencias'), mon + '.json'), null);
@@ -68,7 +69,7 @@ module.exports = function (app, { DATA_DIR }) {
     const inc = incWeeks.slice(0, 20).map(mon => { const x = incid(pl, mon); return { monday: mon, rows: x.rows.length, file: x.file, sheet: x.sheet, uploadedAt: x.uploadedAt, checador: fs.existsSync(path.join(dir(pl, 'weeks'), mon + '.json')) }; });
     res.json({ plant: { id: pl, name: P.name, source: P.source }, plants: Object.values(A.PLANTS).map(x => ({ id: x.id, name: x.name, source: x.source })),
       hasKey: AI.hasKey(), model: AI.MODEL(), nextMonday: nextMonday(), thisMonday: A.mondayOf(todayCJ()),
-      turnos: turnoTable(pl), tolMin: settings(pl).tolMin ?? 10,
+      turnos: turnoTable(pl), tolMin: settings(pl).tolMin ?? 15,
       roster: { count: people.length, turnos, week: ro.week, updatedAt: ro.updatedAt || null, merged: people.filter(p => (p.ids || []).length > 1).map(p => ({ name: p.name, ids: p.ids })) },
       uploads: (ro.uploads || []).slice(-5).reverse(), weeks, incidencias: inc, runs });
   });
@@ -83,7 +84,7 @@ module.exports = function (app, { DATA_DIR }) {
       turnos[name] = { start: v.start ? v.start.padStart(5, '0') : undefined, end: v.end ? v.end.padStart(5, '0') : undefined, limit: lim || undefined };
     }
     st.turnos = turnos;
-    if (body.tolMin != null) { const t = +body.tolMin; if (!(t >= 0 && t <= 120)) return res.status(400).json({ error: 'La tolerancia debe estar entre 0 y 120 minutos.' }); st.tolMin = t; }
+    if (body.tolMin != null) { const t = +body.tolMin; if (!(t >= 0 && t <= 120)) return res.status(400).json({ error: 'La tolerancia debe estar entre 0 y 120 minutos.' }); st.tolMin = t; st.tolVer = 2; }
     st.updatedAt = new Date().toISOString(); st.by = who(req);
     writeJ(path.join(base(pl), 'settings.json'), st);
     res.json({ ok: true, turnos: turnoTable(pl), tolMin: st.tolMin });
@@ -239,7 +240,7 @@ module.exports = function (app, { DATA_DIR }) {
     const pl = run.plant || 'monclova';
     const out = { id: run.id, plant: pl, plantName: A.PLANTS[pl].name, source: run.source || 'foto', incid: run.incid ? { file: run.incid.file, sheet: run.incid.sheet, title: run.incid.title } : null, monday: run.monday, createdAt: run.createdAt, by: run.by, status: run.status, reading: run.reading || null,
       photos: (run.photos || []).map(p => ({ n: p.n, name: p.name, sheet_code: p.sheet_code || null, codeDiffers: !!p.codeDiffers, manager_signed: p.manager_signed ?? null, rows: (p.rows || []).length, warning: p.warning || null, error: p.error || null })),
-      dates: A.DAYS7.map((key, i) => ({ key, ymd: A.addDays(run.monday, i) })), sheetDays: A.PLANTS[pl].sheetDays, tolMin: settings(pl).tolMin ?? 10, model: AI.MODEL() };
+      dates: A.DAYS7.map((key, i) => ({ key, ymd: A.addDays(run.monday, i) })), sheetDays: A.PLANTS[pl].sheetDays, tolMin: settings(pl).tolMin ?? 15, model: AI.MODEL() };
     if (run.status === 'read') {
       out.analysis = analyse(run); out.sheetRows = sheetRows(run);
       if (out.analysis.summary) { run.lastSummary = out.analysis.summary; try { saveRun(run); } catch (e) {} }

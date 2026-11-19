@@ -240,7 +240,7 @@
     const s = !onSheet ? null : !sh ? h('span', { class: 's none' }, RUN.source === 'excel' ? 'sin renglón' : 'sin hoja') : h('span', { class: 's' + (sh.clave || sh.te ? '' : ' none') }, [sh.clave, sh.te ? `TE ${num(sh.te)}` : ''].filter(Boolean).join(' · ') || 'vacío');
     const lv = d.flags.includes('bad') ? 'bad' : d.flags.includes('warn') ? 'warn' : '';
     const editable = !!(sh && p.sheetRow && onSheet);
-    const tol = RUN.tolMin ?? 10;
+    const tol = RUN.tolMin ?? 15;
     if (k && (c.late > tol || c.early > tol) && RUN.source === 'excel') k.append(h('br'), [c.late > tol ? `+${c.late} min entrada` : '', c.early > tol ? `-${c.early} min salida` : ''].filter(Boolean).join(' · '));
     const td = h('td', { class: `c ${lv} ${sh && sh.uncertain ? 'unc' : ''} ${c.status === 'descanso' ? 'rest' : ''} f-${d.final} ${editable ? '' : 'nos'}`, title: p.flags.filter(f => f.day === d.key).map(f => f.msg).join('\n') || null }, k, s);
     if (editable) td.addEventListener('click', e => { e.stopPropagation(); editCell(p, d); });
