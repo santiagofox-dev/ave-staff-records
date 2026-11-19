@@ -19,6 +19,7 @@
     exp: [['circle', { cx: 9, cy: 8, r: 3.5 }], ['path', { d: 'M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5' }], ['path', { d: 'M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.7.8 2.7 2.6 3 5.2' }]],
     com: [['path', { d: 'M6 3v7a2 2 0 0 0 4 0V3M8 10v11' }], ['path', { d: 'M17 21V3c-2.2 1.3-3.5 3.8-3.5 7v3H17' }]],
     acc: [['path', { d: 'M4 20V10M10 20V4M16 20v-7M22 20H2' }]],
+    asi: [['rect', { x: 4, y: 4, width: 16, height: 17, rx: 2 }], ['path', { d: 'M8 2.5v3M16 2.5v3M4 9.5h16' }], ['path', { d: 'M8.5 14.5l2.2 2.2 4.8-4.7' }]],
     go: [['path', { d: 'M5 12h14M13 6l6 6-6 6' }]],
   };
   const NF = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 });
@@ -83,6 +84,17 @@
     ]);
   }
 
+  function asistencia(t) {
+    const l = t.last, s = l && l.summary;
+    return card('asi', 't-asi', 'Asistencia', 'Lista de Monclova contra el checador.', '/asistencia', [
+      h('div', { class: 'mets' }, met(num(t.people), 'Personas en el checador', 'tc'), met(s ? num(s.bad) : '—', 'Por revisar, última semana', s && s.bad ? 'bad' : ''),
+        met(s ? `${num(s.teChk)} h` : '—', 'TE según checador'), met(s ? `${num(s.teSheet)} h` : '—', 'TE anotado en hoja', s && s.teSheet > s.teChk + 0.5 ? 'warn' : '')),
+      h('div', { class: 'viz' }, h('div', { class: 'viz-h' }, 'Siguiente lista'), h('div', { class: 'items' },
+        h('div', { class: 'item2' }, h('span', {}, 'Semana que inicia'), h('em', {}, shortD(t.nextMonday))),
+        h('div', { class: 'item2' }, h('span', {}, 'Checador cargado hasta'), h('em', {}, t.week ? shortD(t.week) : 'sin cargar')))),
+    ]);
+  }
+
   function attention(T) {
     const out = [];
     const A = (href, txt, cls) => out.push(h('a', { href, class: cls || '' }, h('i'), txt));
@@ -93,6 +105,7 @@
       if (nb) A('/expedientes?vista=cumpleanos', nb === 1 && b[0] ? `Cumpleaños: ${b[0].name.split(' ')[0]} ${b[0].days === 0 ? 'hoy' : dayTxt(b[0].days)}` : `${nb} cumpleaños esta semana`, 'ok');
     }
     if (T.comidas && T.comidas.last && T.comidas.last.pending) A('/comidas', `${T.comidas.last.pending} lecturas de comidas por revisar`);
+    if (T.asistencia && T.asistencia.last && T.asistencia.last.summary && T.asistencia.last.summary.bad) A('/asistencia#r=' + T.asistencia.last.id, `${T.asistencia.last.summary.bad} personas por revisar en asistencia`, 'bad');
     if (T.contabilidad) {
       if (T.contabilidad.payableOverdue > 0) A('/contabilidad#/docs/ap?pay=vencido', `${money(T.contabilidad.payableOverdue)} vencido con proveedores`, 'bad');
       if (T.contabilidad.portalPending) A('/contabilidad#/docs/ap?origin=portal&state=draft', `${T.contabilidad.portalPending} facturas nuevas del portal de proveedores`);
@@ -108,7 +121,7 @@
     const first = String(d.user.name || '').split(/\s+/)[0];
     $('#greet').textContent = `${hr < 12 ? 'Buenos días' : hr < 19 ? 'Buenas tardes' : 'Buenas noches'}${first ? ', ' + first.charAt(0).toUpperCase() + first.slice(1) : ''}`;
     const tools = $('#tools'); tools.replaceChildren();
-    const cards = [d.tools.expedientes && expedientes(d.tools.expedientes), d.tools.comidas && comidas(d.tools.comidas), d.tools.contabilidad && contabilidad(d.tools.contabilidad)].filter(Boolean);
+    const cards = [d.tools.expedientes && expedientes(d.tools.expedientes), d.tools.comidas && comidas(d.tools.comidas), d.tools.asistencia && asistencia(d.tools.asistencia), d.tools.contabilidad && contabilidad(d.tools.contabilidad)].filter(Boolean);
     tools.className = 'tools n' + cards.length; tools.append(...cards);
     $('#attn').replaceChildren(...attention(d.tools));
   }).catch(e => { $('#tools').replaceChildren(h('div', { class: 'loading' }, e.message)); });

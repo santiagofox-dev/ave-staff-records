@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Asistente asistencia · AVE</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/styles.css?v=10">
+<link rel="stylesheet" href="/static/asis.css?v=1">
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="stylesheet" href="/static/shell.css?v=3">
+</head>
+<body class="has-bar" data-tool="asistencia">
+<header class="appbar">
+  <a class="appbar-logo" href="/app" aria-label="Inicio · Grupo AVE"><img src="/assets/logo-grupo-ave.png" alt="Grupo AVE Comedores Industriales" width="147" height="30"></a>
+  <nav class="appbar-nav" aria-label="Herramientas">
+    <a href="/app" data-tool="hub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Inicio</span></a>
+    <a href="/expedientes" data-tool="expedientes" data-roles="admin personal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.7.8 2.7 2.6 3 5.2"/></svg><span>Expedientes</span></a>
+    <a href="/comidas" data-tool="comidas" data-roles="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11"/><path d="M17 21V3c-2.2 1.3-3.5 3.8-3.5 7v3H17"/></svg><span>Comidas</span></a>
+    <a href="/asistencia" data-tool="asistencia" data-roles="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 2.5v3M16 2.5v3M4 9.5h16"/><path d="M8.5 14.5l2.2 2.2 4.8-4.7"/></svg><span>Asistencia</span></a>
+    <a href="/contabilidad" data-tool="contabilidad" data-roles="admin contador consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Contabilidad</span></a>
+  </nav>
+  <div class="appbar-user"><a class="appbar-users" href="/usuarios" data-roles="admin" title="Usuarios y permisos" aria-label="Usuarios y permisos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.3-6 8-6s7 2 8 6"/><path d="M19 3l2 2-2 2"/></svg><span>Usuarios</span></a><div class="who"><b></b><span></span></div><div class="avatar" aria-hidden="true"></div><button class="appbar-out" type="button">Salir</button></div>
+</header>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Grupo AVE · Planta Monclova</div>
+      <h1>Asistente asistencia</h1>
+      <div class="muted">Imprime la lista de cada semana y compárala contra el checador. Si la hoja y el checador no coinciden, gana el checador.</div>
+    </div>
+  </header>
+  <div class="err-banner" id="keyWarn" hidden>Falta configurar la clave de la API de Claude (<span class="mono">ANTHROPIC_API_KEY</span>) en Render. Sin ella no se pueden leer las fotos.</div>
+
+  <div class="asteps" id="home">
+    <section class="panel">
+      <div class="sn">1</div>
+      <h2>Carga el checador</h2>
+      <p class="muted small">Sube el Excel que genera el CHECADOR INTERNO. Con él se arma la lista del personal y se revisan las horas.</p>
+      <div id="chkState" class="kv"></div>
+      <label class="btn primary filebtn"><input id="chkFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">Subir Excel del checador</label>
+      <div id="chkMsg" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="sn">2</div>
+      <h2>Imprime la lista</h2>
+      <p class="muted small">Elige cualquier día de la semana; la lista sale de lunes a sábado con las fechas correctas y el personal del último checador.</p>
+      <div class="field"><label for="printWeek">Semana</label><input id="printWeek" type="date"></div>
+      <div class="wk" id="printLabel"></div>
+      <div class="actions"><a class="btn primary" id="printDl" href="#">Descargar PDF</a><a class="btn" id="printView" href="#" target="_blank" rel="noopener">Ver</a></div>
+      <div class="muted small" id="printNote"></div>
+    </section>
+
+    <section class="panel">
+      <div class="sn">3</div>
+      <h2>Revisa la semana</h2>
+      <p class="muted small">Toma una foto por hoja, de frente y con las cuatro esquinas negras visibles. Antes, carga el checador de esa misma semana.</p>
+      <div class="field"><label for="revWeek">Semana de la lista</label><input id="revWeek" type="date"></div>
+      <div class="wk" id="revLabel"></div>
+      <div class="drop" id="drop"><input id="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Elegir fotos de la lista"><span id="dropTxt">Arrastra aquí las fotos de la lista o haz clic para elegirlas</span></div>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="actions"><button class="btn primary" id="readBtn" type="button" disabled>Leer y comparar</button></div>
+      <div class="err" id="revErr" role="alert" hidden></div>
+    </section>
+  </div>
+
+  <section class="panel" id="histP">
+    <div class="panel-head"><h2>Revisiones</h2><span class="muted small" id="limits"></span></div>
+    <div id="hist"></div>
+  </section>
+
+  <section class="panel" id="run" hidden>
+    <div class="panel-head">
+      <div><button class="btn sm quiet" id="back" type="button">Volver</button> <h2 id="runTitle" class="inline"></h2></div>
+      <div class="actions"><a class="btn primary" id="xlsBtn" href="#">Descargar Excel para nómina</a><button class="btn danger sm" id="delRun" type="button">Borrar</button></div>
+    </div>
+    <div class="progress" id="prog" hidden><div class="bar"><i id="progBar"></i></div><span id="progTxt"></span></div>
+    <div id="runFlags" class="flags"></div>
+    <div class="mets" id="mets"></div>
+    <details class="photos" id="photosBox">
+      <summary>Fotos leídas</summary>
+      <div class="tabs" id="photoTabs"></div>
+      <div class="zoom"><label for="zoom">Zoom</label><input id="zoom" type="range" min="40" max="250" value="100"></div>
+      <div class="imgbox"><img id="photo" alt="Foto de la lista seleccionada"></div>
+    </details>
+    <div class="filters" id="filters" role="group" aria-label="Filtrar"></div>
+    <div class="legend small"><span><i class="lg bad"></i>Revisar</span><span><i class="lg warn"></i>Atención</span><span><i class="lg unc"></i>Lectura dudosa de la foto</span><span class="muted">Arriba: checador · Abajo: lo que dice la hoja. Haz clic en una celda para corregir la lectura.</span></div>
+    <div class="tablewrap"><table class="agrid" id="grid"></table></div>
+    <div id="extras"></div>
+  </section>
+</div>
+
+<dialog id="cellDlg">
+  <form method="dialog" id="cellForm">
+    <h3 id="cellTitle"></h3>
+    <p class="muted small" id="cellClock"></p>
+    <div class="fields">
+      <div class="field"><label for="cClave">Clave en la hoja</label><select id="cClave"><option value="">Vacío (asistió)</option><option>FI</option><option>INC</option><option>VAC</option><option>PSS</option></select></div>
+      <div class="field"><label for="cTe">TE en la hoja (horas)</label><input id="cTe" type="number" min="0" max="23.5" step="0.5" inputmode="decimal"></div>
+    </div>
+    <p class="muted small">Corrige solo lo que está escrito en el papel. El resultado lo sigue decidiendo el checador.</p>
+    <div class="actions end"><button class="btn" value="cancel" type="submit">Cancelar</button><button class="btn primary" id="cellSave" value="save" type="submit">Guardar</button></div>
+  </form>
+</dialog>
+
+<script src="/static/shell.js?v=2"></script>
+<script src="/static/retry.js?v=1"></script>
+<script src="/static/asis.js?v=1"></script>
+</body>
+</html>

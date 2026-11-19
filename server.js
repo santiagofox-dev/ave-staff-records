@@ -170,7 +170,7 @@ app.use((req, res, next) => {
   if (req.method === 'GET' && !req.path.startsWith('/api/')) return res.redirect('/app');
   return res.status(403).json({ error: 'Tu usuario no tiene acceso a esta sección.' });
 });
-app.use(['/api', '/files', '/reports', '/comidas', '/contabilidad', '/app', '/expedientes', '/usuarios'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use(['/api', '/files', '/reports', '/comidas', '/contabilidad', '/app', '/expedientes', '/usuarios', '/asistencia'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'public', 'hub.html')));
 app.get('/expedientes', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
@@ -354,6 +354,9 @@ require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
 /* ---- Comidas de Nuevos Ingresos (DELPHI) ---- */
 require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
 
+/* ---- Asistente asistencia (Monclova) ---- */
+const asistencia = require('./asistencia')(app, { DATA_DIR });
+
 /* ---- Contabilidad (accounting) ---- */
 const books = require('./acc/routes')(app, { portal, DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });
 
@@ -385,6 +388,7 @@ app.get('/api/hub', (req, res, next) => {
       const recent = hist.filter(h => h.at >= since);
       out.tools.comidas = { runs: hist.length, last: last && { label: last.label, at: last.at, meals: last.meals, added: last.added, employees: last.employees, confFinal: last.confFinal, pending: last.pending }, added30: recent.reduce((a, h) => a + (h.added || 0), 0), runs30: recent.length, series: hist.slice(-8).map(h => ({ label: h.label, added: h.added || 0 })) };
     }
+    if (admin) { try { out.tools.asistencia = asistencia.summary(); } catch (e) { console.error(e); } }
     if (admin || role === 'contador' || role === 'consulta') {
     const d = books.dashboard();
     out.tools.contabilidad = { payable: d.payable, payableOverdue: d.payableOverdue, receivable: d.receivable, receivableOverdue: d.receivableOverdue, banks: r2h(d.banks.reduce((a, b) => a + b.balance, 0)), drafts: d.drafts, portalPending: portal.pendingCount(), month: d.month, pnl: d.pnl, series: d.series.slice(-6), dueSoon: d.dueSoon.slice(0, 3).map(x => ({ partner: x.partner, due: x.due, amount: x.amount })) };
