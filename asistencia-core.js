@@ -17,7 +17,9 @@ const PLANTS = {
   monclova: { id: 'monclova', name: 'Monclova', print: 'MONCLOVA', code: 'MVA', source: 'foto', sheetDays: DAYS, trackLate: false,
     // Allan, Nov 19 2026
     defaults: [{ re: /TURNO\s*2/i, start: '15:20', end: '23:30', limit: 45 }, { re: /TURNO\s*1/i, start: '06:00', end: '15:30', limit: 48 }] },
-  'jabil-chih': { id: 'jabil-chih', name: 'Jabil Chihuahua', print: 'JABIL CHIHUAHUA', code: 'JCH', source: 'excel', sheetDays: DAYS7, trackLate: true, defaults: [] },
+  'jabil-chih': { id: 'jabil-chih', name: 'Jabil Chihuahua', print: 'JABIL CHIHUAHUA', code: 'JCH', source: 'excel', sheetDays: DAYS7, trackLate: true,
+    // Allan, Nov 19 2026
+    defaults: [{ re: /TURNO\s*1\b/i, start: '06:00', end: '15:00', limit: 48 }, { re: /TURNO\s*2\b/i, start: '15:00', end: '23:00', limit: 45 }] },
 };
 const toM = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
 const spanH = (a, b) => Math.round(((b - a + (b <= a ? 1440 : 0)) / 60) * 100) / 100;
