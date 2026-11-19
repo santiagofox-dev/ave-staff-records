@@ -7,7 +7,7 @@
 <title>Asistente asistencia · AVE</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/styles.css?v=10">
-<link rel="stylesheet" href="/static/asis.css?v=1">
+<link rel="stylesheet" href="/static/asis.css?v=3">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="/static/shell.css?v=3">
 </head>
@@ -27,12 +27,14 @@
 <div class="wrap">
   <header class="top">
     <div>
-      <div class="eyebrow">Grupo AVE · Planta Monclova</div>
+      <div class="eyebrow" id="eyebrow">Grupo AVE · Asistencia</div>
       <h1>Asistente asistencia</h1>
-      <div class="muted">Imprime la lista de cada semana y compárala contra el checador. Si la hoja y el checador no coinciden, gana el checador.</div>
+      <div class="muted" id="subtitle"></div>
     </div>
   </header>
   <div class="err-banner" id="keyWarn" hidden>Falta configurar la clave de la API de Claude (<span class="mono">ANTHROPIC_API_KEY</span>) en Render. Sin ella no se pueden leer las fotos.</div>
+
+  <div class="ptabs" id="plantTabs" role="tablist" aria-label="Planta"></div>
 
   <div class="asteps" id="home">
     <section class="panel">
@@ -44,7 +46,16 @@
       <div id="chkMsg" aria-live="polite"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="pInc" hidden>
+      <div class="sn">2</div>
+      <h2>Sube las incidencias</h2>
+      <p class="muted small">Sube el Excel de INCIDENCIAS tal como lo mandan (puede traer varias semanas, una hoja por semana). Cada semana se guarda por separado.</p>
+      <div id="incState" class="kv"></div>
+      <label class="btn primary filebtn"><input id="incFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">Subir Excel de incidencias</label>
+      <div id="incMsg" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" id="pPrint">
       <div class="sn">2</div>
       <h2>Imprime la lista</h2>
       <p class="muted small">Elige cualquier día de la semana; la lista sale de lunes a sábado con las fechas correctas y el personal del último checador.</p>
@@ -57,8 +68,8 @@
     <section class="panel">
       <div class="sn">3</div>
       <h2>Revisa la semana</h2>
-      <p class="muted small">Toma una foto por hoja, de frente y con las cuatro esquinas negras visibles. Antes, carga el checador de esa misma semana.</p>
-      <div class="field"><label for="revWeek">Semana de la lista</label><input id="revWeek" type="date"></div>
+      <p class="muted small" id="revHelp">Toma una foto por hoja, de frente y con las cuatro esquinas negras visibles. Antes, carga el checador de esa misma semana.</p>
+      <div class="field"><label for="revWeek">Semana</label><input id="revWeek" type="date"></div>
       <div class="wk" id="revLabel"></div>
       <div class="drop" id="drop"><input id="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Elegir fotos de la lista"><span id="dropTxt">Arrastra aquí las fotos de la lista o haz clic para elegirlas</span></div>
       <div class="thumbs" id="thumbs"></div>
@@ -66,6 +77,16 @@
       <div class="err" id="revErr" role="alert" hidden></div>
     </section>
   </div>
+
+  <section class="panel" id="setP">
+    <details id="setBox">
+      <summary><b>Turnos y límites</b> <span class="muted small" id="setSum"></span></summary>
+      <p class="muted small">El horario sirve para calcular la jornada de cada día y los retardos; el límite es cuántas horas a la semana se trabajan antes de contar tiempo extra. Si dejas un campo vacío se usa el horario del checador.</p>
+      <div class="tablewrap"><table class="hist" id="setTable"></table></div>
+      <div class="actions" id="tolRow"><div class="field inline"><label for="tolMin">Tolerancia para retardo / salida anticipada (min)</label><input id="tolMin" type="number" min="0" max="120" step="1"></div></div>
+      <div class="actions"><button class="btn primary" id="setSave" type="button">Guardar</button><span id="setMsg" class="small" aria-live="polite"></span></div>
+    </details>
+  </section>
 
   <section class="panel" id="histP">
     <div class="panel-head"><h2>Revisiones</h2><span class="muted small" id="limits"></span></div>
@@ -87,7 +108,7 @@
       <div class="imgbox"><img id="photo" alt="Foto de la lista seleccionada"></div>
     </details>
     <div class="filters" id="filters" role="group" aria-label="Filtrar"></div>
-    <div class="legend small"><span><i class="lg bad"></i>Revisar</span><span><i class="lg warn"></i>Atención</span><span><i class="lg unc"></i>Lectura dudosa de la foto</span><span class="muted">Arriba: checador · Abajo: lo que dice la hoja. Haz clic en una celda para corregir la lectura.</span></div>
+    <div class="legend small"><span><i class="lg bad"></i>Revisar</span><span><i class="lg warn"></i>Atención</span><span id="legUnc"><i class="lg unc"></i>Lectura dudosa de la foto</span><span class="muted" id="legendTxt"></span></div>
     <div class="tablewrap"><table class="agrid" id="grid"></table></div>
     <div id="extras"></div>
   </section>
@@ -98,16 +119,16 @@
     <h3 id="cellTitle"></h3>
     <p class="muted small" id="cellClock"></p>
     <div class="fields">
-      <div class="field"><label for="cClave">Clave en la hoja</label><select id="cClave"><option value="">Vacío (asistió)</option><option>FI</option><option>INC</option><option>VAC</option><option>PSS</option></select></div>
-      <div class="field"><label for="cTe">TE en la hoja (horas)</label><input id="cTe" type="number" min="0" max="23.5" step="0.5" inputmode="decimal"></div>
+      <div class="field"><label for="cClave" id="cClaveL">Clave en la hoja</label><select id="cClave"><option value="">Vacío (asistió)</option><option>FI</option><option>INC</option><option>VAC</option><option>PSS</option><option class="xo">PCS</option><option class="xo">MAT</option><option class="xo">RET</option><option class="xo">BAJ</option><option class="xo">DFD</option></select></div>
+      <div class="field"><label for="cTe" id="cTeL">TE en la hoja (horas)</label><input id="cTe" type="number" min="0" max="23.5" step="0.5" inputmode="decimal"></div>
     </div>
-    <p class="muted small">Corrige solo lo que está escrito en el papel. El resultado lo sigue decidiendo el checador.</p>
+    <p class="muted small" id="cellHelp">Corrige solo lo que está escrito en el papel. El resultado lo sigue decidiendo el checador.</p>
     <div class="actions end"><button class="btn" value="cancel" type="submit">Cancelar</button><button class="btn primary" id="cellSave" value="save" type="submit">Guardar</button></div>
   </form>
 </dialog>
 
 <script src="/static/shell.js?v=2"></script>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/asis.js?v=3"></script>
+<script src="/static/asis.js?v=6"></script>
 </body>
 </html>

@@ -32,6 +32,9 @@ test('codes are normalised', () => {
   assert.strictEqual(A.normClave('Inc'), 'INC');
   assert.strictEqual(A.normClave('p.s.s'), 'PSS');
   assert.strictEqual(A.normClave(''), '');
+  assert.strictEqual(A.normClave('FINJ'), 'FI');
+  assert.strictEqual(A.normClave('VACR'), 'VAC');
+  assert.strictEqual(A.normClave('RET'), 'RET');
 });
 
 test('checador wins: weekly overtime, inflated TE, absences classified by the sheet', () => {

@@ -86,3 +86,12 @@ dialog::backdrop{background:var(--scrim)}
 dialog h3{margin:0 0 4px}
 @media (max-width:1000px){.asteps{grid-template-columns:minmax(0,1fr)}}
 body[data-tool="asistencia"] .wrap{max-width:1360px}
+.ptabs{display:flex;gap:6px;flex-wrap:wrap}
+.ptabs button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:8px 16px;font-weight:700;font-size:15px}
+.ptabs button[aria-selected="true"]{background:#2f6fb3;border-color:#2f6fb3;color:#fff}
+#setBox summary{cursor:pointer}
+#setTable input{width:84px;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:4px 6px}
+.field.inline{flex-direction:row;align-items:center;gap:8px}
+.field.inline input{width:80px}
+.agrid td.c.edited .s::after{content:" (corregido)";font-weight:400;color:var(--muted)}
+dialog[open]{position:fixed;inset:0;margin:auto;height:fit-content;max-height:90vh}
