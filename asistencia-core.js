@@ -314,7 +314,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
     const rule = ruleFor(plant, settings, p.turno, p.horario), limit = rule.limit;
     const flags = [], days = [];
     let hours = 0, teSheet = 0;
-    const count = { A: 0, FI: 0, INC: 0, VAC: 0, PSS: 0, PCS: 0, MAT: 0, DFD: 0, D: 0, DT: 0, INCOMP: 0, BAJ: 0, RET: 0 };
+    const count = { A: 0, FI: 0, INC: 0, VAC: 0, PSS: 0, PCS: 0, MAT: 0, DFD: 0, D: 0, DT: 0, INCOMP: 0, BAJ: 0, RET: 0, retMin: 0 };
     for (const { key, ymd } of allDates) {
       const raw = p.days[ymd];
       const clock = dayFromClock(raw && !raw.rest && rule.hours ? { ...raw, sched: rule.hours } : raw);
@@ -332,6 +332,15 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
         const s0 = toM(rule.start) ?? raw.start, e0 = toM(rule.end) ?? raw.end;
         if (raw.in != null && s0 != null) late = Math.max(0, diffMin(raw.in, s0));
         if (raw.out != null && e0 != null && st === 'trabajo') early = Math.max(0, diffMin(e0, raw.out));
+      }
+      // Grace: the first `tol` minutes of a late arrival are forgiven and paid; only the rest is real retardo
+      // (Allan: 20 min late − 15 min grace = 5 min deducted from the shift).
+      let graceMin = 0, retMin = 0;
+      if (P.trackLate && st === 'trabajo' && late > 0) {
+        graceMin = Math.min(late, tol); retMin = Math.max(0, late - tol);
+        clock.hours = r1(clock.hours + graceMin / 60);
+        clock.extra = Math.max(0, r1(clock.hours - (rule.hours || 0))); if (clock.extra < 0.25) clock.extra = 0;
+        hours += graceMin / 60;
       }
       if (st === 'trabajo' || st === 'descanso-trabajado') {
         final = st === 'trabajo' ? 'A' : 'DT';
@@ -356,7 +365,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
       if (P.trackLate && row && (final === 'A' || final === 'INCOMP')) {
         if (schedOff.has(p.turno)) early = 0;
         const bad = late > tol || early > tol;
-        const why = [late > tol ? `entró ${late} min tarde (${clock.in}, turno ${rule.start})` : '', early > tol ? `salió ${early} min antes (${clock.out}, turno ${rule.end})` : ''].filter(Boolean).join(' y ');
+        const why = [late > tol ? `entró ${late} min tarde (${clock.in}, turno ${rule.start}): ${retMin} min de retardo después de los ${tol} de tolerancia` : '', early > tol ? `salió ${early} min antes (${clock.out}, turno ${rule.end})` : ''].filter(Boolean).join(' y ');
         if (bad) { count.RET++; retHit = true; }
         if (bad && clave !== 'RET') f.push(['warn', `El checador marca que ${why} y ${H} no reporta RET.`]);
         if (!bad && clave === 'RET') f.push(['warn', `${H} reporta RET, pero en el checador llegó y salió a tiempo (${span}).`]);
@@ -374,13 +383,15 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
         const h = ov.final === 'A' || ov.final === 'DT' ? (ov.hours != null ? +ov.hours : (st === 'trabajo' || st === 'descanso-trabajado' ? before : (raw && raw.rest ? 0 : rule.hours || 0))) : 0;
         hours += h - before;
         if (retHit) count.RET--;
+        graceMin = 0; retMin = 0;
         final = ov.final; f.length = 0;
         f.push(['info', `Corregido a mano por ${ov.by || 'admin'}: ${ov.final === 'A' ? `asistió, ${h} h` : ov.final === 'DT' ? `trabajó su descanso, ${h} h` : ov.final}${ov.note ? ` (${ov.note})` : ''}.`]);
         manual = { final: ov.final, hours: h, by: ov.by, at: ov.at, note: ov.note || '' };
       }
       if (final && final !== 'RET') count[final] = (count[final] || 0) + 1;
+      count.retMin += retMin;
       for (const [lvl, msg] of f) flags.push({ lvl, day: key, ymd, msg });
-      days.push({ key, ymd, clock: { ...clock, late, early }, sheet: row && onSheet ? { clave, te, uncertain: unc } : null, final, manual, flags: f.map(x => x[0]) });
+      days.push({ key, ymd, clock: { ...clock, late, early, retMin, graceMin }, sheet: row && onSheet ? { clave, te, uncertain: unc } : null, final, manual, flags: f.map(x => x[0]) });
     }
     hours = r1(hours); teSheet = r1(teSheet);
     const teChk = Math.max(0, r1(hours - limit));

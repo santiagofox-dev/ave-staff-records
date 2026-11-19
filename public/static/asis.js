@@ -244,7 +244,7 @@
     const lv = d.flags.includes('bad') ? 'bad' : d.flags.includes('warn') ? 'warn' : '';
     const editable = c.status !== 'sin-dato';
     const tol = RUN.tolMin ?? 15;
-    if (k && (c.late > tol || c.early > tol) && RUN.source === 'excel') k.append(h('br'), [c.late > tol ? `+${c.late} min entrada` : '', c.early > tol ? `-${c.early} min salida` : ''].filter(Boolean).join(' · '));
+    if (k && (c.late > tol || c.early > tol) && RUN.source === 'excel') k.append(h('br'), [c.late > tol ? `RET ${c.retMin} min (${c.late} − ${tol})` : '', c.early > tol ? `salió ${c.early} min antes` : ''].filter(Boolean).join(' · '));
     const man = d.manual ? h('span', { class: 'm' }, `Manual: ${{ A: 'asistió', DT: 'descanso trabajado', D: 'descanso' }[d.manual.final] || d.manual.final}${d.manual.final === 'A' || d.manual.final === 'DT' ? ' ' + num(d.manual.hours) + ' h' : ''}`) : null;
     const td = h('td', { class: `c ${d.manual ? 'man' : lv} ${sh && sh.uncertain ? 'unc' : ''} ${c.status === 'descanso' ? 'rest' : ''} f-${d.final} ${editable ? '' : 'nos'}`, title: p.flags.filter(f => f.day === d.key).map(f => f.msg).join('\n') || null }, k, s, man);
     if (editable) td.addEventListener('click', e => { e.stopPropagation(); editCell(p, d); });
