@@ -112,12 +112,14 @@
         h('td', {}, h('input', { class: 'en', value: t.end || '', placeholder: 'HH:MM', 'aria-label': `Salida ${t.turno}` })),
         h('td', {}, h('input', { class: 'li', type: 'number', min: 20, max: 84, step: 0.5, value: t.limit, 'aria-label': `Límite ${t.turno}` }))))));
     $('#tolRow').hidden = !isExcel(); $('#tolMin').value = S.tolMin;
+    $('#exempt').value = (S.exempt || []).map(x => x.id).join(', ');
+    $('#exemptNames').textContent = (S.exempt || []).length ? 'Se dejan fuera de la revisión: ' + S.exempt.map(x => `${x.id} ${x.name || '(sin nombre)'}`).join(' · ') : '';
   }
   $('#setSave').addEventListener('click', async () => {
     const turnos = {};
     $('#setTable').querySelectorAll('tbody tr').forEach(tr => { turnos[tr.dataset.t] = { start: tr.querySelector('.st').value.trim(), end: tr.querySelector('.en').value.trim(), limit: tr.querySelector('.li').value }; });
     const m = $('#setMsg');
-    try { const r = await api('/api/asis/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ planta: PLANT, turnos, tolMin: isExcel() ? $('#tolMin').value : undefined }) }); S.turnos = r.turns || r.turnos; S.tolMin = r.tolMin; settingsUI(); m.textContent = 'Guardado. Las revisiones se recalculan al abrirlas.'; }
+    try { const r = await api('/api/asis/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ planta: PLANT, turnos, tolMin: isExcel() ? $('#tolMin').value : undefined, exempt: $('#exempt').value.split(/[\s,;]+/).filter(Boolean) }) }); S.turnos = r.turns || r.turnos; S.tolMin = r.tolMin; S.exempt = r.exempt; settingsUI(); m.textContent = 'Guardado. Las revisiones se recalculan al abrirlas.'; }
     catch (e) { m.textContent = e.message; }
   });
 
@@ -210,6 +212,7 @@
     if (!an || !an.results) { $('#mets').replaceChildren(); $('#filters').replaceChildren(); $('#grid').replaceChildren(); $('#extras').replaceChildren(); return; }
     const s = an.summary, X = r.source === 'excel', L = X ? 'incidencias' : 'la hoja';
     if (an.notices && an.notices.length) $('#runFlags').append(...an.notices.map(n => h('div', { class: 'msg warn' }, n.msg)));
+    if (an.exempt && an.exempt.length) $('#runFlags').append(h('div', { class: 'muted small' }, `No usan checador (fuera de la revisión): ${an.exempt.map(x => `${x.id} ${x.name}`).join(' · ')}`));
     if (X && r.incid) $('#runFlags').append(h('div', { class: 'muted small' }, `Incidencias: ${r.incid.file} · hoja ${r.incid.sheet}${r.incid.title ? ' · ' + r.incid.title : ''}`));
     $('#mets').replaceChildren(
       h('div', { class: 'met' }, h('b', {}, s.people), h('span', {}, X ? 'Personas en el checador' : `Personas (${an.turnosRead.join(', ') || 'sin turno'})`)),

@@ -57,6 +57,12 @@ module.exports = function (app, { DATA_DIR }) {
       return { ...t, ...r, checador: ht ? `${ht[0]}–${ht[1]}` : '', saved: !!(st.turnos || {})[t.turno] };
     });
   }
+  function exemptView(pl) {
+    const ro = roster(pl), names = {};
+    for (const p of Object.values(ro.people)) for (const id of p.ids || [p.id]) names[id] = p.name;
+    for (const mon of listDir(pl, 'incidencias').slice(0, 1)) for (const r of incid(pl, mon).rows) if (!names[r.id]) names[r.id] = r.name;
+    return A.exemptFor(pl, settings(pl)).map(id => ({ id, name: names[id] || '' }));
+  }
   app.get('/api/asis/state', (req, res) => {
     const pl = plantOf(req), P = A.PLANTS[pl];
     const ro = roster(pl), people = Object.values(ro.people);
@@ -69,7 +75,7 @@ module.exports = function (app, { DATA_DIR }) {
     const inc = incWeeks.slice(0, 20).map(mon => { const x = incid(pl, mon); return { monday: mon, rows: x.rows.length, file: x.file, sheet: x.sheet, uploadedAt: x.uploadedAt, checador: fs.existsSync(path.join(dir(pl, 'weeks'), mon + '.json')) }; });
     res.json({ plant: { id: pl, name: P.name, source: P.source }, plants: Object.values(A.PLANTS).map(x => ({ id: x.id, name: x.name, source: x.source })),
       hasKey: AI.hasKey(), model: AI.MODEL(), nextMonday: nextMonday(), thisMonday: A.mondayOf(todayCJ()),
-      turnos: turnoTable(pl), tolMin: settings(pl).tolMin ?? 15,
+      turnos: turnoTable(pl), tolMin: settings(pl).tolMin ?? 15, exempt: exemptView(pl),
       roster: { count: people.length, turnos, week: ro.week, updatedAt: ro.updatedAt || null, merged: people.filter(p => (p.ids || []).length > 1).map(p => ({ name: p.name, ids: p.ids })) },
       uploads: (ro.uploads || []).slice(-5).reverse(), weeks, incidencias: inc, runs });
   });
@@ -85,9 +91,10 @@ module.exports = function (app, { DATA_DIR }) {
     }
     st.turnos = turnos;
     if (body.tolMin != null) { const t = +body.tolMin; if (!(t >= 0 && t <= 120)) return res.status(400).json({ error: 'La tolerancia debe estar entre 0 y 120 minutos.' }); st.tolMin = t; st.tolVer = 2; }
+    if (Array.isArray(body.exempt)) st.exempt = [...new Set(body.exempt.map(x => String(x).trim()).filter(x => /^\d{1,10}$/.test(x)))];
     st.updatedAt = new Date().toISOString(); st.by = who(req);
     writeJ(path.join(base(pl), 'settings.json'), st);
-    res.json({ ok: true, turnos: turnoTable(pl), tolMin: st.tolMin });
+    res.json({ ok: true, turnos: turnoTable(pl), tolMin: st.tolMin, exempt: exemptView(pl) });
   });
 
   /* ---------- 1. CHECADOR upload ---------- */

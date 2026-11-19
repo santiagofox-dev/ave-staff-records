@@ -84,6 +84,8 @@
       <p class="muted small">El horario sirve para calcular la jornada de cada día y los retardos; el límite es cuántas horas a la semana se trabajan antes de contar tiempo extra. Si dejas un campo vacío se usa el horario del checador.</p>
       <div class="tablewrap"><table class="hist" id="setTable"></table></div>
       <div class="actions" id="tolRow"><div class="field inline"><label for="tolMin">Tolerancia para retardo / salida anticipada (min)</label><input id="tolMin" type="number" min="0" max="120" step="1"></div></div>
+      <div class="field"><label for="exempt">No usan checador (gerentes): números de empleado separados por coma</label><input id="exempt" placeholder="ej. 116, 172"></div>
+      <div class="muted small" id="exemptNames"></div>
       <div class="actions"><button class="btn primary" id="setSave" type="button">Guardar</button><span id="setMsg" class="small" aria-live="polite"></span></div>
     </details>
   </section>
@@ -129,6 +131,6 @@
 
 <script src="/static/shell.js?v=2"></script>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/asis.js?v=7"></script>
+<script src="/static/asis.js?v=8"></script>
 </body>
 </html>
