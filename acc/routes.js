@@ -157,6 +157,39 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     return books.db.docs.filter(d => d.partnerId === req.query.partner && d.state === 'posted' && TYPES[d.type].side === side && TYPES[d.type].sign > 0 && books.residual(d) > 0.009).map(docRow).sort((a, b) => a.due.localeCompare(b.due));
   }));
   app.post('/api/acc/payments', W(req => books.createPayment(req.body || {}, who(req))));
+  /* Our own proof of payment (transfer receipt, cheque photo): optional, internal only, never shown to suppliers. */
+  const proofUp = multer({ storage: multer.memoryStorage(), limits: { files: 10, fileSize: 25 * 1024 * 1024 } }).array('files', 10);
+  app.post('/api/acc/payments/:id/files', (req, res, next) => {
+    if (!canEdit(req)) return res.status(403).json({ error: 'Tu usuario es de solo consulta.' });
+    proofUp(req, res, err => {
+      if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pasa de 25 MB.' : 'No se pudieron recibir los archivos.' });
+      try {
+        const p = books.payment(req.params.id); if (!p) throw httpErr(404, 'No se encontró el pago.');
+        const ok = /\.(pdf|jpe?g|png|webp|heic|heif|xml)$/i;
+        const files = (req.files || []).map(f => ({ name: Buffer.from(f.originalname, 'latin1').toString('utf8'), buf: f.buffer }));
+        if (!files.length) throw httpErr(400, 'Elige el comprobante (PDF o foto).');
+        const bad = files.find(f => !ok.test(f.name)); if (bad) throw httpErr(400, `"${bad.name}" no es PDF, imagen ni XML.`);
+        p.files = p.files || [];
+        for (const f of files) {
+          const ext = path.extname(f.name).toLowerCase(), stored = require('crypto').randomBytes(10).toString('hex') + ext;
+          fs.writeFileSync(path.join(books.filesDir, stored), f.buf);
+          p.files.push({ name: f.name, stored, kind: ext === '.pdf' ? 'pdf' : ext === '.xml' ? 'xml' : 'imagen', size: f.buf.length, proof: true, by: who(req), at: new Date().toISOString() });
+        }
+        books.log(who(req), 'adjuntó comprobante', 'pagos', p.number, files.map(f => f.name).join(', '));
+        books.save();
+        res.json({ files: p.files });
+      } catch (e) { next(e); }
+    });
+  });
+  app.delete('/api/acc/payments/:id/files/:stored', W(req => {
+    const p = books.payment(req.params.id); if (!p) throw httpErr(404, 'No se encontró el pago.');
+    const i = (p.files || []).findIndex(f => f.stored === path.basename(req.params.stored) && f.proof);
+    if (i < 0) throw httpErr(404, 'No se encontró el comprobante.');
+    const [f] = p.files.splice(i, 1);
+    try { fs.unlinkSync(path.join(books.filesDir, f.stored)); } catch (e) {}
+    books.log(who(req), 'quitó comprobante', 'pagos', p.number, f.name);
+    return { files: p.files };
+  }));
   app.post('/api/acc/payments/:id/cancel', W(req => books.cancelPayment(req.params.id, who(req))));
 
   /* ---------- contacts ---------- */

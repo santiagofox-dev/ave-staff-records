@@ -552,6 +552,7 @@
     const want = new Set(String(q.docs || q.doc || '').split(',').filter(Boolean));
     const amountI = inp({ type: 'number', step: '0.01', min: '0', value: '', onchange: e => { p.amount = r2(+e.target.value || 0); manualAmount = true; info(); } });
     const docsBox = h('div'), sumBox = h('div', { class: 'pay-sum' }), msgBox = h('div');
+    const proofI = inp({ type: 'file', multiple: true, accept: 'application/pdf,image/*,.xml', 'aria-label': 'Comprobante de pago' });
     const selTotal = () => r2(Object.values(alloc).reduce((a, v) => a + (+v || 0), 0));
     const selCount = () => Object.values(alloc).filter(v => +v > 0).length;
     function info() {
@@ -610,12 +611,17 @@
       field('Cuenta', sel(META.banks.map(b => [b.id, b.name]), p.bankId, { onchange: e => { p.bankId = e.target.value; } })),
       field('Forma de pago', sel(Object.entries(FORMAS), p.method, { onchange: e => { p.method = e.target.value; } })),
       field('Referencia', inp({ value: '', placeholder: 'Folio de transferencia, cheque…', onchange: e => { p.ref = e.target.value; } }), 'span2'),
-      field('Notas', inp({ value: '', onchange: e => { p.notes = e.target.value; } }), 'span4'));
+      field('Notas', inp({ value: '', onchange: e => { p.notes = e.target.value; } }), 'span4'),
+      field('Comprobante de pago (opcional, uso interno)', proofI, 'span4'));
     await loadDocs();
     const submit = h('button', { class: 'btn primary', type: 'button', onclick: async () => {
       const allocations = Object.entries(alloc).filter(([, v]) => v > 0).map(([docId, amount]) => ({ docId, amount }));
       if (!allocations.length && !(await confirmDlg('¿Pago sin facturas?', 'No seleccionaste facturas: se registra como anticipo / saldo a favor.', 'Registrar anticipo'))) return;
       const r = await act(() => post('/api/acc/payments', { ...p, allocations }), allocations.length > 1 ? `Pago registrado para ${allocations.length} facturas.` : 'Pago registrado.');
+      if (r && proofI.files.length) {
+        const fd2 = new FormData(); [...proofI.files].forEach(f => fd2.append('files', f, f.name));
+        await act(() => post(`/api/acc/payments/${r.id}/files`, fd2));
+      }
       if (r) go('pago/' + r.id);
     } }, 'Registrar pago');
     return h('div', { class: 'stack' }, h('a', { href: '#/pagos/' + dir, class: 'muted small' }, '← ' + (dir === 'out' ? 'Pagos a proveedores' : 'Cobros a clientes')),
@@ -632,7 +638,20 @@
       phead(p.number, h('span', {}, p.dir === 'out' ? 'Pago a proveedor · ' : 'Cobro a cliente · ', badge(p.state, STATE[p.state])), acts),
       h('section', { class: 'panel' }, h('dl', { class: 'kv' }, h('dt', {}, 'Contacto'), h('dd', {}, r.partner), h('dt', {}, 'Fecha'), h('dd', {}, fd(p.date)), h('dt', {}, 'Monto'), h('dd', {}, money(p.amount)), h('dt', {}, 'Cuenta'), h('dd', {}, r.bank),
         h('dt', {}, 'Forma'), h('dd', {}, FORMAS[p.method] || p.method || '—'), h('dt', {}, 'Referencia'), h('dd', {}, p.ref || '—'), p.uuid ? [h('dt', {}, 'Complemento'), h('dd', { class: 'mono' }, p.uuid)] : null, p.notes ? [h('dt', {}, 'Notas'), h('dd', {}, p.notes)] : null, h('dt', {}, 'Registró'), h('dd', {}, `${p.createdBy} · ${fts(p.createdAt)}`))),
-      (p.files || []).length ? h('section', { class: 'panel' }, h('h2', {}, 'Archivos'), h('div', { class: 'files' }, p.files.map(fl => h('a', { class: 'file', href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener' }, h('b', {}, fl.kind), fl.name)))) : null,
+      (() => {
+        // Our proof of payment: optional, internal. Other files (e.g. the supplier's CFDI de pago) are listed too.
+        const proofs = (p.files || []).filter(f => f.proof), other = (p.files || []).filter(f => !f.proof);
+        const upI = inp({ type: 'file', multiple: true, accept: 'application/pdf,image/*,.xml', hidden: true, onchange: async e => {
+          if (!e.target.files.length) return; const fd2 = new FormData(); [...e.target.files].forEach(f => fd2.append('files', f, f.name));
+          if (await act(() => post(`/api/acc/payments/${p.id}/files`, fd2), 'Comprobante guardado.')) render();
+        } });
+        return h('section', { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('h2', {}, 'Comprobante de pago'), canEdit() ? [upI, h('button', { class: 'btn sm', type: 'button', onclick: () => upI.click() }, proofs.length ? 'Agregar otro' : 'Subir comprobante')] : null),
+          h('p', { class: 'muted small' }, 'Opcional y solo de uso interno: el proveedor no lo ve.'),
+          proofs.length ? h('div', { class: 'files' }, proofs.map(fl => h('span', { class: 'file' }, h('a', { href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener' }, h('b', {}, fl.kind), ' ', fl.name), h('span', { class: 'muted small' }, ` · ${fl.by || ''} ${fl.at ? fts(fl.at) : ''}`),
+            canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', title: 'Quitar', onclick: async () => { if (await confirmDlg('¿Quitar comprobante?', fl.name, 'Quitar', true)) { if (await act(() => api('DELETE', `/api/acc/payments/${p.id}/files/${fl.stored}`), 'Comprobante quitado.')) render(); } } }, 'Quitar') : null))) : h('div', { class: 'muted small' }, 'Sin comprobante.'),
+          other.length ? h('div', { class: 'files' }, other.map(fl => h('a', { class: 'file', href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener' }, h('b', {}, fl.kind), fl.name))) : null);
+      })(),
       h('section', { class: 'panel' }, h('h2', {}, 'Facturas pagadas'), table([{ t: 'Número', f: a => a.doc ? a.doc.number : '—' }, { t: 'Folio', cls: 'mono', f: a => a.doc ? `${a.doc.serie || ''}${a.doc.folio || ''}` : '' }, { t: 'Fecha', f: a => a.doc ? fd(a.doc.date) : '' }, { t: 'Aplicado', k: 'amount', n: 1 }], data.allocations, { onRow: a => a.doc && go('doc/' + a.doc.id), empty: 'Pago sin aplicar a facturas (anticipo).' })),
       h('section', { class: 'panel' }, h('h2', {}, 'Asiento contable'), table([{ t: 'Cuenta', k: 'account', cls: 'mono nowrap' }, { t: 'Nombre', k: 'name' }, { t: 'Concepto', k: 'label' }, { t: 'Cargo', n: 1, f: l => l.debit || '' }, { t: 'Abono', n: 1, f: l => l.credit || '' }], data.journal)));
   });
