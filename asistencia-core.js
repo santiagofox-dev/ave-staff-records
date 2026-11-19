@@ -21,7 +21,7 @@ const PLANTS = {
     // Managers who don't use the checador (Allan, Nov 19 2026): Olivas Jaramillo, Velarde Manuel, Venegas Velarde Mayra, Holguín Omar, Ochoa Yohana
     exempt: ['116', '172', '127', '242', '232 JOHANA JANETH OCHOA BRISEÑO'],
     // Allan, Nov 19 2026
-    defaults: [{ re: /TURNO\s*1\b/i, start: '06:00', end: '15:00', limit: 48 }, { re: /TURNO\s*2\b/i, start: '15:00', end: '23:00', limit: 45 },
+    defaults: [{ re: /TURNO\s*1\b/i, start: '06:00', end: '15:00', limit: 45 }, { re: /TURNO\s*2\b/i, start: '15:00', end: '23:00', limit: 45 },
       { re: /TURNO\s*3\b/i, limit: 45 }, { re: /TURNO\s*4\b/i, limit: 36 }] },
 };
 const toM = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
