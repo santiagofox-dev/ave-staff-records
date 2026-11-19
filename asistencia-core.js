@@ -17,6 +17,7 @@ const PLANTS = {
   monclova: { id: 'monclova', name: 'Monclova', print: 'MONCLOVA', code: 'MVA', source: 'foto', sheetDays: DAYS, trackLate: false,
     // Allan, Nov 19 2026
     defaults: [{ re: /TURNO\s*2/i, start: '15:20', end: '23:30', limit: 45 }, { re: /TURNO\s*1/i, start: '06:00', end: '15:30', limit: 48 }] },
+  'mtc-juarez': { id: 'mtc-juarez', name: 'MTC Juárez', print: 'MTC JUÁREZ', code: 'MTC', source: 'foto', sheetDays: DAYS, trackLate: false, defaults: [] },
   'jabil-chih': { id: 'jabil-chih', name: 'Jabil Chihuahua', print: 'JABIL CHIHUAHUA', code: 'JCH', source: 'excel', sheetDays: DAYS7, trackLate: true,
     // Managers who don't use the checador (Allan, Nov 19 2026): Olivas Jaramillo, Velarde Manuel, Venegas Velarde Mayra, Holguín Omar, Ochoa Yohana
     exempt: ['116', '172', '127', '242', '232 JOHANA JANETH OCHOA BRISEÑO'],

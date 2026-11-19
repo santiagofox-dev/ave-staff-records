@@ -36,7 +36,7 @@ module.exports = function (app, { DATA_DIR }) {
   const todayCJ = () => new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10);
   const nextMonday = () => A.addDays(A.mondayOf(todayCJ()), 7);
   const MES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-  const fileTag = (pl, mon) => { const e = A.addDays(mon, 6); return `${A.PLANTS[pl].name.replace(/\s+/g, '_')}_${+mon.slice(8)}-${+e.slice(8)}_${MES[+e.slice(5, 7) - 1]}_${e.slice(0, 4)}`; };
+  const fileTag = (pl, mon) => { const e = A.addDays(mon, 6); return `${A.PLANTS[pl].name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_')}_${+mon.slice(8)}-${+e.slice(8)}_${MES[+e.slice(5, 7) - 1]}_${e.slice(0, 4)}`; };
 
   app.get('/asistencia', (req, res) => res.sendFile(path.join(__dirname, 'public', 'asistencia.html')));
 
@@ -149,6 +149,8 @@ module.exports = function (app, { DATA_DIR }) {
     const ro = roster(pl), people = Object.values(ro.people);
     if (!people.length) return res.status(400).send('Primero sube el Excel del checador para tener la lista del personal.');
     const sheets = A.layoutSheets(people, mon, { plant: P.print, code: P.code });
+    const st = settings(pl), hor = {}; for (const p of people) if (p.horario && !hor[p.turno]) hor[p.turno] = p.horario;
+    for (const sh of sheets) sh.shift = A.ruleFor(pl, st, sh.turno, hor[sh.turno]);
     writeJ(path.join(dir(pl, 'prints'), mon + '.json'), { monday: mon, at: new Date().toISOString(), by: who(req), sheets });
     const fname = `Lista_Asistencia_${fileTag(pl, mon)}.pdf`;
     res.set('Content-Type', 'application/pdf');
