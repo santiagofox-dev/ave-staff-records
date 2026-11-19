@@ -46,7 +46,7 @@ module.exports = function (app, { DATA_DIR }) {
       const w = week(mon); return { monday: mon, people: Object.keys(w.people).length, uploadedAt: w.uploadedAt, by: w.by, file: w.file, printed: fs.existsSync(path.join(PRINTS, mon + '.json')), runs: runs.filter(r => r.monday === mon).length };
     });
     res.json({ hasKey: AI.hasKey(), model: AI.MODEL(), plant: plantName, nextMonday: nextMonday(), thisMonday: A.mondayOf(todayCJ()),
-      limits: A.LIMITS.map(l => ({ turno: l.label, limit: l.limit })),
+      limits: A.LIMITS.map(l => { const sh = A.SHIFTS.find(x => x.label === l.label); return { turno: l.label, limit: l.limit, start: sh && sh.start, end: sh && sh.end }; }),
       roster: { count: people.length, turnos, week: ro.week, updatedAt: ro.updatedAt || null, merged: people.filter(p => (p.ids || []).length > 1).map(p => ({ name: p.name, ids: p.ids })) },
       uploads: (ro.uploads || []).slice(-5).reverse(), weeks, runs });
   });

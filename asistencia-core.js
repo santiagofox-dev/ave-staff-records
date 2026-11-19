@@ -9,6 +9,10 @@ const DAY_LABEL = { lun: 'Lun', mar: 'Mar', mie: 'Mié', jue: 'Jue', vie: 'Vie',
 const CODES = ['FI', 'INC', 'VAC', 'PSS'];
 /* Weekly hours before time counts as overtime, by turno (Allan, Nov 2026) */
 const LIMITS = [{ re: /TURNO\s*2/i, limit: 45, label: 'Turno 2' }, { re: /TURNO\s*1/i, limit: 48, label: 'Turno 1' }];
+/* Shift times (Allan, Nov 19 2026). They override the CHECADOR's schedule for daily hours. */
+const SHIFTS = [{ re: /TURNO\s*2/i, label: 'Turno 2', start: '15:20', end: '23:30' }, { re: /TURNO\s*1/i, label: 'Turno 1', start: '06:00', end: '15:30' }]
+  .map(x => { const [a, b] = [x.start, x.end].map(t => +t.slice(0, 2) * 60 + +t.slice(3)); return { ...x, hours: Math.round(((b - a + (b <= a ? 1440 : 0)) / 60) * 100) / 100 }; });
+const shiftFor = turno => SHIFTS.find(x => x.re.test(turno || '')) || null;
 const limitFor = turno => (LIMITS.find(l => l.re.test(turno || '')) || { limit: 48 }).limit;
 
 const pad = n => String(n).padStart(2, '0');
@@ -205,7 +209,8 @@ function compare(sheetRows, week, monday, { turnosRead } = {}) {
     const count = { A: 0, FI: 0, INC: 0, VAC: 0, PSS: 0, D: 0, DT: 0, INCOMP: 0 };
     const allDates = [...dates, { key: 'dom', ymd: addDays(monday, 6) }];
     for (const { key, ymd } of allDates) {
-      const clock = dayFromClock(p.days[ymd]);
+      const raw = p.days[ymd], shift = shiftFor(p.turno);
+      const clock = dayFromClock(raw && shift && !raw.rest ? { ...raw, sched: shift.hours } : raw);
       const sd = key !== 'dom' && row && row.days ? row.days[key] || {} : {};
       const clave = normClave(sd.clave), te = numTE(sd.te);
       const unc = !!(row && (row.uncertain || []).includes(key));
@@ -266,4 +271,4 @@ function compare(sheetRows, week, monday, { turnosRead } = {}) {
 }
 
 module.exports = { readChecador, mergeDuplicates, dayFromClock, splitWeeks, restPattern, layoutSheets, compare, normClave, nameScore,
-  mondayOf, addDays, weekDates, dowKey, ddmm, DAYS, DAY_LABEL, CODES, LIMITS, limitFor, turnoShort, hhmm };
+  mondayOf, addDays, weekDates, dowKey, ddmm, DAYS, DAY_LABEL, CODES, LIMITS, limitFor, SHIFTS, shiftFor, turnoShort, hhmm };

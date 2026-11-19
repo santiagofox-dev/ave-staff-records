@@ -30,7 +30,7 @@ function page(doc, s, W, H, M) {
   const end = A.addDays(s.monday, 6);
   if (fs.existsSync(LOGO)) doc.image(LOGO, M + 8, M + 6, { width: 96 });
   doc.fillColor(C.ink).font('Helvetica-Bold').fontSize(17).text('LISTA DE ASISTENCIA', M + 120, M + 4, { lineBreak: false });
-  doc.font('Helvetica').fontSize(10.5).text(`Planta: ${s.plant}   ·   Turno: ${s.turno}   ·   Semana del ${A.ddmm(s.monday)} al ${A.ddmm(end)}/${end.slice(0, 4)}`, M + 120, M + 25, { lineBreak: false });
+  doc.font('Helvetica').fontSize(10).text(`Planta: ${s.plant}  ·  Turno: ${s.turno}${A.shiftFor(s.turno) ? ` (${A.shiftFor(s.turno).start} a ${A.shiftFor(s.turno).end})` : ''}  ·  Semana del ${A.ddmm(s.monday)} al ${A.ddmm(end)}/${end.slice(0, 4)}`, M + 120, M + 25, { lineBreak: false });
   doc.fillColor(C.muted).fontSize(8.5).text('Clave vacía = asistió normal.  En TE escribe solo el número de horas extra (ej. 2 o 1.5).  Días sombreados = descanso según el checador (si trabajó, anota TE).', M + 120, M + 40, { lineBreak: false });
   // sheet code box (read by the system to know plant, turno, week and page)
   const cw = 150, cx = W - M - cw;

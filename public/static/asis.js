@@ -40,7 +40,7 @@
       ...Object.entries(r.turnos).sort().map(([t, n]) => h('div', {}, h('span', { class: 'muted' }, t), h('b', {}, n))),
       h('div', {}, h('span', {}, 'Último checador'), h('b', {}, r.week ? `semana ${weekTxt(r.week)}` : 'sin cargar')),
       r.merged.length ? h('div', {}, h('span', {}, 'IDs combinados (misma persona)'), h('b', {}, r.merged.map(m => m.ids.join(' = ')).join(', '))) : null);
-    $('#limits').textContent = 'Tiempo extra semanal a partir de: ' + S.limits.map(l => `${l.turno} ${l.limit} h`).join(' · ');
+    $('#limits').textContent = S.limits.slice().reverse().map(l => `${l.turno}: ${l.start || ''}–${l.end || ''}, tiempo extra después de ${l.limit} h/semana`).join(' · ');
     if (!$('#printWeek').value) $('#printWeek').value = S.nextMonday;
     if (!$('#revWeek').value) $('#revWeek').value = (S.weeks[0] && S.weeks[0].monday) || S.thisMonday;
     printLinks(); revLabel(); history();
