@@ -61,7 +61,7 @@ module.exports = function (app, { DATA_DIR }) {
     const ro = roster(pl), names = {};
     for (const p of Object.values(ro.people)) for (const id of p.ids || [p.id]) names[id] = p.name;
     for (const mon of listDir(pl, 'incidencias').slice(0, 1)) for (const r of incid(pl, mon).rows) if (!names[r.id]) names[r.id] = r.name;
-    return A.exemptFor(pl, settings(pl)).map(id => ({ id, name: names[id] || '' }));
+    return A.exemptFor(pl, settings(pl)).map(A.parseExempt).filter(Boolean).map(e => ({ id: e.id, name: e.name || names[e.id] || '', named: !!e.name }));
   }
   app.get('/api/asis/state', (req, res) => {
     const pl = plantOf(req), P = A.PLANTS[pl];
@@ -91,7 +91,7 @@ module.exports = function (app, { DATA_DIR }) {
     }
     st.turnos = turnos;
     if (body.tolMin != null) { const t = +body.tolMin; if (!(t >= 0 && t <= 120)) return res.status(400).json({ error: 'La tolerancia debe estar entre 0 y 120 minutos.' }); st.tolMin = t; st.tolVer = 2; }
-    if (Array.isArray(body.exempt)) st.exempt = [...new Set(body.exempt.map(x => String(x).trim()).filter(x => /^\d{1,10}$/.test(x)))];
+    if (Array.isArray(body.exempt)) st.exempt = [...new Set(body.exempt.map(x => String(x).replace(/\s+/g, ' ').trim().slice(0, 80)).filter(x => /^\d{1,10}( [^\d,;]+)?$/.test(x)))];
     st.updatedAt = new Date().toISOString(); st.by = who(req);
     writeJ(path.join(base(pl), 'settings.json'), st);
     res.json({ ok: true, turnos: turnoTable(pl), tolMin: st.tolMin, exempt: exemptView(pl) });

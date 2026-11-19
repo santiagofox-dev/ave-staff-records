@@ -19,7 +19,7 @@ const PLANTS = {
     defaults: [{ re: /TURNO\s*2/i, start: '15:20', end: '23:30', limit: 45 }, { re: /TURNO\s*1/i, start: '06:00', end: '15:30', limit: 48 }] },
   'jabil-chih': { id: 'jabil-chih', name: 'Jabil Chihuahua', print: 'JABIL CHIHUAHUA', code: 'JCH', source: 'excel', sheetDays: DAYS7, trackLate: true,
     // Managers who don't use the checador (Allan, Nov 19 2026): Olivas Jaramillo, Velarde Manuel, Venegas Velarde Mayra, Holguín Omar, Ochoa Yohana
-    exempt: ['116', '172', '127', '242', '232'],
+    exempt: ['116', '172', '127', '242', '232 JOHANA JANETH OCHOA BRISEÑO'],
     // Allan, Nov 19 2026
     defaults: [{ re: /TURNO\s*1\b/i, start: '06:00', end: '15:00', limit: 48 }, { re: /TURNO\s*2\b/i, start: '15:00', end: '23:00', limit: 45 },
       { re: /TURNO\s*3\b/i, limit: 45 }, { re: /TURNO\s*4\b/i, limit: 36 }] },
@@ -34,7 +34,9 @@ function legalLimit(start, end) {
 }
 const horarioTimes = h => { const m = /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/.exec(h || ''); return m ? [m[1].padStart(5, '0'), m[2].padStart(5, '0')] : null; };
 /** IDs of people who don't use the checador (managers): saved list wins over the plant default. */
+// Each entry is "ID" or "ID NAME"; with a name, only that person under that ID is exempt (two people can share an ID across files).
 const exemptFor = (plant, settings) => (settings && Array.isArray(settings.exempt) ? settings.exempt : (PLANTS[plant] || {}).exempt || []).map(x => String(x).trim()).filter(Boolean);
+const parseExempt = e => { const m = /^0*(\d+)\s*(.*)$/.exec(String(e).trim()); return m ? { id: m[1], name: m[2].trim().toUpperCase() } : null; };
 /** Rules for one turno: saved settings win, then the plant defaults, then the CHECADOR's own schedule. */
 function ruleFor(plant, settings, turno, horario) {
   const P = PLANTS[plant] || PLANTS.monclova;
@@ -262,11 +264,12 @@ const diffMin = (a, b) => { let d = a - b; if (d > 720) d -= 1440; if (d < -720)
 function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', settings = null, sheetLabel = 'la hoja' } = {}) {
   const P = PLANTS[plant] || PLANTS.monclova, H = sheetLabel;
   const tol = settings && Number.isFinite(+settings.tolMin) ? +settings.tolMin : 15;
-  const exemptIds = new Set(exemptFor(plant, settings));
-  const isEx = x => (x.ids || [x.id]).some(id => exemptIds.has(String(id).replace(/^0+(?=\d)/, '')));
+  const exList = exemptFor(plant, settings).map(parseExempt).filter(Boolean);
+  const exMatch = (id, name) => { const k = String(id || '').replace(/^0+(?=\d)/, ''); return exList.some(e => e.id === k && (!e.name || nameScore(e.name, name || '') >= 0.6)); };
+  const isEx = x => (x.ids || [x.id]).some(id => exMatch(id, x.name));
   const exemptList = [];
   const people = Object.values(week || {}).filter(p => { if (isEx(p)) { exemptList.push({ id: p.id, name: p.name, source: 'checador' }); return false; } return true; });
-  sheetRows = sheetRows.filter(r => { if (r.id && exemptIds.has(String(r.id).replace(/^0+(?=\d)/, ''))) { if (!exemptList.some(x => x.id === r.id)) exemptList.push({ id: r.id, name: r.name, source: 'hoja' }); return false; } return true; });
+  sheetRows = sheetRows.filter(r => { if (r.id && exMatch(r.id, r.name)) { if (!exemptList.some(x => x.id === r.id)) exemptList.push({ id: r.id, name: r.name, source: 'hoja' }); return false; } return true; });
   const byId = {};
   for (const p of people) for (const id of p.ids || [p.id]) byId[String(id)] = p;
   const used = new Map();
@@ -388,5 +391,5 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
   return { results, extras, summary, notices, exempt: exemptList };
 }
 
-module.exports = { exemptFor, readChecador, readIncidencias, mergeDuplicates, dayFromClock, splitWeeks, restPattern, layoutSheets, compare, normClave, nameScore, ruleFor, legalLimit, horarioTimes,
+module.exports = { exemptFor, parseExempt, readChecador, readIncidencias, mergeDuplicates, dayFromClock, splitWeeks, restPattern, layoutSheets, compare, normClave, nameScore, ruleFor, legalLimit, horarioTimes,
   mondayOf, addDays, weekDates, dowKey, ddmm, DAYS, DAYS7, DAY_LABEL, CODES, CODE_LABEL, JUSTIFIED, PLANTS, LIMITS, limitFor, SHIFTS, shiftFor, turnoShort, hhmm };
