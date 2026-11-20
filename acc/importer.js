@@ -197,9 +197,10 @@ async function importFiles(books, files, user, pdf, opts = {}) {
       let partner = opts.vendor || books.findPartnerByRfc(other.rfc, other.name) || books.claimByName(other.rfc, other.name);
       if (!partner) partner = books.upsertPartner({ rfc: other.rfc, name: other.name || other.rfc, supplier: incoming, customer: !incoming, terms: 30, regimen: other.regimen || '' }, user);
       const type = incoming ? (printed.tipo === 'E' ? 'in_refund' : 'in_invoice') : (printed.tipo === 'E' ? 'out_refund' : 'out_invoice');
+      if (printed.currency !== 'MXN') printed.notes.push(printed.rate > 1 ? `Factura en ${printed.currency}, tipo de cambio ${printed.rate} (leído del PDF).` : `Factura en ${printed.currency} sin tipo de cambio legible: captúralo.`);
       const warnings = [printed.ok ? `Leído del PDF (no venía el XML). Los importes cuadran con el total impreso${listed ? ' y con el Excel del SAT' : ''}; sube el XML cuando lo tengas para confirmarlo.` : 'Leído del PDF (no venía el XML) con diferencias: revisa los conceptos y el IVA contra el PDF adjunto.', ...printed.notes];
       const d = books.newDoc(type, {
-        partnerId: partner.id, date: printed.date || undefined, currency: printed.currency, rate: 1, uuid: printed.uuid, serie: printed.serie, folio: printed.folio,
+        partnerId: partner.id, date: printed.date || undefined, currency: printed.currency, rate: printed.currency !== 'MXN' ? (printed.rate || 1) : 1, uuid: printed.uuid, serie: printed.serie, folio: printed.folio,
         metodoPago: printed.metodoPago, formaPago: printed.formaPago, source: 'pdfcfdi', warnings,
         lines: printed.lines.map(l => ({ ...l, account: incoming ? (partner.account || books.A.expense) : books.A.sales })),
         cfdi: { version: '4.0', uso: printed.receptor.uso, emisor: printed.emisor, receptor: printed.receptor, fechaTimbrado: '' },

@@ -235,7 +235,7 @@ function parsePrinted(text, companyRfc) {
   if (total != null && Math.abs(calc - total) > 0.05) notes.push(`Los importes leídos dan ${calc.toFixed(2)} y el total dice ${total.toFixed(2)}.`);
   return {
     uuid, tipo, serie: (t.match(/Serie:?\s+([A-Z0-9]+)/i) || [])[1] || '', folio: (t.match(/Folio:?\s+([A-Z0-9-]+)/i) || [])[1] || '',
-    date: printedDate(t), currency: /D[oó]lar|USD/i.test((t.match(/Moneda:?\s+([^\n]+?)(\s{3,}|$)/m) || [])[1] || '') ? 'USD' : 'MXN', rate: 1,
+    date: printedDate(t), currency: /D[oó]lar|USD/i.test((t.match(/Moneda:?\s+([^\n]+?)(\s{3,}|$)/m) || [])[1] || '') ? 'USD' : 'MXN', rate: (() => { const m = /Tipo\s+de\s+Cambio:?\s*\$?\s*([\d,]+\.?\d*)/i.exec(t); const v = m ? +m[1].replace(/,/g, '') : 0; return v > 1 && v < 100 ? v : 1; })(),
     metodoPago: (t.match(/\b(PUE|PPD)\b/) || [])[1] || '', formaPago: (t.match(/Forma de Pago:?\s+(\d{2})/i) || [])[1] || '',
     emisor: emisor || { rfc: '', name: '', regimen: '' }, receptor: { rfc: recRfc, name: '', uso: (t.match(/Uso CFDI:?\s+([A-Z]\d{2})/i) || [])[1] || '' },
     lines, subtotal, total: total ?? calc, ok, notes, related: [],
