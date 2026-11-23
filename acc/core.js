@@ -164,7 +164,8 @@ class Books {
     if (data.account && !this.account(data.account)) throw httpErr(400, 'La cuenta contable por defecto no existe.');
     const known = new Set(this.plantNames());
     const plants = Array.isArray(data.plants) ? [...new Set(data.plants.map(String))].filter(x => known.has(x)) : (p ? p.plants || [] : []);
-    const fields = { plants, rfc, name: String(data.name).trim(), supplier: !!data.supplier, customer: !!data.customer, terms: Math.max(0, Math.min(365, parseInt(data.terms, 10) || 0)), account: data.account || null, email: data.email || '', phone: data.phone || '', regimen: data.regimen || '', cp: data.cp || '', notes: data.notes || '' };
+    const fields = { plants, rfc, name: String(data.name).trim(), supplier: !!data.supplier, customer: !!data.customer, terms: Math.max(0, Math.min(365, parseInt(data.terms, 10) || 0)), account: data.account || null, email: data.email || '', phone: data.phone || '', regimen: data.regimen || '', cp: data.cp || '', notes: data.notes || '',
+      budgetCat: data.budgetCat !== undefined ? (data.budgetCat || null) : (p ? p.budgetCat || null : null) };
     if (p) { const termsChanged = p.terms !== fields.terms; Object.assign(p, fields); this.log(user, 'editó', 'contacto', p.id, p.name); if (termsChanged) this.recomputeDue(p.id, user); }
     else { p = { id: uid(), created: new Date().toISOString(), ...fields }; this.db.partners.push(p); this.log(user, 'creó', 'contacto', p.id, p.name); }
     return p;

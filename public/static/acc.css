@@ -196,3 +196,23 @@ body.acc.has-bar .shell{min-height:calc(100vh - 62px)}
 .plantcard ul.pv li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plantcard .n{font-variant-numeric:tabular-nums}
 @media (max-width:760px){.plantpick{grid-template-columns:1fr 1fr}}
+.budgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.budt td:first-child{min-width:220px}
+.budhint{margin-bottom:6px}
+.budcard .ph{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.budcard .ph b{font-family:var(--f-display);font-size:18px}
+.budcard.over{border-color:var(--bad)}
+.pbar.over i{background:var(--bad)}
+.budt td.barcell{min-width:110px}
+.budt td.barcell .pbar{display:inline-block;width:70px;vertical-align:middle;margin-right:6px}
+.budt tr.overrow td{background:var(--bad-bg)}
+.budt tr.warnrow td{background:var(--warn-bg)}
+.budt tr.det td{background:var(--sunk)}
+.neg{color:var(--bad)!important;font-weight:700}
+.budlist{margin:0;padding-left:18px;font-size:13px;display:flex;flex-direction:column;gap:2px}
+.budin{width:120px;text-align:right}
+.wklabel{font-family:var(--f-display);font-size:16px}
+@media (max-width:1100px){.budgrid{grid-template-columns:minmax(0,1fr)}}
+.budcard .pbar,.budt .pbar{display:block;height:7px;background:var(--sunk);border-radius:99px;overflow:hidden;margin:6px 0}
+.budcard .pbar i,.budt .pbar i{display:block;height:100%;background:var(--ok);border-radius:99px}
+.budcard .pbar.over i,.budt .pbar.over i{background:var(--bad)}

@@ -552,6 +552,15 @@
     const want = new Set(String(q.docs || q.doc || '').split(',').filter(Boolean));
     const amountI = inp({ type: 'number', step: '0.01', min: '0', value: '', onchange: e => { p.amount = r2(+e.target.value || 0); manualAmount = true; info(); } });
     const docsBox = h('div'), sumBox = h('div', { class: 'pay-sum' }), msgBox = h('div');
+    const budBox = h('div', { class: 'budhint' });
+    async function budHint() {
+      clear(budBox); if (dir !== 'out' || !p.partnerId) return;
+      const b = await get('/api/acc/budget/available?' + qs({ partner: p.partnerId, date: p.date || today() })).catch(() => null);
+      if (!b) return;
+      if (b.cat === 'sin') { add(budBox, [h('div', { class: 'msg' }, 'Este proveedor no tiene concepto de presupuesto: su pago contará como "Sin categoría". ', h('a', { href: '#/presupuesto' }, 'Ver presupuesto'))]); return; }
+      if (!b.sites.length) return;
+      add(budBox, [h('div', { class: 'msg info' }, `Presupuesto de la semana (${b.catLabel}): `, b.sites.map((x, i) => [i ? ' · ' : '', h('b', { class: x.available < 0 ? 'neg' : '' }, `${x.name}: ${money(x.available)} disponibles`), ` de ${money(x.budget)}`]), ' ', h('a', { href: '#/presupuesto' }, 'Ver'))]);
+    }
     const proofI = inp({ type: 'file', multiple: true, accept: 'application/pdf,image/*,.xml', 'aria-label': 'Comprobante de pago' });
     const selTotal = () => r2(Object.values(alloc).reduce((a, v) => a + (+v || 0), 0));
     const selCount = () => Object.values(alloc).filter(v => +v > 0).length;
@@ -589,6 +598,7 @@
       for (const d of open) if (want.has(d.id)) alloc[d.id] = d.residual;
       want.clear(); manualAmount = false;
       clear(docsBox);
+      budHint();
       if (!p.partnerId) { add(docsBox, [h('div', { class: 'empty2' }, `Elige el ${dir === 'out' ? 'proveedor' : 'cliente'} para ver sus facturas sin pagar.`)]); quick.hidden = true; info(); return; }
       quick.hidden = !open.length;
       const allBox = inp({ type: 'checkbox', 'data-all': '1', 'aria-label': 'Seleccionar todas', onchange: e => setSel(() => e.target.checked) });
@@ -628,7 +638,7 @@
       phead(dir === 'out' ? 'Registrar pago' : 'Registrar cobro', 'Junta varias facturas del mismo contacto en un solo pago. Si recibiste el complemento de pago (CFDI tipo P), mejor impórtalo: se registra y aplica solo.', [submit]),
       h('section', { class: 'panel' }, form),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', {}, 'Facturas sin pagar')), quick, docsBox),
-      h('section', { class: 'panel pay-bar' }, sumBox, msgBox));
+      h('section', { class: 'panel pay-bar' }, budBox, sumBox, msgBox));
   });
 
   route(/^pago\/([a-f0-9]+)$/, async m => {
@@ -775,6 +785,83 @@
     return node;
   });
 
+  /* ---------- presupuesto semanal por sucursal ---------- */
+  const BUD_CATS = [['comida', 'Proveedores comida'], ['refrescos', 'Proveedores refrescos'], ['otros', 'Proveedores otros'], ['credito', 'Proveedores a crédito'], ['cxp', 'Cuentas por pagar anteriores'],
+    ['nomina', 'Nómina'], ['impuestos', 'Impuestos / IVA / IMSS'], ['ahorro', 'Ahorro'], ['aguinaldo', 'Aguinaldo'], ['intereses', 'Intereses / préstamo bancario'], ['renta', 'Renta'],
+    ['servicios', 'Servicios (luz, agua, internet)'], ['gas', 'Gas'], ['remodelacion', 'Remodelación'], ['equipo', 'Equipo']];
+  const budState = { edit: false, open: new Set() };
+  const wkAdd = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const fdm = d => { const M = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']; return `${+d.slice(8)} ${M[+d.slice(5, 7) - 1]}`; };
+  route(/^presupuesto$/, async (m, q) => {
+    const r = await get('/api/acc/budget?' + qs({ week: q.week || today() }));
+    const wk = r.week;
+    const bar = (pct, over) => { const b = h('div', { class: 'pbar' + (over ? ' over' : '') }, h('i', {})); b.firstChild.style.width = Math.min(100, pct || 0) + '%'; return b; };
+    const editAmts = {};
+    const siteCard = st => {
+      const t = st.totals, over = t.budget && t.spent > t.budget;
+      const rows = budState.edit && !['otras', 'sin'].includes(st.id)
+        ? BUD_CATS.map(([k, label]) => { const cur = (st.rows.find(x => x.cat === k) || {}).budget || 0; (editAmts[st.id] = editAmts[st.id] || {})[k] = cur;
+          return h('tr', {}, h('td', {}, label), h('td', { class: 'n' }, inp({ type: 'number', min: 0, step: 100, value: cur || '', class: 'budin', 'aria-label': `${st.name} ${label}`, onchange: e => { editAmts[st.id][k] = e.target.value; } })), h('td', {}), h('td', {}), h('td', {}), h('td', {})); })
+        : st.rows.flatMap(row => {
+          const o = row.budget ? row.spent > row.budget : false, key = st.id + '|' + row.cat, open = budState.open.has(key);
+          const tr = h('tr', { class: 'click' + (o ? ' overrow' : '') + (row.cat === 'sin' ? ' warnrow' : '') },
+            h('td', {}, row.label, row.manual ? h('span', { class: 'muted small' }, ` · ${money(row.manual)} a mano`) : null),
+            h('td', { class: 'n' }, row.budget ? money(row.budget) : '—'), h('td', { class: 'n' }, money(row.spent)),
+            h('td', { class: 'n' + (row.available < 0 ? ' neg' : '') }, row.budget ? money(row.available) : ''),
+            h('td', { class: 'barcell' }, row.budget ? [bar(row.pct, o), h('span', { class: 'small' + (o ? ' neg' : ' muted') }, row.pct + '%')] : null),
+            h('td', { class: 'n muted' }, row.invoiced ? money(row.invoiced) : ''));
+          tr.addEventListener('click', () => { open ? budState.open.delete(key) : budState.open.add(key); render(); });
+          const det = open ? h('tr', { class: 'det' }, h('td', { colspan: 6 }, row.items.length ? h('ul', { class: 'budlist' }, row.items.map(it => h('li', {}, h('a', { href: '#/pago/' + it.id }, it.number), ` · ${fdm(it.date)} · ${it.partner}${it.doc ? ' · ' + it.doc : ''} `, h('b', {}, money(it.amount))))) : h('span', { class: 'muted small' }, row.manual ? 'Solo hay gastos capturados a mano (abajo).' : 'Sin pagos esta semana.'))) : null;
+          return [tr, det];
+        });
+      return h('section', { class: 'panel budcard' + (over ? ' over' : '') },
+        h('div', { class: 'ph' }, h('div', {}, h('b', {}, st.name), st.plants.length ? h('span', { class: 'muted small' }, ' · ' + st.plants.join(', ')) : null),
+          t.budget ? h('div', { class: 'small' }, h('b', { class: over ? 'neg' : '' }, money(t.spent)), ` de ${money(t.budget)} · disponible `, h('b', { class: t.available < 0 ? 'neg' : '' }, money(t.available))) : h('div', { class: 'small' }, `Pagado ${money(t.spent)}`)),
+        t.budget ? bar(t.pct, over) : null,
+        h('div', { class: 'tw' }, h('table', { class: 't budt' }, h('thead', {}, h('tr', {}, h('th', {}, 'Concepto'), h('th', { class: 'n' }, 'Presupuesto'), h('th', { class: 'n' }, 'Pagado'), h('th', { class: 'n' }, 'Disponible'), h('th', {}, ''), h('th', { class: 'n' }, 'Facturas cargadas'))),
+          h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colspan: 6, class: 'empty2' }, 'Sin presupuesto ni pagos esta semana.'))))));
+    };
+    const catSel = (val, attrs) => sel([['', '— Elegir concepto —'], ...BUD_CATS], val || '', attrs);
+    const addSpend = async () => {
+      const v = { date: today() >= wk && today() <= r.end ? today() : wk, site: r.siteList[0].id, cat: 'nomina', amount: '', note: '' };
+      const body = h('div', { class: 'form' },
+        field('Fecha', inp({ type: 'date', value: v.date, onchange: e => { v.date = e.target.value; } })),
+        field('Sucursal', sel(r.siteList.map(x => [x.id, x.name]), v.site, { onchange: e => { v.site = e.target.value; } })),
+        field('Concepto', sel(BUD_CATS, v.cat, { onchange: e => { v.cat = e.target.value; } })),
+        field('Monto', inp({ type: 'number', min: 0, step: 0.01, onchange: e => { v.amount = e.target.value; } })),
+        field('Nota', inp({ placeholder: 'ej. nómina semana 47', onchange: e => { v.note = e.target.value; } }), 'span4'));
+      if (await dialog('Agregar gasto al presupuesto', body, [{ label: 'Cancelar' }, { label: 'Agregar', primary: true, run: () => post('/api/acc/budget/spend', v) }])) render();
+    };
+    const tools = canEdit() ? [
+      budState.edit ? h('button', { class: 'btn primary', type: 'button', onclick: async () => { if (await act(() => put('/api/acc/budget', { week: wk, amounts: editAmts }), 'Presupuesto guardado para la semana del ' + fdm(wk) + '.')) { budState.edit = false; render(); } } }, 'Guardar presupuesto') : null,
+      h('button', { class: 'btn', type: 'button', onclick: () => { budState.edit = !budState.edit; render(); } }, budState.edit ? 'Cancelar' : 'Editar presupuesto'),
+      budState.edit ? null : h('button', { class: 'btn', type: 'button', onclick: addSpend }, 'Agregar gasto (nómina, IMSS…)')] : null;
+    const T = r.totals;
+    return h('div', { class: 'stack' },
+      phead('Presupuesto semanal', 'Tope de gasto por sucursal. Cada pago a proveedor cuenta en la sucursal de la planta de la factura y en el concepto del proveedor; nómina, IMSS y otros se capturan a mano. "Facturas cargadas" es lo facturado en la semana, todavía sin pagar o ya pagado.', tools),
+      h('div', { class: 'filters' },
+        h('button', { class: 'btn sm', type: 'button', onclick: () => go('presupuesto', { week: wkAdd(wk, -7) }) }, '← Semana anterior'),
+        h('b', { class: 'wklabel' }, `Semana del ${fdm(wk)} al ${fdm(r.end)} ${r.end.slice(0, 4)}`),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => go('presupuesto', { week: wkAdd(wk, 7) }) }, 'Semana siguiente →'),
+        inp({ type: 'date', value: wk, 'aria-label': 'Ir a la semana', onchange: e => go('presupuesto', { week: e.target.value }) })),
+      r.budgetFrom !== wk ? h('div', { class: 'muted small' }, r.budgetFrom ? `Esta semana usa el presupuesto de la semana del ${fdm(r.budgetFrom)}. Si lo editas, el cambio aplica desde esta semana.` : 'Presupuesto base (la hoja de Vero). Si lo editas, el cambio aplica desde esta semana.') : null,
+      h('div', { class: 'kpis' },
+        h('div', { class: 'kpi' }, h('span', {}, 'Presupuesto de la semana'), h('b', {}, money(T.budget))),
+        h('div', { class: 'kpi' }, h('span', {}, 'Pagado'), h('b', { class: T.spent > T.budget ? 'neg' : '' }, money(T.spent)), h('small', {}, T.budget ? Math.round(T.spent / T.budget * 100) + '% del presupuesto' : '')),
+        h('div', { class: 'kpi' }, h('span', {}, 'Disponible'), h('b', { class: T.available < 0 ? 'neg' : '' }, money(T.available))),
+        h('div', { class: 'kpi' }, h('span', {}, 'Facturas cargadas'), h('b', {}, money(T.invoiced)), h('small', {}, 'facturas con fecha de esta semana'))),
+      r.uncategorized.length ? h('section', { class: 'panel' }, h('h2', {}, `Proveedores sin concepto (${r.uncategorized.length})`),
+        h('p', { class: 'muted small' }, 'Sus pagos aparecen como "Sin categoría". Elige el concepto una vez y queda guardado en el proveedor.'),
+        h('div', { class: 'tw' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, h('th', {}, 'Proveedor'), h('th', { class: 'n' }, 'Pagado'), h('th', { class: 'n' }, 'Facturado'), h('th', {}, 'Concepto'))),
+          h('tbody', {}, r.uncategorized.map(u => h('tr', {}, h('td', {}, u.name), h('td', { class: 'n' }, money(u.paid)), h('td', { class: 'n' }, money(u.invoiced)),
+            h('td', {}, canEdit() ? catSel(u.guess || '', { onchange: async e => { if (!e.target.value) return; if (await act(() => put(`/api/acc/partners/${u.partnerId}/budget-cat`, { cat: e.target.value }), 'Guardado.')) render(); } }) : '', u.guess ? h('span', { class: 'muted small' }, ' sugerido') : null))))))) : null,
+      h('div', { class: 'budgrid' }, r.sites.map(siteCard)),
+      h('section', { class: 'panel' }, h('h2', {}, 'Gastos capturados a mano esta semana'),
+        r.manual.length ? h('div', { class: 'tw' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, ['Fecha', 'Sucursal', 'Concepto', 'Nota', 'Por'].map(x => h('th', {}, x)), h('th', { class: 'n' }, 'Monto'), h('th', {}, ''))),
+          h('tbody', {}, r.manual.map(e => h('tr', {}, h('td', {}, fdm(e.date)), h('td', {}, e.siteName), h('td', {}, e.label), h('td', {}, e.note), h('td', { class: 'muted' }, e.by || ''), h('td', { class: 'n' }, money(e.amount)),
+            h('td', {}, canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (await confirmDlg('¿Borrar este gasto?', `${e.label} ${money(e.amount)}`, 'Borrar', true)) { if (await act(() => api('DELETE', '/api/acc/budget/spend/' + e.id), 'Gasto borrado.')) render(); } } }, 'Borrar') : null)))))) : h('p', { class: 'muted small' }, 'Nada capturado. Usa "Agregar gasto" para nómina, IMSS, aguinaldo y otros pagos que no son facturas.')));
+  });
+
   route(/^contactos$/, async () => {
     const rows = await get('/api/acc/partners?' + qs(cState));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar nombre o RFC', value: cState.q });
@@ -796,6 +883,7 @@
       h('label', { class: 'check' }, inp({ type: 'checkbox', checked: v.customer, onchange: e => { v.customer = e.target.checked; } }), 'Cliente'),
       field('Cuenta de gasto por defecto (proveedores)', accSelect(v.account || '', { onchange: e => { v.account = e.target.value; } }, a => !['IN', 'IO', 'EQ', 'EU', 'OB', 'LP', 'AR', 'BK'].includes(a.type)), 'span2'),
       t('email', 'Correo', { type: 'email' }), t('phone', 'Teléfono'), t('regimen', 'Régimen fiscal', { maxlength: 3 }), t('cp', 'C.P. fiscal', { maxlength: 5 }), t('notes', 'Notas', {}, 'span2'),
+      field('Concepto en el presupuesto semanal (proveedores)', sel([['', '— Ninguno —'], ...BUD_CATS], v.budgetCat || '', { onchange: e => { v.budgetCat = e.target.value || null; } }), 'span2'),
       h('div', { class: 'span4' }, h('div', { class: 'lbl' }, 'Plantas que surte (proveedores)'), h('div', { class: 'muted small' }, 'Si surte una sola, sus facturas se cargan a esa planta solas. Si surte varias, se elige la planta en cada factura.'), plantPicker(v.plants || [], list => { v.plants = list; })));
     return dialog(p ? 'Editar contacto' : 'Nuevo contacto', body, [{ label: 'Cancelar' }, { label: 'Guardar', primary: true, run: () => (p ? put('/api/acc/partners/' + p.id, v) : post('/api/acc/partners', v)) }]);
   }

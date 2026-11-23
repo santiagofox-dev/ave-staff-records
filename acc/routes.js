@@ -76,6 +76,20 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   app.post('/api/acc/cash-sales', W(req => { const d = books.recordCashSale(req.body || {}, who(req)); return docRow(d); }));
   /* ---------- plants ---------- */
   app.post('/api/acc/docs/plant', W(req => ({ updated: books.setPlant((req.body || {}).ids, (req.body || {}).plant, who(req)) })));
+  /* Weekly budget per site (presupuesto por sucursal) */
+  const BUD = require('./budget');
+  app.get('/api/acc/budget', R(req => BUD.report(books, /^\d{4}-\d{2}-\d{2}$/.test(req.query.week || '') ? req.query.week : new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10))));
+  app.put('/api/acc/budget', W(req => { const b = req.body || {}; if (!/^\d{4}-\d{2}-\d{2}$/.test(b.week || '')) throw httpErr(400, 'Falta la semana.'); BUD.setBudget(books, BUD.mondayOf(b.week), b.amounts, who(req)); return BUD.report(books, b.week); }));
+  app.post('/api/acc/budget/spend', W(req => { const e = BUD.addSpend(books, req.body || {}, who(req)); return BUD.report(books, e.date); }));
+  app.delete('/api/acc/budget/spend/:id', W(req => { BUD.removeSpend(books, req.params.id, who(req)); return { ok: true }; }));
+  app.put('/api/acc/partners/:id/budget-cat', W(req => {
+    const p = books.partner(req.params.id); if (!p) throw httpErr(404, 'No se encontró el contacto.');
+    const cat = (req.body || {}).cat || null;
+    if (cat && !BUD.CAT_LABEL[cat]) throw httpErr(400, 'Concepto no válido.');
+    p.budgetCat = cat; books.log(who(req), 'editó', 'contacto', p.id, `${p.name}: concepto de presupuesto ${cat ? BUD.CAT_LABEL[cat] : 'ninguno'}`);
+    return { ok: true, cat };
+  }));
+  app.get('/api/acc/budget/available', R(req => BUD.availableFor(books, req.query.partner, req.query.date)));
   app.get('/api/acc/plant-spend', R(req => books.plantSpend(req.query.from || '', req.query.to || '')));
   app.post('/api/acc/docs/:id/erase', W(req => books.eraseDoc(req.params.id, who(req))));
   app.post('/api/acc/docs/bulk-post', W(req => {
