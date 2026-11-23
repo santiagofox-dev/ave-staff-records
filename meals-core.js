@@ -224,7 +224,28 @@ async function readRoster(file) {
     }
     return out;
   }
-  throw new Error('No encontré las columnas "ID Empleado" y "Nombre Completo" en la lista de nuevos ingresos.');
+  // HR export "PERSONAL ACTIVO": Legacy ID | Nombre legal - Nombre | Nombre legal - Apellido | Legal Name - Secondary Last Name | …
+  // (the first-name header appears twice; the second copy has the name run together, so go by position)
+  for (const ws of wb.worksheets) {
+    for (let r = 1; r <= Math.min(ws.rowCount, 15); r++) {
+      const cells = []; ws.getRow(r).eachCell({ includeEmpty: false }, (c, n) => cells.push([n, normName(txt(c.value))]));
+      const cId = (cells.find(([, v]) => v === 'LEGACY ID') || [])[0];
+      const cFirst = (cells.find(([, v]) => /NOMBRE LEGAL.*NOMBRE$/.test(v)) || [])[0];
+      const cLast = (cells.find(([, v]) => /APELLIDO$/.test(v) && !/SECOND/.test(v)) || [])[0];
+      const cLast2 = (cells.find(([, v]) => /SECONDARY LAST NAME|SEGUNDO APELLIDO/.test(v)) || [])[0];
+      if (!cId || !cFirst || !cLast) continue;
+      const out = [];
+      for (let k = r + 1; k <= ws.rowCount; k++) {
+        const row = ws.getRow(k);
+        const id = txt(row.getCell(cId).value).replace(/\.0+$/, '').replace(/\D/g, '');
+        const name = [cFirst, cLast, cLast2].filter(Boolean).map(c => txt(row.getCell(c).value)).join(' ').replace(/\s+/g, ' ').trim().toUpperCase();
+        if (!id || !name) continue;
+        out.push({ id, name, type: '' });
+      }
+      return out;
+    }
+  }
+  throw new Error('No encontré las columnas "ID Empleado" y "Nombre Completo" (o "Legacy ID" y "Nombre legal") en la lista de personal.');
 }
 
 async function readNoRegistrados(file) {
