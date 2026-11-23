@@ -282,13 +282,16 @@ function readDelphi(ws) {
   for (const b of blocks) {
     const first = ws.getRow(b.rows[0]).getCell(1).value;
     const stored = cellVal(first);
+    // Some exports write FECHA as text "16/11/2026" (day/month/year) instead of a date: read it, keep the text for new rows
+    const m = typeof stored === 'string' && /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(stored);
+    if (m) { b.stored = stored; b.date = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])); continue; }
     if (!(stored instanceof Date)) throw new Error('La columna FECHA del reporte DELPHI no contiene fechas.');
-    b.stored = stored;
+    b.stored = stored; b.date = stored;
   }
   // The system's export stores FECHA with day and month swapped (Nov 2 → 2026-02-11); a file someone corrected in
   // Excel has them right. Pick the reading where the days run in sequence and fall near today.
-  const asIs = blocks.map(b => ({ y: b.stored.getUTCFullYear(), m: b.stored.getUTCMonth() + 1, d: b.stored.getUTCDate() }));
-  const swapped = blocks.map(b => ({ y: b.stored.getUTCFullYear(), m: b.stored.getUTCDate(), d: b.stored.getUTCMonth() + 1 }));
+  const asIs = blocks.map(b => ({ y: b.date.getUTCFullYear(), m: b.date.getUTCMonth() + 1, d: b.date.getUTCDate() }));
+  const swapped = blocks.map(b => ({ y: b.date.getUTCFullYear(), m: b.date.getUTCDate(), d: b.date.getUTCMonth() + 1 }));
   const score = list => {
     if (list.some(x => x.m < 1 || x.m > 12)) return -1e9;
     const t = list.map(x => Date.UTC(x.y, x.m - 1, x.d));
@@ -317,7 +320,8 @@ function snapshotRow(row) {
 function updateDelphi(wb, meals) {
   const ws = delphiSheet(wb);
   const { hdr, blocks, neto, missingNeto } = readDelphi(ws);
-  const byKey = Object.fromEntries(blocks.map(b => [b.key, b]));
+  // a day can come split in two segments (e.g. one 03-SERVICIO row): new meals go to that day's main segment
+  const byKey = {}; for (const b of blocks) if (!byKey[b.key] || b.count > byKey[b.key].count) byKey[b.key] = b;
   const missing = [...new Set(meals.filter(m => !byKey[m.dayKey]).map(m => m.dayKey))];
   if (missing.length) throw new Error(`El reporte DELPHI no tiene los días: ${missing.join(', ')}.`);
 
@@ -327,7 +331,7 @@ function updateDelphi(wb, meals) {
   for (const b of blocks) {
     const existing = b.rows.map(r => ({ kind: 'old', snap: snapshotRow(ws.getRow(r)), seconds: toSeconds(ws.getRow(r).getCell(4).value) }));
     const template = existing[existing.length - 1].snap;
-    const add = meals.filter(m => m.dayKey === b.key);
+    const add = byKey[b.key] === b ? meals.filter(m => m.dayKey === b.key) : [];
     const timed = add.filter(m => m.seconds != null).sort((x, y) => x.seconds - y.seconds);
     const untimed = add.filter(m => m.seconds == null).sort((x, y) => x.name.localeCompare(y.name, 'es'));
     let list = existing.slice();
