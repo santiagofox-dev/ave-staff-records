@@ -150,7 +150,7 @@ module.exports = function (app, { DATA_DIR, getUser }) {
             noreg: { name: f.noreg[0].originalname, stored: path.basename(f.noreg[0].path) },
             delphi: { name: f.delphi[0].originalname, stored: path.basename(f.delphi[0].path), base: delphiName },
           },
-          days: blocks.map(b => b.key), year: blocks[0].real.y, delphiCounts: Object.fromEntries(blocks.map(b => [b.key, b.count])),
+          days: [...new Set(blocks.map(b => b.key))], year: blocks[0].real.y, delphiCounts: blocks.reduce((o, b) => (o[b.key] = (o[b.key] || 0) + b.count, o), {}),
           roster, rosterUpdate: rosterUpdate && { file: rosterUpdate.file, added: rosterUpdate.added, changed: rosterUpdate.changed, otherId: rosterUpdate.otherId, unchanged: rosterUpdate.unchanged }, noReg, reading: { done: 0, total: f.photos.length, running: false, errors: [] }, photos: [],
         };
         save(run);
@@ -259,6 +259,7 @@ module.exports = function (app, { DATA_DIR, getUser }) {
     const finalConf = Conf.assess(clean, run.days, { unusualIds });
     const confidence = { read: readConf.pct, final: finalConf.pct, pending: finalConf.items.length, pendingItems: finalConf.items.map(Conf.itemText) };
     try {
+      run.days = [...new Set(run.days)]; // a day split in two DELPHI segments used to appear twice
       const rec = M.reconcile(review, run.noReg, run.roster, run.days);
       const dir = runDir(run.id);
       const dwb = await M.loadWorkbook(path.join(dir, run.files.delphi.stored));
