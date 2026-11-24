@@ -37,7 +37,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { review: d.vendorReview ? d.vendorReview.status : '', reviewNote: d.vendorReview ? d.vendorReview.comment || '' : '', cash: d.cashSale ? d.cashSale.operation : '', plant: books.plantOf(d), plantSet: !!d.plant, test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length };
+    return { review: d.vendorReview ? d.vendorReview.status : '', reviewNote: d.vendorReview ? d.vendorReview.comment || '' : '', cash: d.cashSale ? d.cashSale.operation : '', plant: books.plantOf(d), plantSet: !!d.plant, test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length, bcat: d.budgetCat || (p && p.budgetCat) || '', bcatSet: !!d.budgetCat, fixes: d.fixes || 0 };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
@@ -57,7 +57,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     const payments = books.paidOn(d).map(x => x.payment ? { kind: 'payment', id: x.payment.id, number: x.payment.number, date: x.payment.date, amount: x.amount } : { kind: 'doc', id: x.refund.id, number: x.refund.number, date: x.refund.date, amount: x.amount });
     const applies = d.appliesTo ? docRow(books.doc(d.appliesTo) || {}) : null;
     const journal = (d.state === 'draft' ? books.docJournal({ ...d, number: 'BORRADOR' }) : books.docJournal(d)).map(l => ({ account: l.account, name: (books.account(l.account) || {}).name || '', debit: l.debit, credit: l.credit, label: l.label }));
-    return { doc: d, row: docRow(d), partner: books.partner(d.partnerId) || null, payments, applies, journal, errors: d.state === 'draft' ? books.validateDoc(d) : [] };
+    return { doc: d, row: docRow(d), partner: books.partner(d.partnerId) || null, payments, applies, journal, errors: d.state === 'draft' ? books.validateDoc(d) : [], corrections: (books.db.corrections || []).filter(c => c.docId === d.id).slice().reverse() };
   }));
   app.post('/api/acc/docs', W(req => {
     const b = req.body || {};
@@ -75,7 +75,9 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   app.get('/api/acc/cash-sales', R(req => { const r = books.cashSales(req.query.from || '', req.query.to || '', req.query.operation || ''); return { ...r, rows: r.rows.map(d => ({ ...docRow(d), operation: d.cashSale.operation, by: d.cashSale.by, subtotal: d.subtotal, iva: d.traslados, concept: (d.lines[0] || {}).description || '' })) }; }));
   app.post('/api/acc/cash-sales', W(req => { const d = books.recordCashSale(req.body || {}, who(req)); return docRow(d); }));
   /* ---------- plants ---------- */
-  app.post('/api/acc/docs/plant', W(req => ({ updated: books.setPlant((req.body || {}).ids, (req.body || {}).plant, who(req)) })));
+  app.post('/api/acc/docs/plant', W(req => ({ updated: books.setPlant((req.body || {}).ids, (req.body || {}).plant, who(req), String((req.body || {}).reason || '').slice(0, 200)) })));
+  app.post('/api/acc/docs/unpay', W(req => books.unpayDocs((req.body || {}).ids, who(req), String((req.body || {}).reason || '').slice(0, 200))));
+  app.get('/api/acc/corrections', R(req => (books.db.corrections || []).filter(c => !req.query.doc || c.docId === req.query.doc).slice(-Math.min(3000, parseInt(req.query.limit, 10) || 1000)).reverse()));
   /* Weekly budget per site (presupuesto por sucursal) */
   const BUD = require('./budget');
   app.get('/api/acc/budget', R(req => BUD.report(books, /^\d{4}-\d{2}-\d{2}$/.test(req.query.week || '') ? req.query.week : new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10))));
@@ -86,9 +88,11 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     const p = books.partner(req.params.id); if (!p) throw httpErr(404, 'No se encontró el contacto.');
     const cat = (req.body || {}).cat || null;
     if (cat && !BUD.CAT_LABEL[cat]) throw httpErr(400, 'Concepto no válido.');
+    if (p.budgetCat && p.budgetCat !== cat) books.correction(who(req), { docId: null, doc: 'Proveedor', folio: '', partner: p.name, total: null, field: 'concepto del proveedor', from: BUD.CAT_LABEL[p.budgetCat], to: cat ? BUD.CAT_LABEL[cat] : 'sin concepto', reason: String((req.body || {}).reason || '').slice(0, 200) });
     p.budgetCat = cat; books.log(who(req), 'editó', 'contacto', p.id, `${p.name}: concepto de presupuesto ${cat ? BUD.CAT_LABEL[cat] : 'ninguno'}`);
     return { ok: true, cat };
   }));
+  app.post('/api/acc/docs/budget-cat', W(req => { const b = req.body || {}; if (b.cat && !BUD.CAT_LABEL[b.cat]) throw httpErr(400, 'Concepto no válido.'); return { updated: books.setDocBudgetCat(b.ids, b.cat || null, who(req), String(b.reason || '').slice(0, 200), k => BUD.CAT_LABEL[k] || k) }; }));
   app.get('/api/acc/budget/available', R(req => BUD.availableFor(books, req.query.partner, req.query.date)));
   app.get('/api/acc/plant-spend', R(req => books.plantSpend(req.query.from || '', req.query.to || '')));
   app.post('/api/acc/docs/:id/erase', W(req => books.eraseDoc(req.params.id, who(req))));
@@ -204,7 +208,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     books.log(who(req), 'quitó comprobante', 'pagos', p.number, f.name);
     return { files: p.files };
   }));
-  app.post('/api/acc/payments/:id/cancel', W(req => books.cancelPayment(req.params.id, who(req))));
+  app.post('/api/acc/payments/:id/cancel', W(req => books.cancelPayment(req.params.id, who(req), String((req.body || {}).reason || '').slice(0, 200))));
 
   /* ---------- contacts ---------- */
   app.get('/api/acc/partners', R(req => {

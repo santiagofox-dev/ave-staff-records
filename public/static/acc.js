@@ -223,28 +223,58 @@
         h('span', { class: 'muted' }, 'Cambiar cuenta a'), accSel,
         h('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!accSel.value) return toast('Elige una cuenta.', true); const r = await act(() => post('/api/acc/docs/bulk-account', { ids: dr.map(x => x.id), account: accSel.value })); if (r) { toast(`${r.updated} borradores actualizados.`); render(); } } }, 'Aplicar'));
       }
-      if (side === 'ap') {
-        const ps = sel([['', '— Planta —'], ...plantOpts([['*', 'Quitar planta']])], '', {});
-        parts.push(h('span', { class: 'muted' }, 'Asignar planta'), ps, h('button', { class: 'btn sm', type: 'button', onclick: async () => { if (!ps.value) return toast('Elige una planta.', true); const r = await act(() => post('/api/acc/docs/plant', { ids: [...selected], plant: ps.value === '*' ? '' : ps.value })); if (r) { toast(`Planta asignada a ${r.updated} facturas.`); selected.clear(); render(); } } }, 'Asignar'));
-      }
       parts.push(h('button', { class: 'btn sm quiet', type: 'button', onclick: () => { selected.clear(); render(); } }, 'Quitar selección'));
-      add(selBar, parts);
+      const groups = [h('div', { class: 'sel-row' }, parts)];
+      if (side === 'ap') {
+        // corrections: plant, budget concept, undo paid. Changing something already set is logged in Correcciones.
+        const motivo = inp({ type: 'text', class: 'motivo', placeholder: 'Motivo (opcional, queda en el registro)', maxlength: 200 });
+        const ps = sel([['', '— Elegir planta —'], ...plantOpts([['*', 'Quitar planta']])], '', {});
+        const cs = sel([['', '— Elegir concepto —'], ...BUD_CATS, ['*', 'Usar el del proveedor']], '', {});
+        const paid = rows.filter(r => r.state === 'posted' && ['pagado', 'parcial'].includes(r.pay));
+        const changing = (k, v) => rows.filter(r => k === 'plant' ? r.plant && r.plant !== v : r.bcat && r.bcat !== v).length;
+        groups.push(h('div', { class: 'sel-row' },
+          h('span', { class: 'muted' }, 'Planta'), ps, h('button', { class: 'btn sm primary', type: 'button', onclick: async () => {
+            if (!ps.value) return toast('Elige una planta.', true);
+            const v = ps.value === '*' ? '' : ps.value, n = changing('plant', v);
+            const r = await act(() => post('/api/acc/docs/plant', { ids: [...selected], plant: v, reason: motivo.value }));
+            if (r) { toast(`Planta ${v ? 'asignada' : 'quitada'} en ${r.updated} facturas${n ? ` (${n} corregidas)` : ''}.`); selected.clear(); render(); }
+          } }, `Asignar a ${selected.size}`),
+          h('span', { class: 'muted' }, 'Concepto'), cs, h('button', { class: 'btn sm', type: 'button', onclick: async () => {
+            if (!cs.value) return toast('Elige un concepto.', true);
+            const v = cs.value === '*' ? '' : cs.value, n = changing('cat', v);
+            const r = await act(() => post('/api/acc/docs/budget-cat', { ids: [...selected], cat: v, reason: motivo.value }));
+            if (r) { toast(`Concepto cambiado en ${r.updated} facturas${n ? ` (${n} corregidas)` : ''}.`); selected.clear(); render(); }
+          } }, 'Cambiar'),
+          paid.length ? h('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+            if (!await confirmDlg('¿Quitar el pago?', `${paid.length === 1 ? 'La factura vuelve' : `Las ${paid.length} facturas vuelven`} a quedar por pagar. El pago se cancela (no se borra) y queda en Correcciones${motivo.value ? '' : '. Puedes escribir el motivo antes de confirmar'}.`, 'Quitar pago', true)) return;
+            const r = await act(() => post('/api/acc/docs/unpay', { ids: paid.map(x => x.id), reason: motivo.value }));
+            if (r) { toast(`${r.cancelled} pago${r.cancelled === 1 ? '' : 's'} cancelado${r.cancelled === 1 ? '' : 's'}; facturas otra vez por pagar.`); selected.clear(); render(); }
+          } }, `Marcar sin pagar (${paid.length})`) : null),
+          h('div', { class: 'sel-row' }, motivo));
+      }
+      add(selBar, groups);
     };
     const pickable = r => r.state === 'draft' || payable(r) || (side === 'ap' && r.state === 'posted');
     const picks = data.rows.filter(pickable);
+    let lastPick = -1;
     const allBox = canEdit() && picks.length ? inp({ type: 'checkbox', title: 'Seleccionar todos (borradores y por pagar)', onchange: e => { picks.forEach(r => e.target.checked ? selected.add(r.id) : selected.delete(r.id)); document.querySelectorAll('input[data-sel]').forEach(b => { b.checked = e.target.checked; }); updateSel(); } }) : '';
     const cols = [
-      ...(canEdit() ? [{ t: allBox, c: 1, f: r => pickable(r) ? inp({ type: 'checkbox', 'data-sel': r.id, 'aria-label': 'Seleccionar', onchange: e => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); updateSel(); } }) : '' }] : []),
+      ...(canEdit() ? [{ t: allBox, c: 1, f: r => pickable(r) ? inp({ type: 'checkbox', 'data-sel': r.id, 'aria-label': 'Seleccionar', onclick: e => {
+        const i = picks.indexOf(r), on = e.target.checked;
+        if (e.shiftKey && lastPick >= 0) { const [a, b] = i < lastPick ? [i, lastPick] : [lastPick, i]; picks.slice(a, b + 1).forEach(x => { on ? selected.add(x.id) : selected.delete(x.id); const bx = document.querySelector(`input[data-sel="${x.id}"]`); if (bx) bx.checked = on; }); }
+        else on ? selected.add(r.id) : selected.delete(r.id);
+        lastPick = i; updateSel();
+      } }) : '' }] : []),
       { t: 'Número', cls: 'nowrap', f: r => h('span', {}, r.number || h('span', { class: 'muted' }, 'Borrador'), r.type.endsWith('refund') ? h('div', { class: 'muted small' }, 'Nota de crédito') : null) },
       { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.test ? [' ', badge('draft', 'Prueba')] : null, r.review === 'ok' ? [' ', h('span', { class: 'badge posted', title: 'El proveedor confirmó en el portal que los datos coinciden' }, 'Confirmada')] : r.review === 'disputed' ? [' ', h('span', { class: 'badge cancelled', title: 'El proveedor dice que no coincide: ' + r.reviewNote }, 'No coincide')] : r.review === 'pending' ? [' ', h('span', { class: 'badge draft', title: 'Esperando que el proveedor confirme en el portal' }, 'Por confirmar')] : null) },
       ...(side === 'ap' ? [{ t: 'Planta', cls: 'nowrap', f: r => r.state === 'erased' ? '' : r.plant ? h('span', { class: r.plantSet ? '' : 'muted', title: r.plantSet ? 'Asignada en la factura' : 'Única planta del proveedor' }, r.plant) : h('span', { class: 'badge draft' }, 'Sin planta') }] : []),
-      { t: side === 'ap' ? 'Proveedor' : 'Cliente', cls: 'w', f: r => r.partner || h('span', { class: 'warnmark' }, 'Sin contacto') },
+      { t: side === 'ap' ? 'Proveedor' : 'Cliente', cls: 'w', f: r => h('span', {}, r.partner || h('span', { class: 'warnmark' }, 'Sin contacto'), side === 'ap' && r.bcat ? h('div', { class: 'muted small', title: r.bcatSet ? 'Concepto puesto en la factura' : 'Concepto del proveedor' }, (BUD_LABEL[r.bcat] || r.bcat) + (r.bcatSet ? ' (en factura)' : '')) : null) },
       { t: 'Fecha', cls: 'nowrap', f: r => fd(r.date) },
       { t: 'Vence', cls: 'nowrap', f: r => fd(r.due) },
       { t: 'Total', n: 1, f: r => (r.type.endsWith('refund') ? -1 : 1) * r.totalMxn },
       { t: 'Saldo', n: 1, f: r => r.state === 'posted' ? r.residual : '' },
       { t: 'Estado', f: r => r.state === 'erased' ? h('span', { class: 'erased-note' }, `Eliminada por ${r.erasedBy || '—'} · ${fdt(r.erasedAt)}`) : h('span', {}, badge(r.state, STATE[r.state]), ' ', r.pay ? badge(r.pay, PAY[r.pay]) : null) },
-      { t: '', cls: 'nowrap', f: r => h('span', { class: 'nowrap' }, r.portal ? [badge('parcial', 'Portal'), ' '] : null, r.warnings ? [h('span', { class: 'badge draft', title: 'Tiene avisos por revisar' }, 'Revisar'), ' '] : null, r.files ? h('span', { class: 'muted small', title: 'Archivos adjuntos' }, `${r.files} arch.`) : null) },
+      { t: '', cls: 'nowrap', f: r => h('span', { class: 'nowrap' }, r.portal ? [badge('parcial', 'Portal'), ' '] : null, r.warnings ? [h('span', { class: 'badge draft', title: 'Tiene avisos por revisar' }, 'Revisar'), ' '] : null, r.files ? h('span', { class: 'muted small', title: 'Archivos adjuntos' }, `${r.files} arch.`) : null, r.fixes ? [' ', h('span', { class: 'badge draft', title: 'Tiene correcciones registradas' }, 'Corregida')] : null) },
     ];
     const chips = (key, opts) => h('div', { class: 'chips' }, opts.map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(st[key] === v), onclick: () => { st[key] = v; render(); } }, t)));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar número, contacto, RFC, UUID o importe', value: st.q });
@@ -258,6 +288,7 @@
           h('button', { class: 'btn', type: 'button', onclick: () => go('doc/new/' + (side === 'ap' ? 'in_invoice' : 'out_invoice')) }, 'Capturar factura'),
           h('button', { class: 'btn primary', type: 'button', onclick: () => pickFiles() }, 'Carga masiva (ZIP / XML / PDF)')] : []),
       drop,
+      canEdit() && side === 'ap' ? h('div', { class: 'muted small' }, 'Marca las casillas para asignar planta o concepto, pagar o corregir varias facturas a la vez. Con Shift + clic seleccionas un rango.') : null,
       h('div', { class: 'filters' }, search, fromI, h('span', { class: 'muted' }, 'a'), toI,
         st.partner ? h('button', { class: 'chipb', type: 'button', 'aria-pressed': 'true', onclick: () => { st.partner = ''; go('docs/' + side); } }, 'Contacto filtrado ✕') : null),
       h('div', { class: 'filters' }, chips('state', [['', 'Todos'], ['draft', 'Borradores'], ['posted', 'Publicados'], ['cancelled', 'Cancelados'], ['erased', 'Eliminadas']]), chips('pay', [['', 'Cualquier pago'], ['abierto', 'Por pagar'], ['vencido', 'Vencidos'], ['pagado', 'Pagados']]), side === 'ap' ? chips('origin', [['', 'Cualquier origen'], ['portal', 'Del portal'], ['disputed', 'Proveedor: no coincide']]) : null,
@@ -408,7 +439,11 @@
         const vp = (META.partners.find(p => p.id === d.partnerId) || {}).plants || [];
         const eff = d.plant ? (d.plant === 'B1' ? 'Jabil B1' : d.plant === 'B3' ? 'Jabil B3' : d.plant) : '';
         const opts = [['', vp.length === 1 ? `${vp[0]} (única planta del proveedor)` : '— Sin planta —'], ...vp.map(p => [p, p + ' · del proveedor']), ...plantOpts().filter(o => !vp.includes(o[0]))];
-        return sel(opts, eff, { disabled: !canEdit() || d.state === 'erased' || !d.id, onchange: async e => { const r = await act(() => post('/api/acc/docs/plant', { ids: [d.id], plant: e.target.value })); if (r) { d.plant = e.target.value; toast(e.target.value ? `Cargada a ${e.target.value}.` : 'Planta quitada.'); } } });
+        return sel(opts, eff, { disabled: !canEdit() || d.state === 'erased' || !d.id, onchange: async e => { const r = await act(() => post('/api/acc/docs/plant', { ids: [d.id], plant: e.target.value })); if (r) { d.plant = e.target.value; toast(e.target.value ? `Cargada a ${e.target.value}.` : 'Planta quitada.'); if (d.id) render(); } } });
+      })()) : null,
+      side === 'ap' && d.id ? field('Concepto (presupuesto semanal)', (() => {
+        const pc = (data.partner || {}).budgetCat || '';
+        return sel([['', pc ? `${BUD_LABEL[pc] || pc} (del proveedor)` : '— Sin concepto —'], ...BUD_CATS], d.budgetCat || '', { disabled: !canEdit() || d.state === 'erased', onchange: async e => { const r = await act(() => post('/api/acc/docs/budget-cat', { ids: [d.id], cat: e.target.value })); if (r) { toast('Concepto guardado.'); render(); } } });
       })()) : null,
       field('Referencia', f('ref'), 'span2'),
       field('Notas', h('textarea', { rows: 1, disabled: !editable, value: d.notes || '', onchange: e => { d.notes = e.target.value; } }), 'span2'),
@@ -514,7 +549,17 @@
         imgs.length ? h('div', { class: 'receipts' }, imgs.map(fl => h('a', { href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener', title: fl.name }, h('img', { src: '/api/acc/file/' + fl.stored, alt: fl.receipt ? 'Foto del recibo de entrega' : fl.name, loading: 'lazy' }), h('span', {}, fl.receipt ? 'Recibo de entrega' : fl.name)))) : null,
         other.length ? h('div', { class: 'files' }, other.map(fl => h('a', { class: 'file', href: '/api/acc/file/' + fl.stored, target: '_blank', rel: 'noopener' }, h('b', {}, fl.kind), fl.name))) : null));
     }
-    if ((data.payments || []).length) extra.push(h('section', { class: 'panel' }, h('h2', {}, 'Pagos y notas aplicados'), table([{ t: 'Número', k: 'number' }, { t: 'Fecha', f: r => fd(r.date) }, { t: 'Monto', k: 'amount', n: 1 }], data.payments, { onRow: r => go((r.kind === 'payment' ? 'pago/' : 'doc/') + r.id) }), h('div', { class: 'foot' }, h('span'), h('span', {}, `Saldo pendiente ${money(data.row.residual)}`))));
+    if ((data.payments || []).length) {
+      const pays = data.payments.filter(x => x.kind === 'payment');
+      const undo = canEdit() && pays.length ? h('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+        const why = inp({ type: 'text', maxlength: 200, placeholder: 'Ej. se marcó pagada por error' });
+        const ok = await dialog('¿Quitar el pago de esta factura?', h('div', { class: 'stack' }, h('p', {}, `Se cancela ${pays.map(x => x.number).join(', ')} (no se borra) y la factura vuelve a quedar por pagar. Si ese pago también cubre otras facturas, hay que cancelarlo desde el pago.`), field('Motivo (opcional)', why)),
+          [{ label: 'Volver' }, { label: 'Quitar pago', danger: true, run: () => post('/api/acc/docs/unpay', { ids: [d.id], reason: why.value }) }]);
+        if (ok) { toast('Pago quitado; la factura vuelve a estar por pagar.'); render(); }
+      } }, 'Marcar sin pagar') : null;
+      extra.push(h('section', { class: 'panel' }, h('h2', {}, 'Pagos y notas aplicados'), table([{ t: 'Número', k: 'number' }, { t: 'Fecha', f: r => fd(r.date) }, { t: 'Monto', k: 'amount', n: 1 }], data.payments, { onRow: r => go((r.kind === 'payment' ? 'pago/' : 'doc/') + r.id) }), h('div', { class: 'foot' }, undo || h('span'), h('span', {}, `Saldo pendiente ${money(data.row.residual)}`))));
+    }
+    if ((data.corrections || []).length) extra.push(h('section', { class: 'panel' }, h('h2', {}, 'Historial de correcciones'), corrTable(data.corrections, true)));
     if ((data.journal || []).length) extra.push(h('section', { class: 'panel' }, h('h2', {}, d.state === 'posted' ? 'Asiento contable' : 'Así quedará el asiento'),
       table([{ t: 'Cuenta', cls: 'mono nowrap', k: 'account' }, { t: 'Nombre', k: 'name' }, { t: 'Concepto', k: 'label' }, { t: 'Cargo', n: 1, tk: 'debit', f: r => r.debit || '' }, { t: 'Abono', n: 1, tk: 'credit', f: r => r.credit || '' }], data.journal,
         { total: { label: '', debit: r2(data.journal.reduce((a, l) => a + l.debit, 0)), credit: r2(data.journal.reduce((a, l) => a + l.credit, 0)) } }),
@@ -643,7 +688,7 @@
 
   route(/^pago\/([a-f0-9]+)$/, async m => {
     const data = await get('/api/acc/payments/' + m[1]); const p = data.payment, r = data.row;
-    const acts = canEdit() && p.state === 'posted' ? [h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (await confirmDlg('¿Cancelar pago?', 'Las facturas vuelven a quedar con saldo y el IVA regresa a pendiente.', 'Cancelar pago', true)) { const x = await act(() => post(`/api/acc/payments/${p.id}/cancel`), 'Pago cancelado.'); if (x) render(); } } }, 'Cancelar pago')] : [];
+    const acts = canEdit() && p.state === 'posted' ? [h('button', { class: 'btn danger', type: 'button', onclick: async () => { const why = inp({ type: 'text', maxlength: 200, placeholder: 'Ej. se registró al proveedor equivocado' }); if (await dialog('¿Cancelar pago?', h('div', { class: 'stack' }, h('p', {}, 'Las facturas vuelven a quedar con saldo y el IVA regresa a pendiente. Queda registrado en Correcciones.'), field('Motivo (opcional)', why)), [{ label: 'Volver' }, { label: 'Cancelar pago', danger: true, run: () => post(`/api/acc/payments/${p.id}/cancel`, { reason: why.value }) }])) { toast('Pago cancelado.'); render(); } } }, 'Cancelar pago')] : [];
     return h('div', { class: 'stack' }, h('a', { href: '#/pagos/' + p.dir, class: 'muted small' }, '← ' + (p.dir === 'out' ? 'Pagos a proveedores' : 'Cobros a clientes')),
       phead(p.number, h('span', {}, p.dir === 'out' ? 'Pago a proveedor · ' : 'Cobro a cliente · ', badge(p.state, STATE[p.state])), acts),
       h('section', { class: 'panel' }, h('dl', { class: 'kv' }, h('dt', {}, 'Contacto'), h('dd', {}, r.partner), h('dt', {}, 'Fecha'), h('dd', {}, fd(p.date)), h('dt', {}, 'Monto'), h('dd', {}, money(p.amount)), h('dt', {}, 'Cuenta'), h('dd', {}, r.bank),
@@ -789,6 +834,7 @@
   const BUD_CATS = [['comida', 'Proveedores comida'], ['refrescos', 'Proveedores refrescos'], ['otros', 'Proveedores otros'], ['credito', 'Proveedores a crédito'], ['cxp', 'Cuentas por pagar anteriores'],
     ['nomina', 'Nómina'], ['impuestos', 'Impuestos / IVA / IMSS'], ['ahorro', 'Ahorro'], ['aguinaldo', 'Aguinaldo'], ['intereses', 'Intereses / préstamo bancario'], ['renta', 'Renta'],
     ['servicios', 'Servicios (luz, agua, internet)'], ['gas', 'Gas'], ['remodelacion', 'Remodelación'], ['equipo', 'Equipo']];
+  const BUD_LABEL = Object.fromEntries(BUD_CATS);
   const budState = { edit: false, open: new Set() };
   const wkAdd = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   const fdm = d => { const M = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']; return `${+d.slice(8)} ${M[+d.slice(5, 7) - 1]}`; };
@@ -1087,6 +1133,29 @@
       x ? h('label', { class: 'check span2' }, inp({ type: 'checkbox', checked: v.active, onchange: e => { v.active = e.target.checked; } }), 'Activo (puede entrar)') : null);
     return dialog(x ? 'Editar usuario' : 'Nuevo usuario', body, [{ label: 'Cancelar' }, { label: 'Guardar', primary: true, run: () => (x ? put('/api/acc/users/' + x.id, v) : post('/api/acc/users', v)) }]);
   }
+
+  /* ================= CORRECTIONS ================= */
+  const FIELD = { planta: 'Planta', concepto: 'Concepto', 'concepto del proveedor': 'Concepto del proveedor', pago: 'Pago' };
+  function corrTable(rows, inDoc) {
+    return table([
+      { t: 'Fecha', f: r => fdt(r.at), cls: 'nowrap' }, { t: 'Usuario', k: 'by' },
+      ...(inDoc ? [] : [{ t: 'Factura', cls: 'nowrap', f: r => h('span', {}, r.doc || '', r.folio ? h('div', { class: 'muted small mono' }, r.folio) : null) }, { t: 'Proveedor', k: 'partner', cls: 'w' }]),
+      { t: 'Qué se corrigió', f: r => h('b', {}, FIELD[r.field] || r.field) },
+      { t: 'Antes', f: r => h('span', { class: 'was' }, r.from || '—') }, { t: 'Después', f: r => r.to || '—' },
+      { t: 'Motivo', f: r => r.reason || h('span', { class: 'muted' }, '—'), cls: 'w' },
+    ], rows, { tall: !inDoc, empty: 'Sin correcciones.', onRow: inDoc ? null : r => r.docId ? go('doc/' + r.docId) : r.paymentId ? go('pago/' + r.paymentId) : null });
+  }
+  route(/^correcciones$/, async () => {
+    const rows = await get('/api/acc/corrections?limit=2000');
+    const st = corrState;
+    const shown = rows.filter(r => (!st.field || r.field.startsWith(st.field)) && (!st.q || [r.doc, r.folio, r.partner, r.by, r.from, r.to, r.reason].some(v => String(v || '').toLowerCase().includes(st.q.toLowerCase()))));
+    const chips = h('div', { class: 'chips' }, [['', 'Todas'], ['planta', 'Planta'], ['concepto', 'Concepto'], ['pago', 'Pago']].map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(st.field === v), onclick: () => { st.field = v; render(); } }, `${t} (${v ? rows.filter(r => r.field.startsWith(v)).length : rows.length})`)));
+    const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar factura, proveedor, usuario o motivo', value: st.q });
+    search.addEventListener('keydown', e => { if (e.key === 'Enter') { st.q = search.value; render(); } });
+    return h('div', { class: 'stack' }, phead('Correcciones', 'Cada vez que se cambia algo que ya estaba puesto (planta, concepto, pago) queda aquí: quién, cuándo, cómo estaba y cómo quedó.'),
+      h('div', { class: 'filters' }, search, chips), corrTable(shown));
+  });
+  const corrState = { field: '', q: '' };
 
   /* ================= AUDIT ================= */
   route(/^auditoria$/, async () => {

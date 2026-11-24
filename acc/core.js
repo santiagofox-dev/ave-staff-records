@@ -180,15 +180,48 @@ class Books {
     const p = this.partner(d.partnerId);
     return p && Array.isArray(p.plants) && p.plants.length === 1 ? p.plants[0] : '';
   }
-  setPlant(ids, plant, user) {
+  /* Corrections log: every change to something already decided (plant, budget concept, paid) keeps before/after */
+  correction(user, e) {
+    this.db.corrections = this.db.corrections || [];
+    this.db.corrections.push({ id: uid(), at: new Date().toISOString(), by: user || 'sistema', ...e });
+    if (e.docId) { const d = this.doc(e.docId); if (d) d.fixes = (d.fixes || 0) + 1; }
+  }
+  docLabel(d) { const p = this.partner(d.partnerId); return { docId: d.id, doc: d.number || 'borrador', folio: `${d.serie || ''}${d.folio || ''}`, partner: p ? p.name : '', total: d.totalMxn || d.total || 0 }; }
+  setPlant(ids, plant, user, reason) {
     if (plant && !this.plantNames().includes(plant)) throw httpErr(400, 'Esa planta no existe.');
     let n = 0;
     for (const id of ids || []) {
       const d = this.doc(id);
       if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
+      const before = this.plantOf(d) || '';
       d.plant = plant || ''; n++;
+      const after = this.plantOf(d) || '';
+      if (before && before !== after) this.correction(user, { ...this.docLabel(d), field: 'planta', from: before, to: after || 'sin planta', reason: reason || '' });
     }
     this.log(user, 'asignó planta', 'documentos', '', `${n} → ${plant || 'sin planta'}`);
+    return n;
+  }
+  /** Undo "paid": cancels the payments of these invoices. A payment that also covers other invoices must be undone from the payment itself. */
+  unpayDocs(ids, user, reason) {
+    const set = new Set(ids || []), pays = new Map();
+    for (const p of this.db.payments) if (p.state === 'posted' && p.allocations.some(a => set.has(a.docId))) pays.set(p.id, p);
+    const blocked = [...pays.values()].filter(p => p.allocations.some(a => !set.has(a.docId)));
+    if (blocked.length) throw httpErr(400, `El pago ${blocked.map(p => p.number).join(', ')} también cubre otras facturas. Ábrelo y cancélalo desde ahí, o selecciona todas sus facturas.`);
+    for (const p of pays.values()) this.cancelPayment(p.id, user, reason);
+    return { cancelled: pays.size };
+  }
+  /** Budget concept for specific invoices (overrides the supplier's). */
+  setDocBudgetCat(ids, cat, user, reason, label) {
+    let n = 0;
+    for (const id of ids || []) {
+      const d = this.doc(id);
+      if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
+      const p = this.partner(d.partnerId), before = d.budgetCat || (p && p.budgetCat) || '';
+      d.budgetCat = cat || null; n++;
+      const after = d.budgetCat || (p && p.budgetCat) || '';
+      if (before && before !== after) this.correction(user, { ...this.docLabel(d), field: 'concepto', from: label(before), to: after ? label(after) : 'sin concepto', reason: reason || '' });
+    }
+    this.log(user, 'asignó concepto de presupuesto', 'documentos', '', `${n} → ${cat ? label(cat) : 'el del proveedor'}`);
     return n;
   }
   plantSpend(from, to) {
@@ -509,11 +542,14 @@ class Books {
     this.log(user, 'registró', 'pago', pay.id, `${pay.number} ${amount.toFixed(2)}`);
     return pay;
   }
-  cancelPayment(id, user) {
+  cancelPayment(id, user, reason) {
     const p = this.payment(id);
     if (!p) throw httpErr(404, 'No se encontró el pago.');
+    if (p.state !== 'posted') throw httpErr(400, 'Ese pago ya está cancelado.');
     if (this.locked(p.date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
     p.state = 'cancelled'; this.log(user, 'canceló', 'pago', p.id, p.number);
+    for (const a of p.allocations) { const d = this.doc(a.docId); if (d) this.correction(user, { ...this.docLabel(d), field: 'pago', from: `pagada con ${p.number} (${p.date}) · ${a.amount.toFixed(2)}`, to: 'sin pagar', paymentId: p.id, reason: reason || '' }); }
+    if (!p.allocations.length) { const pt = this.partner(p.partnerId); this.correction(user, { docId: null, doc: p.number, folio: '', partner: pt ? pt.name : '', total: p.amount, field: 'pago', from: `pago ${p.number} (${p.date})`, to: 'cancelado', paymentId: p.id, reason: reason || '' }); }
     return p;
   }
 

@@ -216,3 +216,7 @@ body.acc.has-bar .shell{min-height:calc(100vh - 62px)}
 .budcard .pbar,.budt .pbar{display:block;height:7px;background:var(--sunk);border-radius:99px;overflow:hidden;margin:6px 0}
 .budcard .pbar i,.budt .pbar i{display:block;height:100%;background:var(--ok);border-radius:99px}
 .budcard .pbar.over i,.budt .pbar.over i{background:var(--bad)}
+.sel-bar{flex-direction:column;align-items:stretch;position:sticky;top:0;z-index:3;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.sel-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sel-bar .motivo{flex:1;min-width:240px;max-width:520px}
+td .was{text-decoration:line-through;color:var(--muted)}
