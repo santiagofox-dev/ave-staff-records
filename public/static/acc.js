@@ -54,7 +54,7 @@
   const qs = o => Object.entries(o).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 
   let toastT;
-  function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, bad ? 6000 : 3000); }
+  function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, Math.max(bad ? 6000 : 3000, String(msg).length * 55)); }
   async function act(fn, okMsg) { try { const r = await fn(); if (okMsg) toast(okMsg); return r; } catch (e) { toast(e.message, true); return undefined; } }
 
   /* ---------- dialog ---------- */
@@ -232,17 +232,17 @@
       if (side === 'ap') {
         // corrections: plant, budget concept, undo paid. Changing something already set is logged in Correcciones.
         const motivo = inp({ type: 'text', class: 'motivo', placeholder: 'Motivo (opcional, queda en el registro)', maxlength: 200 });
-        const ps = sel([['', '— Elegir planta —'], ...plantOpts([['*', 'Quitar planta']])], '', {});
+        const ps = sel([['', '— Elegir planta —'], ...plantOpts([['-', 'Sin planta'], ['@', 'La del proveedor (si surte una sola)']])], '', {});
         const cs = sel([['', '— Elegir concepto —'], ...BUD_CATS, ['*', 'Usar el del proveedor']], '', {});
         const paid = rows.filter(r => r.state === 'posted' && ['pagado', 'parcial'].includes(r.pay));
         const changing = (k, v) => rows.filter(r => k === 'plant' ? r.plant && r.plant !== v : r.bcat && r.bcat !== v).length;
         groups.push(h('div', { class: 'sel-row' },
           h('span', { class: 'muted' }, 'Planta'), ps, h('button', { class: 'btn sm primary', type: 'button', onclick: async () => {
             if (!ps.value) return toast('Elige una planta.', true);
-            const v = ps.value === '*' ? '' : ps.value, n = changing('plant', v);
+            const v = ps.value === '-' ? '' : ps.value, n = v === '@' ? 0 : changing('plant', v);
             const r = await act(() => post('/api/acc/docs/plant', { ids: [...selected], plant: v, reason: motivo.value }));
-            if (r) { toast(`Planta ${v ? 'asignada' : 'quitada'} en ${r.updated} facturas${n ? ` (${n} corregidas)` : ''}.` + learnMsg(r)); selected.clear(); render(); }
-          } }, `Asignar a ${selected.size}`),
+            if (r) { toast(`${r.updated} facturas ${v === '@' ? 'regresan a la planta del proveedor' : v ? `movidas a ${v}` : 'quedaron sin planta'}${n ? ` (${n} corregidas)` : ''}.` + learnMsg(r)); selected.clear(); render(); }
+          } }, `Mover ${selected.size} a la planta`),
           h('span', { class: 'muted' }, 'Concepto'), cs, h('button', { class: 'btn sm', type: 'button', onclick: async () => {
             if (!cs.value) return toast('Elige un concepto.', true);
             const v = cs.value === '*' ? '' : cs.value, n = changing('cat', v);
@@ -253,7 +253,8 @@
             if (!await confirmDlg('¿Quitar el pago?', `${paid.length === 1 ? 'La factura vuelve' : `Las ${paid.length} facturas vuelven`} a quedar por pagar. El pago se cancela (no se borra) y queda en Correcciones${motivo.value ? '' : '. Puedes escribir el motivo antes de confirmar'}.`, 'Quitar pago', true)) return;
             const r = await act(() => post('/api/acc/docs/unpay', { ids: paid.map(x => x.id), reason: motivo.value }));
             if (r) { toast(`${r.cancelled} pago${r.cancelled === 1 ? '' : 's'} cancelado${r.cancelled === 1 ? '' : 's'}; facturas otra vez por pagar.`); selected.clear(); render(); }
-          } }, `Marcar sin pagar (${paid.length})`) : null),
+          } }, `Marcar sin pagar (${paid.length})`) : null,
+          h('button', { class: 'btn sm danger quiet', type: 'button', onclick: () => eraseMany([...selected], motivo.value, () => { selected.clear(); render(); }) }, `Eliminar ${selected.size}`)),
           h('div', { class: 'sel-row' }, motivo));
       }
       add(selBar, groups);
@@ -396,6 +397,14 @@
   route(/^doc\/([a-f0-9]+)$/, async m => docForm(await get('/api/acc/docs/' + m[1])));
 
   // Erase = remove from the books for good; the list keeps a crossed-out ghost saying who and when
+  async function eraseMany(ids, reason, done) {
+    if (!ids.length) return;
+    if (!(await confirmDlg(`¿Eliminar ${ids.length === 1 ? 'esta factura' : `estas ${ids.length} facturas`}?`, 'Salen de la contabilidad por completo (conceptos, archivos y UUID; se pueden volver a importar). En la lista queda un registro tachado con quién las eliminó y cuándo, y cada una queda en Correcciones. No se puede deshacer. Las que tengan pagos aplicados no se eliminan: primero quita el pago.', 'Eliminar', true))) return;
+    const r = await act(() => post('/api/acc/docs/erase', { ids, reason }));
+    if (!r) return;
+    toast(`${r.erased} eliminada${r.erased === 1 ? '' : 's'}.` + (r.failed.length ? ` ${r.failed.length} no se pudieron: ${r.failed.slice(0, 3).map(f => `${f.doc || 'factura'} (${f.error})`).join('; ')}${r.failed.length > 3 ? '…' : ''}` : ''), !!r.failed.length);
+    done && done(r);
+  }
   function eraseBtn(d, side) {
     return h('button', { class: 'btn danger quiet', type: 'button', onclick: async () => {
       const label = `${d.serie || ''}${d.folio || ''}` || d.number || 'este borrador';
@@ -441,9 +450,10 @@
       side === 'ap' ? field('Planta', (() => {
         // the plant can be changed any time (it doesn't touch the accounting); vendor's plants first
         const vp = (META.partners.find(p => p.id === d.partnerId) || {}).plants || [];
-        const eff = d.plant ? (d.plant === 'B1' ? 'Jabil B1' : d.plant === 'B3' ? 'Jabil B3' : d.plant) : '';
-        const opts = [['', vp.length === 1 ? `${vp[0]} (única planta del proveedor)` : '— Sin planta —'], ...vp.map(p => [p, p + ' · del proveedor']), ...plantOpts().filter(o => !vp.includes(o[0]))];
-        return sel(opts, eff, { disabled: !canEdit() || d.state === 'erased' || !d.id, onchange: async e => { const r = await act(() => post('/api/acc/docs/plant', { ids: [d.id], plant: e.target.value })); if (r) { d.plant = e.target.value; toast((e.target.value ? `Cargada a ${e.target.value}.` : 'Planta quitada.') + learnMsg(r)); if (d.id) render(); } } });
+        const one = vp.length === 1 && !(data.partner || {}).plantsAuto ? vp[0] : (data.partner && (data.partner.plants || []).length === 1 ? data.partner.plants[0] : '');
+        const eff = d.plant ? (d.plant === 'B1' ? 'Jabil B1' : d.plant === 'B3' ? 'Jabil B3' : d.plant) : d.noPlant || !one ? '' : '@';
+        const opts = [...(one ? [['@', `${one} (el proveedor solo surte esta)`]] : []), ['', '— Sin planta —'], ...vp.map(p => [p, p + ' · del proveedor']), ...plantOpts().filter(o => !vp.includes(o[0]))];
+        return sel(opts, eff, { disabled: !canEdit() || d.state === 'erased' || !d.id, onchange: async e => { const v = e.target.value; const r = await act(() => post('/api/acc/docs/plant', { ids: [d.id], plant: v })); if (r) { toast((v === '@' ? 'Vuelve a la planta del proveedor.' : v ? `Movida a ${v}.` : 'Quedó sin planta.') + learnMsg(r)); render(); } } });
       })()) : null,
       side === 'ap' && d.id ? field('Concepto (presupuesto semanal)', (() => {
         const pc = (data.partner || {}).budgetCat || '';
@@ -817,22 +827,74 @@
     const d0 = new Date(today() + 'T12:00:00'), ymd = x => x.toISOString().slice(0, 10);
     const pm = new Date(d0.getFullYear(), d0.getMonth() - 1, 1), pmEnd = new Date(d0.getFullYear(), d0.getMonth(), 0);
     const max = Math.max(1, ...r.plants.map(p => p.total));
-    const cards = r.plants.map(p => h('div', { class: 'plantcard' + (p.plant === 'Sin planta' ? ' none' : '') },
-      h('div', { class: 'ph' }, h('div', {}, h('b', {}, p.plant), p.city ? h('span', { class: 'muted small' }, ' · ' + p.city) : null), h('b', { class: 'amt' }, money(p.total))),
-      h('div', { class: 'pbar' }, h('i', { 'data-w': Math.round(p.total / max * 100) })),
-      h('div', { class: 'muted small' }, `${p.count} factura${p.count === 1 ? '' : 's'} · subtotal ${money(p.subtotal)} · impuestos ${money(p.taxes)}`),
-      h('ul', { class: 'pv' }, p.vendors.slice(0, 6).map(v => h('li', {}, h('span', {}, v.name), h('span', { class: 'n' }, money(v.total))))),
-      h('a', { class: 'small', href: '#/docs/ap?' + qs({ plant: p.plant === 'Sin planta' ? '-' : p.plant, from: st.from, to: st.to, state: 'posted' }) }, p.plant === 'Sin planta' ? 'Ver y asignar planta →' : 'Ver facturas →')));
+    // every plant is a place to drop facturas, even with nothing this period
+    if (canEdit()) for (const c of PLANTS()) for (const pl of c.plants) if (!r.plants.some(p => p.plant === pl)) r.plants.push({ plant: pl, city: c.city, count: 0, subtotal: 0, taxes: 0, total: 0, vendors: [], docs: [] });
+    if (canEdit() && !r.plants.some(p => p.plant === 'Sin planta')) r.plants.push({ plant: 'Sin planta', city: '', count: 0, subtotal: 0, taxes: 0, total: 0, vendors: [], docs: [] });
+    const order = PLANTS().flatMap(c => c.plants); r.plants.sort((a, b) => (a.plant === 'Sin planta') - (b.plant === 'Sin planta') || order.indexOf(a.plant) - order.indexOf(b.plant));
+    const sel_ = pvState.sel, ql = pvState.q.toLowerCase();
+    let dragLabel = '';
+    const allIds = new Set(r.plants.flatMap(p => (p.docs || []).map(d => d.id))); for (const id of [...sel_]) if (!allIds.has(id)) sel_.delete(id);
+    const target = pl => pl === 'Sin planta' ? '' : pl;
+    const move = async (ids, pl, label) => {
+      if (!ids.length) return;
+      const r2 = await act(() => post('/api/acc/docs/plant', { ids, plant: target(pl) }));
+      const what = ids.length === 1 ? (label ? `La factura ${label}` : 'La factura') : `${ids.length} facturas`;
+      if (r2) { toast(`${what} ${pl === 'Sin planta' ? (ids.length === 1 ? 'quedó' : 'quedaron') + ' sin planta' : (ids.length === 1 ? 'se movió' : 'se movieron') + ' a ' + pl}.` + learnMsg(r2)); ids.forEach(i => sel_.delete(i)); render(); }
+    };
+    const moveOpts = cur => [['', 'Mover a…'], ...r.plants.filter(p => p.plant !== cur).map(p => [p.plant, p.plant])];
+    const docRowEl = (d, p) => {
+      const cb = inp({ type: 'checkbox', checked: sel_.has(d.id), 'aria-label': 'Seleccionar', onchange: e => { e.target.checked ? sel_.add(d.id) : sel_.delete(d.id); render(); } });
+      const li = h('li', { class: 'pd' + (sel_.has(d.id) ? ' on' : '') + (d.own ? '' : ' inh'), draggable: canEdit() ? 'true' : 'false', title: d.own ? '' : 'Va aquí porque el proveedor solo surte esta planta' },
+        canEdit() ? cb : null,
+        h('a', { href: '#/doc/' + d.id, class: 'pdn' }, h('b', {}, d.partner), h('small', {}, `${d.ref}${d.refund ? ' (nota de crédito)' : ''} · ${fd(d.date)}${d.own ? '' : ' · por el proveedor'}`)),
+        h('span', { class: 'n' }, money(d.total)),
+        canEdit() ? sel(moveOpts(p.plant), '', { class: 'mv', 'aria-label': 'Mover a otra planta', onchange: e => e.target.value && move([d.id], e.target.value, d.ref || d.partner) }) : null,
+        canEdit() && p.plant !== 'Sin planta' ? h('button', { class: 'x', type: 'button', title: 'Quitar de esta planta (queda sin planta)', 'aria-label': 'Quitar de esta planta', onclick: () => move([d.id], 'Sin planta', d.ref || d.partner) }, '×') : null);
+      li.addEventListener('dragstart', e => { const ids = sel_.has(d.id) ? [...sel_] : [d.id]; e.dataTransfer.setData('text/plain', JSON.stringify(ids)); dragLabel = ids.length === 1 ? (d.ref || d.partner) : ''; e.dataTransfer.effectAllowed = 'move'; li.classList.add('dragging'); });
+      li.addEventListener('dragend', () => li.classList.remove('dragging'));
+      return li;
+    };
+    const cards = r.plants.map(p => {
+      const docs = (p.docs || []).filter(d => !ql || (d.partner + ' ' + d.ref).toLowerCase().includes(ql));
+      const card = h('div', { class: 'plantcard' + (p.plant === 'Sin planta' ? ' none' : '') + (p.count ? '' : ' empty') },
+        h('div', { class: 'ph' }, h('div', {}, h('b', {}, p.plant), p.city ? h('span', { class: 'muted small' }, ' · ' + p.city) : null), h('b', { class: 'amt' }, money(p.total))),
+        h('div', { class: 'pbar' }, h('i', { 'data-w': Math.round(p.total / max * 100) })),
+        h('div', { class: 'muted small' }, p.count ? `${p.count} factura${p.count === 1 ? '' : 's'} · subtotal ${money(p.subtotal)} · impuestos ${money(p.taxes)}` : (canEdit() ? 'Sin facturas. Arrastra aquí para mover.' : 'Sin facturas.')),
+        pvState.list ? (docs.length ? h('ul', { class: 'pdl' }, docs.map(d => docRowEl(d, p))) : (p.count && ql ? h('div', { class: 'muted small' }, 'Ninguna coincide con la búsqueda.') : null))
+          : h('ul', { class: 'pv' }, p.vendors.slice(0, 6).map(v => h('li', {}, h('span', {}, v.name), h('span', { class: 'n' }, money(v.total))))),
+        h('a', { class: 'small', href: '#/docs/ap?' + qs({ plant: p.plant === 'Sin planta' ? '-' : p.plant, from: st.from, to: st.to, state: 'posted' }) }, 'Abrir en la lista de facturas →'));
+      if (canEdit()) {
+        card.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; card.classList.add('drop'); });
+        card.addEventListener('dragleave', e => { if (!card.contains(e.relatedTarget)) card.classList.remove('drop'); });
+        card.addEventListener('drop', e => { e.preventDefault(); card.classList.remove('drop'); let ids = []; try { ids = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (x) { return; } const here = new Set((p.docs || []).map(d => d.id)); ids = ids.filter(i => !here.has(i)); if (ids.length) move(ids, p.plant, dragLabel); });
+      }
+      return card;
+    });
+    const search = inp({ type: 'search', class: 'search', placeholder: 'Buscar proveedor o folio', value: pvState.q });
+    search.addEventListener('keydown', e => { if (e.key === 'Enter') { pvState.q = search.value.trim(); pvState.list = true; render(); } });
+    const bulkSel = sel(moveOpts(''), '', { 'aria-label': 'Mover seleccionadas a' });
+    const bulk = canEdit() && sel_.size ? h('div', { class: 'sel-bar' }, h('div', { class: 'sel-row' },
+      h('b', {}, `${sel_.size} seleccionada${sel_.size === 1 ? '' : 's'}`), bulkSel,
+      h('button', { class: 'btn sm primary', type: 'button', onclick: () => { if (!bulkSel.value) return toast('Elige a qué planta moverlas.', true); move([...sel_], bulkSel.value); } }, 'Mover'),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => move([...sel_], 'Sin planta') }, 'Quitar planta'),
+      h('button', { class: 'btn sm danger quiet', type: 'button', onclick: () => eraseMany([...sel_], '', () => { sel_.clear(); render(); }) }, 'Eliminar'),
+      h('button', { class: 'btn sm quiet', type: 'button', onclick: () => { sel_.clear(); render(); } }, 'Quitar selección'))) : null;
     const node = h('div', { class: 'stack' },
       phead('Gasto por planta', 'Compras publicadas (facturas de proveedor menos notas de crédito) cargadas a cada planta. Una factura va a la planta elegida en ella o, si el proveedor surte una sola planta, a esa.'),
       h('div', { class: 'filters' }, inp({ type: 'date', value: st.from, onchange: e => go('plantas', { ...st, from: e.target.value }) }), h('span', { class: 'muted' }, 'a'), inp({ type: 'date', value: st.to, onchange: e => go('plantas', { ...st, to: e.target.value }) }),
         quick('Este mes', mStart, today()), quick('Mes pasado', ymd(pm), ymd(pmEnd)), quick('Este año', today().slice(0, 4) + '-01-01', today())),
       r.unassignedCount ? h('div', { class: 'msg bad' }, `${r.unassignedCount} factura${r.unassignedCount === 1 ? '' : 's'} sin planta en este periodo. Asigna planta a sus proveedores en Contactos, o elígela en cada factura.`) : null,
       h('div', { class: 'kpis' }, h('div', { class: 'kpi' }, h('span', {}, 'Total del periodo'), h('b', {}, money(r.total)), h('span', {}, `Subtotal ${money(r.subtotal)}`)), r.cities.map(c => h('div', { class: 'kpi' }, h('span', {}, c.city), h('b', {}, money(c.total)), h('span', {}, `${c.count} facturas`)))),
-      h('div', { class: 'plantgrid' }, cards.length ? cards : h('div', { class: 'empty2' }, 'No hay compras publicadas en este periodo.')));
+      h('div', { class: 'filters' },
+        h('div', { class: 'chips' }, h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(!pvState.list), onclick: () => { pvState.list = false; render(); } }, 'Resumen por proveedor'), h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(pvState.list), onclick: () => { pvState.list = true; render(); } }, 'Ver y mover facturas')),
+        pvState.list ? search : null,
+        pvState.list && canEdit() ? h('span', { class: 'muted small' }, 'Arrastra una factura a otra planta, usa "Mover a…", o la × para dejarla sin planta. Marca varias para moverlas juntas.') : null),
+      bulk,
+      h('div', { class: 'plantgrid' + (pvState.list ? ' board' : '') }, cards.length ? cards : h('div', { class: 'empty2' }, 'No hay compras publicadas en este periodo.')));
     node.querySelectorAll('.pbar i[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; });
     return node;
   });
+  const pvState = { list: false, q: '', sel: new Set() };
 
   /* ---------- presupuesto semanal por sucursal ---------- */
   const BUD_CATS = [['comida', 'Proveedores comida'], ['refrescos', 'Proveedores refrescos'], ['otros', 'Proveedores otros'], ['credito', 'Proveedores a crédito'], ['cxp', 'Cuentas por pagar anteriores'],
@@ -1138,7 +1200,7 @@
   }
 
   /* ================= CORRECTIONS ================= */
-  const FIELD = { planta: 'Planta', concepto: 'Concepto', 'concepto del proveedor': 'Concepto del proveedor', pago: 'Pago' };
+  const FIELD = { planta: 'Planta', concepto: 'Concepto', 'concepto del proveedor': 'Concepto del proveedor', pago: 'Pago', eliminada: 'Factura eliminada' };
   function corrTable(rows, inDoc) {
     return table([
       { t: 'Fecha', f: r => fdt(r.at), cls: 'nowrap' }, { t: 'Usuario', k: 'by' },
@@ -1152,7 +1214,7 @@
     const rows = await get('/api/acc/corrections?limit=2000');
     const st = corrState;
     const shown = rows.filter(r => (!st.field || r.field.startsWith(st.field)) && (!st.q || [r.doc, r.folio, r.partner, r.by, r.from, r.to, r.reason].some(v => String(v || '').toLowerCase().includes(st.q.toLowerCase()))));
-    const chips = h('div', { class: 'chips' }, [['', 'Todas'], ['planta', 'Planta'], ['concepto', 'Concepto'], ['pago', 'Pago']].map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(st.field === v), onclick: () => { st.field = v; render(); } }, `${t} (${v ? rows.filter(r => r.field.startsWith(v)).length : rows.length})`)));
+    const chips = h('div', { class: 'chips' }, [['', 'Todas'], ['planta', 'Planta'], ['concepto', 'Concepto'], ['pago', 'Pago'], ['eliminada', 'Eliminadas']].map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(st.field === v), onclick: () => { st.field = v; render(); } }, `${t} (${v ? rows.filter(r => r.field.startsWith(v)).length : rows.length})`)));
     const search = inp({ class: 'search', type: 'search', placeholder: 'Buscar factura, proveedor, usuario o motivo', value: st.q });
     search.addEventListener('keydown', e => { if (e.key === 'Enter') { st.q = search.value; render(); } });
     return h('div', { class: 'stack' }, phead('Correcciones', 'Cada vez que se cambia algo que ya estaba puesto (planta, concepto, pago) queda aquí: quién, cuándo, cómo estaba y cómo quedó.'),

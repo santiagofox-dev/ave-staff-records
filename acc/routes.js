@@ -37,7 +37,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { review: d.vendorReview ? d.vendorReview.status : '', reviewNote: d.vendorReview ? d.vendorReview.comment || '' : '', cash: d.cashSale ? d.cashSale.operation : '', plant: books.plantOf(d), plantSet: !!d.plant, test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length, bcat: d.budgetCat || (p && p.budgetCat) || '', bcatSet: !!d.budgetCat, fixes: d.fixes || 0 };
+    return { review: d.vendorReview ? d.vendorReview.status : '', reviewNote: d.vendorReview ? d.vendorReview.comment || '' : '', cash: d.cashSale ? d.cashSale.operation : '', plant: books.plantOf(d), plantSet: !!d.plant || !!d.noPlant, test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length, bcat: d.budgetCat || (p && p.budgetCat) || '', bcatSet: !!d.budgetCat, fixes: d.fixes || 0 };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
@@ -96,6 +96,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   app.get('/api/acc/budget/available', R(req => BUD.availableFor(books, req.query.partner, req.query.date)));
   app.get('/api/acc/plant-spend', R(req => books.plantSpend(req.query.from || '', req.query.to || '')));
   app.post('/api/acc/docs/:id/erase', W(req => books.eraseDoc(req.params.id, who(req))));
+  app.post('/api/acc/docs/erase', W(req => books.eraseDocs((req.body || {}).ids, who(req), String((req.body || {}).reason || '').slice(0, 200))));
   app.post('/api/acc/docs/bulk-post', W(req => {
     const ok = [], failed = [];
     const ids = (req.body.ids || []).slice(0, 2000).map(id => books.doc(id)).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date) || String(a.folio).localeCompare(String(b.folio), 'es', { numeric: true })).map(d => d.id);

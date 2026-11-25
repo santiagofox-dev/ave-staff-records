@@ -197,6 +197,7 @@ class Books {
   // the plant an invoice is charged to: chosen on the invoice, or the supplier's only plant
   plantOf(d) {
     if (d.plant) return LEGACY_PLANT[d.plant] || d.plant;
+    if (d.noPlant) return ''; // taken out of the supplier's plant on purpose
     const p = this.partner(d.partnerId);
     return p && Array.isArray(p.plants) && p.plants.length === 1 ? p.plants[0] : '';
   }
@@ -208,6 +209,7 @@ class Books {
   }
   docLabel(d) { const p = this.partner(d.partnerId); return { docId: d.id, doc: d.number || 'borrador', folio: `${d.serie || ''}${d.folio || ''}`, partner: p ? p.name : '', total: d.totalMxn || d.total || 0 }; }
   setPlant(ids, plant, user, reason) {
+    const inherit = plant === '@'; if (inherit) plant = '';
     if (plant && !this.plantNames().includes(plant)) throw httpErr(400, 'Esa planta no existe.');
     const changed = [], partners = new Set();
     for (const id of ids || []) {
@@ -215,6 +217,7 @@ class Books {
       if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
       changed.push([d, this.plantOf(d) || '']);
       d.plant = plant || ''; partners.add(d.partnerId);
+      if (plant || inherit) delete d.noPlant; else d.noPlant = true;
     }
     // the supplier learns from its facturas; its other facturas follow when it only delivers to one plant
     const before = this.inheritedCounts(partners);
@@ -224,7 +227,7 @@ class Books {
       const now = this.plantOf(d) || '';
       if (was && was !== now) this.correction(user, { ...this.docLabel(d), field: 'planta', from: was, to: now || 'sin planta', reason: reason || '' });
     }
-    this.log(user, 'asignó planta', 'documentos', '', `${changed.length} → ${plant || 'sin planta'}`);
+    this.log(user, 'asignó planta', 'documentos', '', `${changed.length} → ${plant || (inherit ? 'la del proveedor' : 'sin planta')}`);
     const followed = learned.filter(x => x.plants.length === 1).map(x => ({ ...x, docs: after[x.id] || 0 }));
     const released = learned.filter(x => x.plants.length !== 1).map(x => ({ ...x, docs: before[x.id] || 0 })).filter(x => x.docs);
     return { updated: changed.length, followed, released };
@@ -232,7 +235,7 @@ class Books {
   /** Facturas of these suppliers that take their plant from the supplier (no plant of their own). */
   inheritedCounts(partnerIds) {
     const out = {};
-    for (const d of this.db.docs) if (partnerIds.has(d.partnerId) && !d.plant && d.state !== 'erased' && TYPES[d.type].side === 'ap' && this.plantOf(d)) out[d.partnerId] = (out[d.partnerId] || 0) + 1;
+    for (const d of this.db.docs) if (partnerIds.has(d.partnerId) && !d.plant && !d.noPlant && d.state !== 'erased' && TYPES[d.type].side === 'ap' && this.plantOf(d)) out[d.partnerId] = (out[d.partnerId] || 0) + 1;
     return out;
   }
   /** A supplier with no plants set by hand gets the plants its facturas were assigned to. One plant = all its facturas go there. */
@@ -290,9 +293,10 @@ class Books {
       const p = this.partner(d.partnerId), vk = d.partnerId || '-';
       const v = g.vendors[vk] = g.vendors[vk] || { partnerId: d.partnerId, name: p ? p.name : '—', count: 0, total: 0 };
       v.count++; v.total = r2(v.total + tot);
+      (g.docs = g.docs || []).push({ id: d.id, ref: `${d.serie || ''}${d.folio || ''}` || d.number || '', partner: p ? p.name : '—', date: d.date, total: tot, own: !!d.plant || !!d.noPlant, refund: sg < 0 });
       if (!plant) unassigned.push(d.id);
     }
-    const list = Object.values(groups).map(g => ({ ...g, vendors: Object.values(g.vendors).sort((a, b) => b.total - a.total) }));
+    const list = Object.values(groups).map(g => ({ ...g, vendors: Object.values(g.vendors).sort((a, b) => b.total - a.total), docs: (g.docs || []).sort((a, b) => b.date.localeCompare(a.date) || a.partner.localeCompare(b.partner)) }));
     const order = this.plantNames();
     list.sort((a, b) => (a.plant === 'Sin planta') - (b.plant === 'Sin planta') || order.indexOf(a.plant) - order.indexOf(b.plant));
     const cities = {};
@@ -530,6 +534,17 @@ class Books {
     delete d.uuid; d.files = []; d.lines = []; d.warnings = []; delete d.portal;
     this.log(user, 'eliminó', 'documento', d.id, d.number || `${d.serie || ''}${d.folio || ''}` || 'borrador');
     return d;
+  }
+  /** Delete several facturas at once (same rules as one by one); returns which could not be deleted and why. */
+  eraseDocs(ids, user, reason) {
+    const done = [], failed = [];
+    for (const id of ids || []) {
+      const d = this.doc(id); if (!d) continue;
+      const label = this.docLabel(d);
+      try { this.eraseDoc(id, user); done.push(id); this.correction(user, { ...label, field: 'eliminada', from: d.erased.from === 'posted' ? 'publicada' : d.erased.from, to: 'eliminada', reason: reason || '' }); }
+      catch (e) { failed.push({ id, doc: label.folio || label.doc, partner: label.partner, error: e.message }); }
+    }
+    return { erased: done.length, failed };
   }
   deleteDraft(id, user) {
     const d = this.doc(id);
