@@ -847,25 +847,24 @@
       const t = st.totals, over = t.budget && t.spent > t.budget;
       const rows = budState.edit && !['otras', 'sin'].includes(st.id)
         ? BUD_CATS.map(([k, label]) => { const cur = (st.rows.find(x => x.cat === k) || {}).budget || 0; (editAmts[st.id] = editAmts[st.id] || {})[k] = cur;
-          return h('tr', {}, h('td', {}, label), h('td', { class: 'n' }, inp({ type: 'number', min: 0, step: 100, value: cur || '', class: 'budin', 'aria-label': `${st.name} ${label}`, onchange: e => { editAmts[st.id][k] = e.target.value; } })), h('td', {}), h('td', {}), h('td', {}), h('td', {})); })
+          return h('tr', {}, h('td', {}, label), h('td', { class: 'n' }, inp({ type: 'number', min: 0, step: 100, value: cur || '', class: 'budin', 'aria-label': `${st.name} ${label}`, onchange: e => { editAmts[st.id][k] = e.target.value; } })), h('td', {}), h('td', {}), h('td', {})); })
         : st.rows.flatMap(row => {
           const o = row.budget ? row.spent > row.budget : false, key = st.id + '|' + row.cat, open = budState.open.has(key);
           const tr = h('tr', { class: 'click' + (o ? ' overrow' : '') + (row.cat === 'sin' ? ' warnrow' : '') },
             h('td', {}, row.label, row.manual ? h('span', { class: 'muted small' }, ` · ${money(row.manual)} a mano`) : null),
             h('td', { class: 'n' }, row.budget ? money(row.budget) : '—'), h('td', { class: 'n' }, money(row.spent)),
             h('td', { class: 'n' + (row.available < 0 ? ' neg' : '') }, row.budget ? money(row.available) : ''),
-            h('td', { class: 'barcell' }, row.budget ? [bar(row.pct, o), h('span', { class: 'small' + (o ? ' neg' : ' muted') }, row.pct + '%')] : null),
-            h('td', { class: 'n muted' }, row.invoiced ? money(row.invoiced) : ''));
+            h('td', { class: 'barcell' }, row.budget ? [bar(row.pct, o), h('span', { class: 'small' + (o ? ' neg' : ' muted') }, row.pct + '%')] : null));
           tr.addEventListener('click', () => { open ? budState.open.delete(key) : budState.open.add(key); render(); });
-          const det = open ? h('tr', { class: 'det' }, h('td', { colspan: 6 }, row.items.length ? h('ul', { class: 'budlist' }, row.items.map(it => h('li', {}, h('a', { href: '#/pago/' + it.id }, it.number), ` · ${fdm(it.date)} · ${it.partner}${it.doc ? ' · ' + it.doc : ''} `, h('b', {}, money(it.amount))))) : h('span', { class: 'muted small' }, row.manual ? 'Solo hay gastos capturados a mano (abajo).' : 'Sin pagos esta semana.'))) : null;
+          const det = open ? h('tr', { class: 'det' }, h('td', { colspan: 5 }, row.items.length ? h('ul', { class: 'budlist' }, row.items.map(it => h('li', {}, h('a', { href: '#/pago/' + it.id }, it.number), ` · ${fdm(it.date)} · ${it.partner}${it.doc ? ' · ' + it.doc : ''} `, h('b', {}, money(it.amount))))) : h('span', { class: 'muted small' }, row.manual ? 'Solo hay gastos capturados a mano (abajo).' : 'Sin pagos esta semana.'))) : null;
           return [tr, det];
         });
       return h('section', { class: 'panel budcard' + (over ? ' over' : '') },
         h('div', { class: 'ph' }, h('div', {}, h('b', {}, st.name), st.plants.length ? h('span', { class: 'muted small' }, ' · ' + st.plants.join(', ')) : null),
           t.budget ? h('div', { class: 'small' }, h('b', { class: over ? 'neg' : '' }, money(t.spent)), ` de ${money(t.budget)} · disponible `, h('b', { class: t.available < 0 ? 'neg' : '' }, money(t.available))) : h('div', { class: 'small' }, `Pagado ${money(t.spent)}`)),
         t.budget ? bar(t.pct, over) : null,
-        h('div', { class: 'tw' }, h('table', { class: 't budt' }, h('thead', {}, h('tr', {}, h('th', {}, 'Concepto'), h('th', { class: 'n' }, 'Presupuesto'), h('th', { class: 'n' }, 'Pagado'), h('th', { class: 'n' }, 'Disponible'), h('th', {}, ''), h('th', { class: 'n' }, 'Facturas cargadas'))),
-          h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colspan: 6, class: 'empty2' }, 'Sin presupuesto ni pagos esta semana.'))))));
+        h('div', { class: 'tw' }, h('table', { class: 't budt' }, h('thead', {}, h('tr', {}, h('th', {}, 'Concepto'), h('th', { class: 'n' }, 'Presupuesto'), h('th', { class: 'n' }, 'Pagado'), h('th', { class: 'n' }, 'Disponible'), h('th', {}, ''))),
+          h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colspan: 5, class: 'empty2' }, 'Sin presupuesto ni pagos esta semana.'))))));
     };
     const catSel = (val, attrs) => sel([['', '— Elegir concepto —'], ...BUD_CATS], val || '', attrs);
     const addSpend = async () => {
@@ -884,7 +883,7 @@
       budState.edit ? null : h('button', { class: 'btn', type: 'button', onclick: addSpend }, 'Agregar gasto (nómina, IMSS…)')] : null;
     const T = r.totals;
     return h('div', { class: 'stack' },
-      phead('Presupuesto semanal', 'Tope de gasto por sucursal. Cada pago a proveedor cuenta en la sucursal de la planta de la factura y en el concepto del proveedor; nómina, IMSS y otros se capturan a mano. "Facturas cargadas" es lo facturado en la semana, todavía sin pagar o ya pagado.', tools),
+      phead('Presupuesto semanal', 'Tope de gasto por sucursal. Cada pago a proveedor cuenta en la sucursal de la planta de la factura y en el concepto del proveedor; nómina, IMSS y otros se capturan a mano. Una factura solo aparece aquí cuando ya está pagada, en la semana de la fecha del pago.', tools),
       h('div', { class: 'filters' },
         h('button', { class: 'btn sm', type: 'button', onclick: () => go('presupuesto', { week: wkAdd(wk, -7) }) }, '← Semana anterior'),
         h('b', { class: 'wklabel' }, `Semana del ${fdm(wk)} al ${fdm(r.end)} ${r.end.slice(0, 4)}`),
@@ -894,12 +893,11 @@
       h('div', { class: 'kpis' },
         h('div', { class: 'kpi' }, h('span', {}, 'Presupuesto de la semana'), h('b', {}, money(T.budget))),
         h('div', { class: 'kpi' }, h('span', {}, 'Pagado'), h('b', { class: T.spent > T.budget ? 'neg' : '' }, money(T.spent)), h('small', {}, T.budget ? Math.round(T.spent / T.budget * 100) + '% del presupuesto' : '')),
-        h('div', { class: 'kpi' }, h('span', {}, 'Disponible'), h('b', { class: T.available < 0 ? 'neg' : '' }, money(T.available))),
-        h('div', { class: 'kpi' }, h('span', {}, 'Facturas cargadas'), h('b', {}, money(T.invoiced)), h('small', {}, 'facturas con fecha de esta semana'))),
+        h('div', { class: 'kpi' }, h('span', {}, 'Disponible'), h('b', { class: T.available < 0 ? 'neg' : '' }, money(T.available)))),
       r.uncategorized.length ? h('section', { class: 'panel' }, h('h2', {}, `Proveedores sin concepto (${r.uncategorized.length})`),
         h('p', { class: 'muted small' }, 'Sus pagos aparecen como "Sin categoría". Elige el concepto una vez y queda guardado en el proveedor.'),
-        h('div', { class: 'tw' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, h('th', {}, 'Proveedor'), h('th', { class: 'n' }, 'Pagado'), h('th', { class: 'n' }, 'Facturado'), h('th', {}, 'Concepto'))),
-          h('tbody', {}, r.uncategorized.map(u => h('tr', {}, h('td', {}, u.name), h('td', { class: 'n' }, money(u.paid)), h('td', { class: 'n' }, money(u.invoiced)),
+        h('div', { class: 'tw' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, h('th', {}, 'Proveedor'), h('th', { class: 'n' }, 'Pagado'), h('th', {}, 'Concepto'))),
+          h('tbody', {}, r.uncategorized.map(u => h('tr', {}, h('td', {}, u.name), h('td', { class: 'n' }, money(u.paid)),
             h('td', {}, canEdit() ? catSel(u.guess || '', { onchange: async e => { if (!e.target.value) return; if (await act(() => put(`/api/acc/partners/${u.partnerId}/budget-cat`, { cat: e.target.value }), 'Guardado.')) render(); } }) : '', u.guess ? h('span', { class: 'muted small' }, ' sugerido') : null))))))) : null,
       h('div', { class: 'budgrid' }, r.sites.map(siteCard)),
       h('section', { class: 'panel' }, h('h2', {}, 'Gastos capturados a mano esta semana'),

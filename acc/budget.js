@@ -108,7 +108,7 @@ function report(books, weekIn) {
   for (const s of S) for (const p of s.plants) siteOfPlant[p] = s.id;
   const { amounts, from } = budgetFor(books, week);
   const cell = {};
-  const get = (site, cat) => { const k = site + '|' + cat; return cell[k] = cell[k] || { paid: 0, manual: 0, invoiced: 0, items: [] }; };
+  const get = (site, cat) => { const k = site + '|' + cat; return cell[k] = cell[k] || { paid: 0, manual: 0, items: [] }; };
   const catOf = (d, p) => (d && d.budgetCat) || (p && p.budgetCat) || 'sin';
   const siteOfPartner = p => { const ss = [...new Set((p && p.plants || []).map(x => siteOfPlant[x]).filter(Boolean))]; return ss.length === 1 ? ss[0] : null; };
   const siteOfDoc = (d, p) => { const pl = books.plantOf(d); return pl ? siteOfPlant[pl] || 'otras' : siteOfPartner(p) || 'sin'; };
@@ -123,23 +123,16 @@ function report(books, weekIn) {
       const site = siteOfDoc(d, p), cat = catOf(d, p);
       const c = get(site, cat); c.paid = r2(c.paid + a.amount);
       c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', doc: d ? `${d.serie || ''}${d.folio || ''}` || d.number : '', amount: r2(a.amount) });
-      if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, invoiced: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + a.amount); }
+      if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + a.amount); }
     }
     if (rest > 0.009) {
       const site = siteOfPartner(p) || 'sin', cat = catOf(null, p);
       const c = get(site, cat); c.paid = r2(c.paid + rest);
       c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', doc: 'anticipo / sin factura', amount: r2(rest) });
-      if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, invoiced: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + rest); }
+      if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + rest); }
     }
   }
-  // facturas cargadas this week (by invoice date)
-  for (const d of books.db.docs) {
-    if (d.state !== 'posted' || d.date < week || d.date > end || !/^(in_invoice|in_refund)$/.test(d.type)) continue;
-    const p = books.partner(d.partnerId), site = siteOfDoc(d, p), cat = catOf(d, p);
-    const sign = d.type === 'in_refund' ? -1 : 1;
-    const c = get(site, cat); c.invoiced = r2(c.invoiced + sign * (d.totalMxn || 0));
-    if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, invoiced: 0, guess: guessCat(p.name) }; u.invoiced = r2(u.invoiced + sign * (d.totalMxn || 0)); }
-  }
+  // unpaid facturas never count here: a factura enters the weekly budget only through its payment
   // manual entries (nómina, IMSS, …)
   const manual = store(books).spend.filter(e => e.date >= week && e.date <= end);
   for (const e of manual) { const c = get(e.site, e.cat); c.manual = r2(c.manual + e.amount); }
@@ -149,17 +142,17 @@ function report(books, weekIn) {
     const cats = [...CATS.map(c => c[0]), 'sin'].filter(k => bud[k] || cell[s.id + '|' + k]);
     if (!cats.length && (s.id === 'otras' || s.id === 'sin')) continue;
     const rows = cats.map(k => {
-      const c = cell[s.id + '|' + k] || { paid: 0, manual: 0, invoiced: 0, items: [] };
+      const c = cell[s.id + '|' + k] || { paid: 0, manual: 0, items: [] };
       const budget = r2(bud[k] || 0), spent = r2(c.paid + c.manual);
-      return { cat: k, label: CAT_LABEL[k], budget, paid: c.paid, manual: c.manual, spent, invoiced: c.invoiced, available: r2(budget - spent), pct: budget ? Math.round(spent / budget * 100) : null, items: c.items.sort((a, b) => a.date.localeCompare(b.date)) };
+      return { cat: k, label: CAT_LABEL[k], budget, paid: c.paid, manual: c.manual, spent, available: r2(budget - spent), pct: budget ? Math.round(spent / budget * 100) : null, items: c.items.sort((a, b) => a.date.localeCompare(b.date)) };
     });
-    const t = rows.reduce((a, r) => ({ budget: a.budget + r.budget, spent: a.spent + r.spent, invoiced: a.invoiced + r.invoiced }), { budget: 0, spent: 0, invoiced: 0 });
-    out.push({ id: s.id, name: s.name, plants: s.plants, rows, totals: { budget: r2(t.budget), spent: r2(t.spent), invoiced: r2(t.invoiced), available: r2(t.budget - t.spent), pct: t.budget ? Math.round(t.spent / t.budget * 100) : null } });
+    const t = rows.reduce((a, r) => ({ budget: a.budget + r.budget, spent: a.spent + r.spent }), { budget: 0, spent: 0 });
+    out.push({ id: s.id, name: s.name, plants: s.plants, rows, totals: { budget: r2(t.budget), spent: r2(t.spent), available: r2(t.budget - t.spent), pct: t.budget ? Math.round(t.spent / t.budget * 100) : null } });
   }
-  const g = out.reduce((a, s) => ({ budget: a.budget + s.totals.budget, spent: a.spent + s.totals.spent, invoiced: a.invoiced + s.totals.invoiced }), { budget: 0, spent: 0, invoiced: 0 });
-  return { week, end, budgetFrom: from, sites: out, totals: { budget: r2(g.budget), spent: r2(g.spent), invoiced: r2(g.invoiced), available: r2(g.budget - g.spent) },
+  const g = out.reduce((a, s) => ({ budget: a.budget + s.totals.budget, spent: a.spent + s.totals.spent }), { budget: 0, spent: 0 });
+  return { week, end, budgetFrom: from, sites: out, totals: { budget: r2(g.budget), spent: r2(g.spent), available: r2(g.budget - g.spent) },
     manual: manual.map(e => ({ ...e, label: CAT_LABEL[e.cat], siteName: (S.find(s => s.id === e.site) || {}).name || e.site })),
-    uncategorized: Object.values(uncategorized).sort((a, b) => b.paid + b.invoiced - a.paid - a.invoiced),
+    uncategorized: Object.values(uncategorized).sort((a, b) => b.paid - a.paid),
     cats: CATS.map(([id, label]) => ({ id, label })), siteList: S.map(s => ({ id: s.id, name: s.name, plants: s.plants })) };
 }
 
