@@ -40,10 +40,19 @@ module.exports = function (app, { DATA_DIR }) {
 
   app.get('/asistencia', (req, res) => res.sendFile(path.join(__dirname, 'public', 'asistencia.html')));
 
+  /* Summaries of big JSON files, kept in memory until the file changes (mtime/size), so lists don't re-read every run. */
+  const memo = new Map();
+  function cached(f, make) {
+    let st; try { st = fs.statSync(f); } catch { memo.delete(f); return null; }
+    const k = st.mtimeMs + ':' + st.size, hit = memo.get(f);
+    if (hit && hit.k === k) return hit.v;
+    const raw = readJ(f, null), v = raw && make(raw);
+    memo.set(f, { k, v }); return v;
+  }
+  const runMeta = id => cached(path.join(runDir(id), 'run.json'), r => ({ id: r.id, plant: r.plant || 'monclova', monday: r.monday, createdAt: r.createdAt, by: r.by, status: r.status, source: r.source || 'foto', photos: (r.photos || []).length, summary: r.lastSummary || null }));
   function listRuns(pl) {
-    return fs.readdirSync(RUNS).filter(x => RUN_ID.test(x)).map(loadRun).filter(Boolean).filter(r => !pl || (r.plant || 'monclova') === pl)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 40)
-      .map(r => ({ id: r.id, plant: r.plant || 'monclova', monday: r.monday, createdAt: r.createdAt, by: r.by, status: r.status, source: r.source || 'foto', photos: (r.photos || []).length, summary: r.lastSummary || null }));
+    return fs.readdirSync(RUNS).filter(x => RUN_ID.test(x)).map(runMeta).filter(Boolean).filter(r => !pl || r.plant === pl)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 40).map(r => ({ ...r }));
   }
   /* Turnos seen in the last CHECADOR, with the rules in force (saved > plant default > CHECADOR schedule). */
   function turnoTable(pl) {
@@ -71,9 +80,9 @@ module.exports = function (app, { DATA_DIR }) {
     const runs = listRuns(pl);
     const incWeeks = listDir(pl, 'incidencias');
     const weeks = listDir(pl, 'weeks').slice(0, 20).map(mon => {
-      const w = week(pl, mon); return { monday: mon, people: Object.keys(w.people).length, uploadedAt: w.uploadedAt, by: w.by, file: w.file, printed: fs.existsSync(path.join(dir(pl, 'prints'), mon + '.json')), incidencias: incWeeks.includes(mon), runs: runs.filter(r => r.monday === mon).length };
+      const w = cached(path.join(dir(pl, 'weeks'), mon + '.json'), x => ({ people: Object.keys(x.people || {}).length, uploadedAt: x.uploadedAt, by: x.by, file: x.file })) || {}; return { monday: mon, people: w.people || 0, uploadedAt: w.uploadedAt, by: w.by, file: w.file, printed: fs.existsSync(path.join(dir(pl, 'prints'), mon + '.json')), incidencias: incWeeks.includes(mon), runs: runs.filter(r => r.monday === mon).length };
     });
-    const inc = incWeeks.slice(0, 20).map(mon => { const x = incid(pl, mon); return { monday: mon, rows: x.rows.length, file: x.file, sheet: x.sheet, uploadedAt: x.uploadedAt, checador: fs.existsSync(path.join(dir(pl, 'weeks'), mon + '.json')) }; });
+    const inc = incWeeks.slice(0, 20).map(mon => { const x = cached(path.join(dir(pl, 'incidencias'), mon + '.json'), y => ({ rows: (y.rows || []).length, file: y.file, sheet: y.sheet, uploadedAt: y.uploadedAt })) || { rows: 0 }; return { monday: mon, rows: x.rows, file: x.file, sheet: x.sheet, uploadedAt: x.uploadedAt, checador: fs.existsSync(path.join(dir(pl, 'weeks'), mon + '.json')) }; });
     res.json({ plant: { id: pl, name: P.name, source: P.source }, plants: Object.values(A.PLANTS).map(x => ({ id: x.id, name: x.name, source: x.source })),
       hasKey: AI.hasKey(), model: AI.MODEL(), nextMonday: nextMonday(), thisMonday: A.mondayOf(todayCJ()),
       turnos: turnoTable(pl), tolMin: settings(pl).tolMin ?? 15, exempt: exemptView(pl), inactive: inactiveView(pl),

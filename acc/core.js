@@ -134,10 +134,27 @@ class Books {
   }
 
   /* ---------- lookups ---------- */
-  account(code) { return this.db.accounts.find(a => a.code === code); }
-  partner(id) { return this.db.partners.find(p => p.id === id); }
-  doc(id) { return this.db.docs.find(d => d.id === id); }
-  payment(id) { return this.db.payments.find(p => p.id === id); }
+  /* Read cache: while a read-only request runs, lookups use maps built once instead of scanning
+     every list for every row (thousands of facturas made each page several seconds). Writes never use it. */
+  withCache(fn) {
+    if (this._c) return fn();
+    this._c = {};
+    try { return fn(); } finally { this._c = null; }
+  }
+  _ix(name, build) { const c = this._c; return c ? (c[name] || (c[name] = build())) : null; }
+  _byId(list, key) { return () => { const m = new Map(); for (const x of this.db[list]) m.set(x[key], x); return m; }; }
+  account(code) { const m = this._ix('acc', this._byId('accounts', 'code')); return m ? m.get(code) : this.db.accounts.find(a => a.code === code); }
+  partner(id) { const m = this._ix('par', this._byId('partners', 'id')); return m ? m.get(id) : this.db.partners.find(p => p.id === id); }
+  doc(id) { const m = this._ix('doc', this._byId('docs', 'id')); return m ? m.get(id) : this.db.docs.find(d => d.id === id); }
+  payment(id) { const m = this._ix('pay', this._byId('payments', 'id')); return m ? m.get(id) : this.db.payments.find(p => p.id === id); }
+  _allocIx() {
+    return this._ix('alloc', () => {
+      const pays = new Map(), refunds = new Map();
+      for (const p of this.db.payments) if (p.state === 'posted') for (const a of p.allocations) { let l = pays.get(a.docId); if (!l) pays.set(a.docId, l = []); l.push({ payment: p, amount: a.amount }); }
+      for (const r of this.db.docs) if (r.state === 'posted' && r.appliesTo && TYPES[r.type].sign < 0) { let l = refunds.get(r.appliesTo); if (!l) refunds.set(r.appliesTo, l = []); l.push({ refund: r, amount: r.totalMxn }); }
+      return { pays, refunds };
+    });
+  }
   entry(id) { return this.db.entries.find(e => e.id === id); }
   bank(id) { return this.db.banks.find(b => b.id === id); }
   get A() { return this.db.settings.accounts; }
@@ -488,6 +505,8 @@ class Books {
   }
 
   paidOn(d) {
+    const ix = this._allocIx();
+    if (ix) return [...(ix.pays.get(d.id) || []), ...(ix.refunds.get(d.id) || [])];
     const out = [];
     for (const p of this.db.payments) if (p.state === 'posted') for (const a of p.allocations) if (a.docId === d.id) out.push({ payment: p, amount: a.amount });
     for (const r of this.db.docs) if (r.state === 'posted' && r.appliesTo === d.id && TYPES[r.type].sign < 0) out.push({ refund: r, amount: r.totalMxn });
@@ -497,7 +516,8 @@ class Books {
     if (d.state !== 'posted') return 0;
     if (TYPES[d.type].sign < 0) {
       if (d.appliesTo) { const inv = this.doc(d.appliesTo); if (inv && inv.state === 'posted') return 0; }
-      const used = this.db.payments.filter(p => p.state === 'posted').reduce((a, p) => a + p.allocations.filter(x => x.docId === d.id).reduce((s, x) => s + x.amount, 0), 0);
+      const ix = this._allocIx();
+      const used = ix ? (ix.pays.get(d.id) || []).reduce((a, x) => a + x.amount, 0) : this.db.payments.filter(p => p.state === 'posted').reduce((a, p) => a + p.allocations.filter(x => x.docId === d.id).reduce((s, x) => s + x.amount, 0), 0);
       return r2(d.totalMxn - used);
     }
     return r2(d.totalMxn - this.paidOn(d).reduce((a, x) => a + x.amount, 0));
@@ -587,6 +607,11 @@ class Books {
 
   /* ---------- journal derivation ---------- */
   docTaxSplit(d) {
+    const c = this._c && (this._c.split || (this._c.split = new Map()));
+    if (c) { let v = c.get(d); if (!v) c.set(d, v = this._docTaxSplit(d)); return v; }
+    return this._docTaxSplit(d);
+  }
+  _docTaxSplit(d) {
     // Amounts in MXN: per-line net (by account), IVA, IEPS, retained IVA and ISR
     const rate = d.rate || 1, A = this.A;
     const byAccount = {}; let iva = 0, ieps = 0, retIva = 0, retIsr = 0;
@@ -614,6 +639,11 @@ class Books {
   }
 
   docJournal(d) {
+    const c = this._c && (this._c.dj || (this._c.dj = new Map()));
+    if (c) { let v = c.get(d); if (!v) c.set(d, v = this._docJournal(d)); return v; }
+    return this._docJournal(d);
+  }
+  _docJournal(d) {
     const A = this.A, T = TYPES[d.type], s = this.docTaxSplit(d), src = { kind: 'doc', id: d.id, number: d.number, type: d.type };
     const L = [];
     const add = (account, debit, credit, label) => { if (r2(debit) || r2(credit)) L.push({ date: d.date, account, debit: r2(debit), credit: r2(credit), partnerId: d.partnerId, label, src }); };
@@ -681,6 +711,13 @@ class Books {
   }
 
   journal(from, to) {
+    const c = this._c && (this._c.jr || (this._c.jr = new Map())), key = `${from || ''}|${to || ''}`;
+    if (c && c.has(key)) return c.get(key);
+    const out = this._journal(from, to);
+    if (c) c.set(key, out);
+    return out;
+  }
+  _journal(from, to) {
     const inRange = d => (!from || d >= from) && (!to || d <= to);
     const L = [];
     for (const d of this.db.docs) if (d.state === 'posted' && inRange(d.date)) L.push(...this.docJournal(d));

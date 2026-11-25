@@ -18,7 +18,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     if (!canEdit(req)) return res.status(403).json({ error: 'Tu usuario es de solo consulta.' });
     try { const out = fn(req, res); books.save(); if (out !== undefined) res.json(out); } catch (e) { next(e); }
   };
-  const R = fn => (req, res, next) => { try { res.json(fn(req, res)); } catch (e) { next(e); } };
+  const R = fn => (req, res, next) => { try { res.json(books.withCache(() => fn(req, res))); } catch (e) { next(e); } };
   const D = s => (/^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : null);
 
   app.get('/contabilidad', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'contabilidad.html')));

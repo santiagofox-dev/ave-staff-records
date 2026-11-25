@@ -82,8 +82,10 @@ function recordFail(ip) {
 }
 
 /* ---------------- app ---------------- */
+const compression = require('compression');
 const app = express();
 app.set('trust proxy', 1);
+app.use(compression());
 app.disable('x-powered-by');
 
 app.use((req, res, next) => {
@@ -92,7 +94,7 @@ app.use((req, res, next) => {
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
   });
   if (PROD) res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
@@ -127,7 +129,8 @@ const SITE_DIR = path.join(__dirname, 'public', 'site');
 app.get(['/', '/index.html'], (req, res) => res.sendFile(path.join(SITE_DIR, 'index.html')));
 app.get('/aviso-de-privacidad', (req, res) => res.sendFile(path.join(SITE_DIR, 'aviso-de-privacidad.html')));
 app.use(express.static(SITE_DIR, { index: false, maxAge: '1h' }));
-app.use('/static', express.static(path.join(__dirname, 'public', 'static'), { maxAge: '1h' }));
+// app assets are versioned (?v=N in the pages), so browsers can keep them for a week
+app.use('/static', express.static(path.join(__dirname, 'public', 'static'), { maxAge: '7d' }));
 
 app.get('/login', (req, res) => {
   if (authed(req)) return res.redirect(homeFor(req.user));
@@ -390,7 +393,7 @@ app.get('/api/hub', (req, res, next) => {
     }
     if (admin) { try { out.tools.asistencia = asistencia.summary(); } catch (e) { console.error(e); } }
     if (admin || role === 'contador' || role === 'consulta') {
-    const d = books.dashboard();
+    const d = books.withCache(() => books.dashboard());
     out.tools.contabilidad = { payable: d.payable, payableOverdue: d.payableOverdue, receivable: d.receivable, receivableOverdue: d.receivableOverdue, banks: r2h(d.banks.reduce((a, b) => a + b.balance, 0)), drafts: d.drafts, portalPending: portal.pendingCount(), month: d.month, pnl: d.pnl, series: d.series.slice(-6), dueSoon: d.dueSoon.slice(0, 3).map(x => ({ partner: x.partner, due: x.due, amount: x.amount })) };
     }
     res.json(out);
