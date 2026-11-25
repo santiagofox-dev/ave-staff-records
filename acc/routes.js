@@ -75,7 +75,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   app.get('/api/acc/cash-sales', R(req => { const r = books.cashSales(req.query.from || '', req.query.to || '', req.query.operation || ''); return { ...r, rows: r.rows.map(d => ({ ...docRow(d), operation: d.cashSale.operation, by: d.cashSale.by, subtotal: d.subtotal, iva: d.traslados, concept: (d.lines[0] || {}).description || '' })) }; }));
   app.post('/api/acc/cash-sales', W(req => { const d = books.recordCashSale(req.body || {}, who(req)); return docRow(d); }));
   /* ---------- plants ---------- */
-  app.post('/api/acc/docs/plant', W(req => ({ updated: books.setPlant((req.body || {}).ids, (req.body || {}).plant, who(req), String((req.body || {}).reason || '').slice(0, 200)) })));
+  app.post('/api/acc/docs/plant', W(req => books.setPlant((req.body || {}).ids, (req.body || {}).plant, who(req), String((req.body || {}).reason || '').slice(0, 200))));
   app.post('/api/acc/docs/unpay', W(req => books.unpayDocs((req.body || {}).ids, who(req), String((req.body || {}).reason || '').slice(0, 200))));
   app.get('/api/acc/corrections', R(req => (books.db.corrections || []).filter(c => !req.query.doc || c.docId === req.query.doc).slice(-Math.min(3000, parseInt(req.query.limit, 10) || 1000)).reverse()));
   /* Weekly budget per site (presupuesto por sucursal) */

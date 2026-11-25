@@ -93,6 +93,7 @@ class Books {
     if (fs.existsSync(this.file)) this.db = JSON.parse(fs.readFileSync(this.file, 'utf8'));
     else this.db = this.fresh(opts);
     this.db.settings = { ...DEFAULT_SETTINGS, ...this.db.settings, accounts: { ...DEFAULT_SETTINGS.accounts, ...(this.db.settings || {}).accounts } };
+    if (!this.db.plantsLearned) { this.learnPlants(null, 'sistema'); this.db.plantsLearned = 1; }
     this.save();
   }
 
@@ -183,6 +184,8 @@ class Books {
     const plants = Array.isArray(data.plants) ? [...new Set(data.plants.map(String))].filter(x => known.has(x)) : (p ? p.plants || [] : []);
     const fields = { plants, rfc, name: String(data.name).trim(), supplier: !!data.supplier, customer: !!data.customer, terms: Math.max(0, Math.min(365, parseInt(data.terms, 10) || 0)), account: data.account || null, email: data.email || '', phone: data.phone || '', regimen: data.regimen || '', cp: data.cp || '', notes: data.notes || '',
       budgetCat: data.budgetCat !== undefined ? (data.budgetCat || null) : (p ? p.budgetCat || null : null) };
+    // plants chosen by hand in the contact win over the ones learned from facturas
+    fields.plantsAuto = p && p.plantsAuto && [...plants].sort().join('|') === [...(p.plants || [])].sort().join('|') ? true : false;
     if (p) { const termsChanged = p.terms !== fields.terms; Object.assign(p, fields); this.log(user, 'editó', 'contacto', p.id, p.name); if (termsChanged) this.recomputeDue(p.id, user); }
     else { p = { id: uid(), created: new Date().toISOString(), ...fields }; this.db.partners.push(p); this.log(user, 'creó', 'contacto', p.id, p.name); }
     return p;
@@ -206,17 +209,50 @@ class Books {
   docLabel(d) { const p = this.partner(d.partnerId); return { docId: d.id, doc: d.number || 'borrador', folio: `${d.serie || ''}${d.folio || ''}`, partner: p ? p.name : '', total: d.totalMxn || d.total || 0 }; }
   setPlant(ids, plant, user, reason) {
     if (plant && !this.plantNames().includes(plant)) throw httpErr(400, 'Esa planta no existe.');
-    let n = 0;
+    const changed = [], partners = new Set();
     for (const id of ids || []) {
       const d = this.doc(id);
       if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
-      const before = this.plantOf(d) || '';
-      d.plant = plant || ''; n++;
-      const after = this.plantOf(d) || '';
-      if (before && before !== after) this.correction(user, { ...this.docLabel(d), field: 'planta', from: before, to: after || 'sin planta', reason: reason || '' });
+      changed.push([d, this.plantOf(d) || '']);
+      d.plant = plant || ''; partners.add(d.partnerId);
     }
-    this.log(user, 'asignó planta', 'documentos', '', `${n} → ${plant || 'sin planta'}`);
-    return n;
+    // the supplier learns from its facturas; its other facturas follow when it only delivers to one plant
+    const before = this.inheritedCounts(partners);
+    const learned = this.learnPlants(partners, user);
+    const after = this.inheritedCounts(partners);
+    for (const [d, was] of changed) {
+      const now = this.plantOf(d) || '';
+      if (was && was !== now) this.correction(user, { ...this.docLabel(d), field: 'planta', from: was, to: now || 'sin planta', reason: reason || '' });
+    }
+    this.log(user, 'asignó planta', 'documentos', '', `${changed.length} → ${plant || 'sin planta'}`);
+    const followed = learned.filter(x => x.plants.length === 1).map(x => ({ ...x, docs: after[x.id] || 0 }));
+    const released = learned.filter(x => x.plants.length !== 1).map(x => ({ ...x, docs: before[x.id] || 0 })).filter(x => x.docs);
+    return { updated: changed.length, followed, released };
+  }
+  /** Facturas of these suppliers that take their plant from the supplier (no plant of their own). */
+  inheritedCounts(partnerIds) {
+    const out = {};
+    for (const d of this.db.docs) if (partnerIds.has(d.partnerId) && !d.plant && d.state !== 'erased' && TYPES[d.type].side === 'ap' && this.plantOf(d)) out[d.partnerId] = (out[d.partnerId] || 0) + 1;
+    return out;
+  }
+  /** A supplier with no plants set by hand gets the plants its facturas were assigned to. One plant = all its facturas go there. */
+  learnPlants(partnerIds, user) {
+    const seen = {};
+    for (const d of this.db.docs) {
+      if (d.state === 'erased' || !d.plant || TYPES[d.type].side !== 'ap' || (partnerIds && !partnerIds.has(d.partnerId))) continue;
+      (seen[d.partnerId] = seen[d.partnerId] || new Set()).add(LEGACY_PLANT[d.plant] || d.plant);
+    }
+    const out = [];
+    for (const id of partnerIds || Object.keys(seen)) {
+      const p = this.partner(id);
+      if (!p || ((p.plants || []).length && !p.plantsAuto)) continue; // set by hand: never touched
+      const next = [...(seen[id] || [])].sort(), cur = [...(p.plants || [])].sort();
+      if (next.join('|') === cur.join('|')) continue;
+      p.plants = next; p.plantsAuto = next.length > 0;
+      this.log(user, 'aprendió plantas', 'contacto', p.id, `${p.name}: ${next.join(', ') || 'ninguna'}`);
+      out.push({ id: p.id, name: p.name, plants: next });
+    }
+    return out;
   }
   /** Undo "paid": cancels the payments of these invoices. A payment that also covers other invoices must be undone from the payment itself. */
   unpayDocs(ids, user, reason) {

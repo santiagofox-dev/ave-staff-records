@@ -93,6 +93,10 @@
     const list = META.partners.filter(p => !kind || p[kind] || p.id === value);
     return sel([['', '— Contacto —'], ...list.map(p => [p.id, `${p.name}${p.rfc ? ' · ' + p.rfc : ''}`])], value, attrs);
   }
+  // what the supplier learned after a plant assignment (one plant = its other facturas follow)
+  const learnMsg = r => [
+    ...(r.followed || []).map(x => ` ${x.name} solo surte ${x.plants[0]}: sus facturas sin planta (${x.docs}) se cargan ahí.`),
+    ...(r.released || []).map(x => ` ${x.name} ahora surte ${x.plants.join(' y ')}: ${x.docs} facturas suyas quedan "Sin planta" para que elijas.`)].join('');
   const PLANTS = () => (META.settings && META.settings.plants) || [];
   const plantOpts = (first) => [...(first || []), ...PLANTS().flatMap(c => c.plants.map(p => [p, `${p} · ${c.city}`]))];
   function plantPicker(selected, onchange) {
@@ -237,7 +241,7 @@
             if (!ps.value) return toast('Elige una planta.', true);
             const v = ps.value === '*' ? '' : ps.value, n = changing('plant', v);
             const r = await act(() => post('/api/acc/docs/plant', { ids: [...selected], plant: v, reason: motivo.value }));
-            if (r) { toast(`Planta ${v ? 'asignada' : 'quitada'} en ${r.updated} facturas${n ? ` (${n} corregidas)` : ''}.`); selected.clear(); render(); }
+            if (r) { toast(`Planta ${v ? 'asignada' : 'quitada'} en ${r.updated} facturas${n ? ` (${n} corregidas)` : ''}.` + learnMsg(r)); selected.clear(); render(); }
           } }, `Asignar a ${selected.size}`),
           h('span', { class: 'muted' }, 'Concepto'), cs, h('button', { class: 'btn sm', type: 'button', onclick: async () => {
             if (!cs.value) return toast('Elige un concepto.', true);
@@ -267,7 +271,7 @@
       } }) : '' }] : []),
       { t: 'Número', cls: 'nowrap', f: r => h('span', {}, r.number || h('span', { class: 'muted' }, 'Borrador'), r.type.endsWith('refund') ? h('div', { class: 'muted small' }, 'Nota de crédito') : null) },
       { t: 'Folio', cls: 'mono nowrap', f: r => h('span', {}, `${r.serie || ''}${r.folio || ''}`, r.test ? [' ', badge('draft', 'Prueba')] : null, r.review === 'ok' ? [' ', h('span', { class: 'badge posted', title: 'El proveedor confirmó en el portal que los datos coinciden' }, 'Confirmada')] : r.review === 'disputed' ? [' ', h('span', { class: 'badge cancelled', title: 'El proveedor dice que no coincide: ' + r.reviewNote }, 'No coincide')] : r.review === 'pending' ? [' ', h('span', { class: 'badge draft', title: 'Esperando que el proveedor confirme en el portal' }, 'Por confirmar')] : null) },
-      ...(side === 'ap' ? [{ t: 'Planta', cls: 'nowrap', f: r => r.state === 'erased' ? '' : r.plant ? h('span', { class: r.plantSet ? '' : 'muted', title: r.plantSet ? 'Asignada en la factura' : 'Única planta del proveedor' }, r.plant) : h('span', { class: 'badge draft' }, 'Sin planta') }] : []),
+      ...(side === 'ap' ? [{ t: 'Planta', cls: 'nowrap', f: r => r.state === 'erased' ? '' : r.plant ? h('span', { class: r.plantSet ? '' : 'muted', title: r.plantSet ? 'Asignada en la factura' : 'El proveedor solo surte esta planta' }, r.plant) : h('span', { class: 'badge draft' }, 'Sin planta') }] : []),
       { t: side === 'ap' ? 'Proveedor' : 'Cliente', cls: 'w', f: r => h('span', {}, r.partner || h('span', { class: 'warnmark' }, 'Sin contacto'), side === 'ap' && r.bcat ? h('div', { class: 'muted small', title: r.bcatSet ? 'Concepto puesto en la factura' : 'Concepto del proveedor' }, (BUD_LABEL[r.bcat] || r.bcat) + (r.bcatSet ? ' (en factura)' : '')) : null) },
       { t: 'Fecha', cls: 'nowrap', f: r => fd(r.date) },
       { t: 'Vence', cls: 'nowrap', f: r => fd(r.due) },
@@ -439,7 +443,7 @@
         const vp = (META.partners.find(p => p.id === d.partnerId) || {}).plants || [];
         const eff = d.plant ? (d.plant === 'B1' ? 'Jabil B1' : d.plant === 'B3' ? 'Jabil B3' : d.plant) : '';
         const opts = [['', vp.length === 1 ? `${vp[0]} (única planta del proveedor)` : '— Sin planta —'], ...vp.map(p => [p, p + ' · del proveedor']), ...plantOpts().filter(o => !vp.includes(o[0]))];
-        return sel(opts, eff, { disabled: !canEdit() || d.state === 'erased' || !d.id, onchange: async e => { const r = await act(() => post('/api/acc/docs/plant', { ids: [d.id], plant: e.target.value })); if (r) { d.plant = e.target.value; toast(e.target.value ? `Cargada a ${e.target.value}.` : 'Planta quitada.'); if (d.id) render(); } } });
+        return sel(opts, eff, { disabled: !canEdit() || d.state === 'erased' || !d.id, onchange: async e => { const r = await act(() => post('/api/acc/docs/plant', { ids: [d.id], plant: e.target.value })); if (r) { d.plant = e.target.value; toast((e.target.value ? `Cargada a ${e.target.value}.` : 'Planta quitada.') + learnMsg(r)); if (d.id) render(); } } });
       })()) : null,
       side === 'ap' && d.id ? field('Concepto (presupuesto semanal)', (() => {
         const pc = (data.partner || {}).budgetCat || '';
@@ -914,6 +918,7 @@
       phead('Contactos', 'Proveedores y clientes. Se crean solos al importar XML.', canEdit() ? [h('button', { class: 'btn primary', type: 'button', onclick: async () => { if (await partnerDialog(null)) { await refreshMeta(); render(); } } }, 'Nuevo contacto')] : []),
       h('div', { class: 'filters' }, search, h('div', { class: 'chips' }, [['', 'Todos'], ['supplier', 'Proveedores'], ['customer', 'Clientes']].map(([v, t]) => h('button', { class: 'chipb', type: 'button', 'aria-pressed': String(cState.kind === v), onclick: () => { cState.kind = v; render(); } }, t)))),
       table([{ t: 'Nombre', k: 'name', cls: 'w' }, { t: 'RFC', k: 'rfc', cls: 'mono' }, { t: 'Tipo', f: r => [r.supplier ? 'Proveedor' : '', r.customer ? 'Cliente' : ''].filter(Boolean).join(' y ') }, { t: 'Cuenta por defecto', f: r => r.account ? `${r.account} ${accName(r.account)}` : '' },
+        { t: 'Plantas', f: r => (r.plants || []).length ? h('span', { title: r.plantsAuto ? 'Tomadas de sus facturas' : 'Puestas a mano' }, r.plants.join(', '), r.plantsAuto ? h('span', { class: 'muted small' }, ' (de sus facturas)') : null) : '' },
         { t: 'Días crédito', n: 1, f: r => String(r.terms) }, { t: 'Docs', n: 1, f: r => String(r.docs) }, { t: 'Le debemos', n: 1, f: r => r.payable || '' }, { t: 'Nos debe', n: 1, f: r => r.receivable || '' },
         { t: '', f: r => h('span', { class: 'nowrap' }, h('a', { href: '#/reportes/statement?' + qs({ partner: r.id }) }, 'Estado de cuenta'), ' · ', h('a', { href: `#/docs/${r.supplier ? 'ap' : 'ar'}?` + qs({ partner: r.id, state: '' }) }, 'Facturas')) }],
       rows, { tall: 1, onRow: async r => { if (canEdit() && await partnerDialog(r)) { await refreshMeta(); render(); } }, empty: 'No hay contactos.' }));
@@ -928,7 +933,7 @@
       field('Cuenta de gasto por defecto (proveedores)', accSelect(v.account || '', { onchange: e => { v.account = e.target.value; } }, a => !['IN', 'IO', 'EQ', 'EU', 'OB', 'LP', 'AR', 'BK'].includes(a.type)), 'span2'),
       t('email', 'Correo', { type: 'email' }), t('phone', 'Teléfono'), t('regimen', 'Régimen fiscal', { maxlength: 3 }), t('cp', 'C.P. fiscal', { maxlength: 5 }), t('notes', 'Notas', {}, 'span2'),
       field('Concepto en el presupuesto semanal (proveedores)', sel([['', '— Ninguno —'], ...BUD_CATS], v.budgetCat || '', { onchange: e => { v.budgetCat = e.target.value || null; } }), 'span2'),
-      h('div', { class: 'span4' }, h('div', { class: 'lbl' }, 'Plantas que surte (proveedores)'), h('div', { class: 'muted small' }, 'Si surte una sola, sus facturas se cargan a esa planta solas. Si surte varias, se elige la planta en cada factura.'), plantPicker(v.plants || [], list => { v.plants = list; })));
+      h('div', { class: 'span4' }, h('div', { class: 'lbl' }, 'Plantas que surte (proveedores)'), h('div', { class: 'muted small' }, v.plantsAuto ? 'Tomadas de las facturas que ya se asignaron. Si surte una sola, todas sus facturas se cargan ahí solas. Si las cambias aquí, se quedan como las pongas.' : 'Si surte una sola, sus facturas se cargan a esa planta solas. Si surte varias, se elige la planta en cada factura. Si lo dejas vacío, el sistema lo aprende de las facturas que asignes.'), plantPicker(v.plants || [], list => { v.plants = list; })));
     return dialog(p ? 'Editar contacto' : 'Nuevo contacto', body, [{ label: 'Cancelar' }, { label: 'Guardar', primary: true, run: () => (p ? put('/api/acc/partners/' + p.id, v) : post('/api/acc/partners', v)) }]);
   }
 

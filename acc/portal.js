@@ -14,7 +14,7 @@ const IMG = /\.(jpe?g|png|webp|heic|heif)$/i;
 const IMG_TYPES = /^image\/(jpeg|png|webp|heic|heif)$/i;
 const PLANTS = { B1: 'Jabil B1', B3: 'Jabil B3' };
 // plants a supplier can pick: the ones assigned to it in Contactos, otherwise Jabil B1 / B3
-const plantsFor = v => (Array.isArray(v.plants) && v.plants.length ? v.plants : Object.values(PLANTS));
+const plantsFor = v => (Array.isArray(v.plants) && v.plants.length && !v.plantsAuto ? v.plants : Object.values(PLANTS)); // plants learned from facturas don't limit what the supplier can pick
 const WORDS = ['naranja', 'tortuga', 'ventana', 'canela', 'tomate', 'girasol', 'paloma', 'cereza', 'limonada', 'castillo', 'pradera', 'tortilla', 'mariposa', 'durazno', 'galleta', 'pelota', 'cometa', 'abanico', 'aguacate', 'ballena', 'bosque', 'caballo', 'camino', 'campana', 'cascada', 'cebolla', 'conejo', 'delfin', 'espiga', 'estrella', 'frijol', 'granero', 'guitarra', 'jardin', 'lechuga', 'lluvia', 'maceta', 'manzana', 'molino', 'nopal', 'oliva', 'panal', 'pepino', 'perico', 'pimienta', 'plátano', 'puente', 'rancho', 'sandia', 'semilla', 'sombrero', 'tambor', 'trigo', 'tulipan', 'verano', 'violeta', 'zanahoria', 'avena', 'brisa', 'cactus', 'colibri', 'coyote', 'elote', 'fogata', 'gaviota', 'higuera', 'laguna', 'mezquite', 'nogal', 'papaya', 'piñata'].map(w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ñ/g, 'n'));
 const pick = () => WORDS[crypto.randomInt(WORDS.length)];
 const twoWords = () => { let a = pick(), b = pick(); while (b === a) b = pick(); return `${a}.${b}`; };
