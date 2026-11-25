@@ -201,6 +201,59 @@ class Books {
     const p = this.partner(d.partnerId);
     return p && Array.isArray(p.plants) && p.plants.length === 1 ? p.plants[0] : '';
   }
+  /* ---------- undo ----------
+     Each change people can make by mistake (plant, concept, paid, budget) saves how things were before,
+     so "Deshacer" / Ctrl+Z puts them back. Kept per user, newest last. */
+  undoable(label, user, fn) {
+    if (this._u) return fn();
+    this._u = { id: uid(), at: new Date().toISOString(), by: user || 'sistema', label: typeof label === 'function' ? '' : label, ops: [], seen: new Set() };
+    try {
+      const out = fn();
+      const u = this._u;
+      if (u.ops.length) {
+        if (typeof label === 'function') u.label = label(out);
+        delete u.seen;
+        const st = this.db.undo = this.db.undo || [];
+        st.push(u);
+        const mine = st.filter(x => x.by === u.by);
+        if (mine.length > 30) st.splice(st.indexOf(mine[0]), 1);
+        if (st.length > 300) st.splice(0, st.length - 300);
+      }
+      return out;
+    } finally { this._u = null; }
+  }
+  /** Remember an object's fields as they are now (only the first time in one action). */
+  snap(kind, obj, keys) {
+    const u = this._u; if (!u || !obj) return;
+    const k = kind + ':' + (obj.id || '') + ':' + (keys || []).join(','); if (u.seen.has(k)) return; u.seen.add(k);
+    if (kind === 'budget') { u.ops.push({ kind, value: JSON.stringify(this.db.budget || null) }); return; }
+    const fields = {}, del = [];
+    for (const f of keys) obj[f] === undefined ? del.push(f) : (fields[f] = JSON.parse(JSON.stringify(obj[f])));
+    u.ops.push({ kind, id: obj.id, fields, del });
+  }
+  nextUndo(user) { const st = this.db.undo || []; for (let i = st.length - 1; i >= 0; i--) if (st[i].by === user) return st[i]; return null; }
+  undo(user) {
+    const st = this.db.undo || [], u = this.nextUndo(user);
+    if (!u) throw httpErr(400, 'No hay nada que deshacer.');
+    const find = op => op.kind === 'doc' ? this.doc(op.id) : op.kind === 'partner' ? this.partner(op.id) : op.kind === 'payment' ? this.payment(op.id) : null;
+    // a payment can only come back if its facturas still have that balance open
+    for (const op of u.ops) {
+      if (op.kind !== 'payment' || op.fields.state !== 'posted') continue;
+      const p = find(op); if (!p || p.state === 'posted') continue;
+      if (this.locked(p.date)) throw httpErr(400, `No se puede deshacer: el periodo está cerrado hasta ${this.db.settings.lockDate}.`);
+      for (const a of p.allocations) { const d = this.doc(a.docId); if (!d || d.state !== 'posted' || this.residual(d) + 0.01 < a.amount) throw httpErr(400, `No se puede deshacer: la factura ${d ? (d.serie || '') + (d.folio || '') || d.number : ''} ya se volvió a pagar o cambió. Revísala a mano.`); }
+    }
+    for (const op of [...u.ops].reverse()) {
+      if (op.kind === 'budget') { this.db.budget = JSON.parse(op.value); if (this.db.budget === null) delete this.db.budget; continue; }
+      const o = find(op); if (!o) continue;
+      for (const [f, v] of Object.entries(op.fields)) o[f] = v;
+      for (const f of op.del) delete o[f];
+    }
+    st.splice(st.indexOf(u), 1);
+    this.log(user, 'deshizo', 'cambio', u.id, u.label);
+    this.correction(user, { docId: null, doc: 'Deshacer', folio: '', partner: '', total: null, field: 'deshacer', from: u.label, to: 'deshecho', reason: '' });
+    return { undone: u.label, next: (this.nextUndo(user) || {}).label || '' };
+  }
   /* Corrections log: every change to something already decided (plant, budget concept, paid) keeps before/after */
   correction(user, e) {
     this.db.corrections = this.db.corrections || [];
@@ -215,6 +268,7 @@ class Books {
     for (const id of ids || []) {
       const d = this.doc(id);
       if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
+      this.snap('doc', d, ['plant', 'noPlant']);
       changed.push([d, this.plantOf(d) || '']);
       d.plant = plant || ''; partners.add(d.partnerId);
       if (plant || inherit) delete d.noPlant; else d.noPlant = true;
@@ -251,6 +305,7 @@ class Books {
       if (!p || ((p.plants || []).length && !p.plantsAuto)) continue; // set by hand: never touched
       const next = [...(seen[id] || [])].sort(), cur = [...(p.plants || [])].sort();
       if (next.join('|') === cur.join('|')) continue;
+      this.snap('partner', p, ['plants', 'plantsAuto']);
       p.plants = next; p.plantsAuto = next.length > 0;
       this.log(user, 'aprendió plantas', 'contacto', p.id, `${p.name}: ${next.join(', ') || 'ninguna'}`);
       out.push({ id: p.id, name: p.name, plants: next });
@@ -266,6 +321,15 @@ class Books {
     for (const p of pays.values()) this.cancelPayment(p.id, user, reason);
     return { cancelled: pays.size };
   }
+  /** A supplier's budget concept (its facturas without their own concept follow it). */
+  setPartnerBudgetCat(id, cat, user, reason, label) {
+    const p = this.partner(id); if (!p) throw httpErr(404, 'No se encontró el contacto.');
+    if ((p.budgetCat || null) === (cat || null)) return p;
+    this.snap('partner', p, ['budgetCat']);
+    if (p.budgetCat && p.budgetCat !== cat) this.correction(user, { docId: null, doc: 'Proveedor', folio: '', partner: p.name, total: null, field: 'concepto del proveedor', from: label(p.budgetCat), to: cat ? label(cat) : 'sin concepto', reason: reason || '' });
+    p.budgetCat = cat || null; this.log(user, 'editó', 'contacto', p.id, `${p.name}: concepto de presupuesto ${cat ? label(cat) : 'ninguno'}`);
+    return p;
+  }
   /** Budget concept for specific invoices (overrides the supplier's). */
   setDocBudgetCat(ids, cat, user, reason, label) {
     let n = 0;
@@ -273,6 +337,7 @@ class Books {
       const d = this.doc(id);
       if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
       const p = this.partner(d.partnerId), before = d.budgetCat || (p && p.budgetCat) || '';
+      this.snap('doc', d, ['budgetCat']);
       d.budgetCat = cat || null; n++;
       const after = d.budgetCat || (p && p.budgetCat) || '';
       if (before && before !== after) this.correction(user, { ...this.docLabel(d), field: 'concepto', from: label(before), to: after ? label(after) : 'sin concepto', reason: reason || '' });
@@ -618,6 +683,7 @@ class Books {
     if (!p) throw httpErr(404, 'No se encontró el pago.');
     if (p.state !== 'posted') throw httpErr(400, 'Ese pago ya está cancelado.');
     if (this.locked(p.date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
+    this.snap('payment', p, ['state']);
     p.state = 'cancelled'; this.log(user, 'canceló', 'pago', p.id, p.number);
     for (const a of p.allocations) { const d = this.doc(a.docId); if (d) this.correction(user, { ...this.docLabel(d), field: 'pago', from: `pagada con ${p.number} (${p.date}) · ${a.amount.toFixed(2)}`, to: 'sin pagar', paymentId: p.id, reason: reason || '' }); }
     if (!p.allocations.length) { const pt = this.partner(p.partnerId); this.correction(user, { docId: null, doc: p.number, folio: '', partner: pt ? pt.name : '', total: p.amount, field: 'pago', from: `pago ${p.number} (${p.date})`, to: 'cancelado', paymentId: p.id, reason: reason || '' }); }

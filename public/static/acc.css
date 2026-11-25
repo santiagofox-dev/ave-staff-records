@@ -236,3 +236,13 @@ li.pd button.x{border:0;background:none;color:var(--muted);font-size:18px;line-h
 li.pd button.x:hover{color:var(--bad)}
 li.pd .pdn b,li.pd .pdn small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 li.pd .pdn small{color:var(--muted);font-size:12px}
+.undo-btn{position:fixed;left:16px;bottom:18px;z-index:45;display:flex;align-items:center;gap:8px;max-width:min(520px,calc(100vw - 32px));background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.16);cursor:pointer}
+.undo-btn:hover{border-color:var(--fg)}
+.undo-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.undo-btn kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--muted)}
+.undo-btn[hidden]{display:none}
+ul.budlist li.bi{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 10px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);cursor:grab}
+ul.budlist li.bi.dragging{opacity:.4}
+ul.budlist .bia{display:flex;gap:6px}
+ul.budlist .bia select{font-size:12px;padding:3px 6px;max-width:190px}
+tr.drop td{background:color-mix(in srgb,var(--accent) 12%,var(--surface));box-shadow:inset 0 0 0 2px var(--accent)}

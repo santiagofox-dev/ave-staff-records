@@ -75,24 +75,44 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   app.get('/api/acc/cash-sales', R(req => { const r = books.cashSales(req.query.from || '', req.query.to || '', req.query.operation || ''); return { ...r, rows: r.rows.map(d => ({ ...docRow(d), operation: d.cashSale.operation, by: d.cashSale.by, subtotal: d.subtotal, iva: d.traslados, concept: (d.lines[0] || {}).description || '' })) }; }));
   app.post('/api/acc/cash-sales', W(req => { const d = books.recordCashSale(req.body || {}, who(req)); return docRow(d); }));
   /* ---------- plants ---------- */
-  app.post('/api/acc/docs/plant', W(req => books.setPlant((req.body || {}).ids, (req.body || {}).plant, who(req), String((req.body || {}).reason || '').slice(0, 200))));
-  app.post('/api/acc/docs/unpay', W(req => books.unpayDocs((req.body || {}).ids, who(req), String((req.body || {}).reason || '').slice(0, 200))));
+  app.post('/api/acc/docs/plant', W(req => { const b = req.body || {}; return books.undoable(r => `${r.updated === 1 ? '1 factura' : r.updated + ' facturas'} → ${b.plant === '@' ? 'planta del proveedor' : b.plant || 'sin planta'}`, who(req), () => books.setPlant(b.ids, b.plant, who(req), String(b.reason || '').slice(0, 200))); }));
+  /* Move facturas in one step: plant and/or concept (for this factura, or for the whole supplier). One undo for all of it. */
+  app.post('/api/acc/docs/reassign', W(req => {
+    const b = req.body || {}, user = who(req), reason = String(b.reason || '').slice(0, 200), lab = k => BUD.CAT_LABEL[k] || k;
+    if (b.cat && !BUD.CAT_LABEL[b.cat]) throw httpErr(400, 'Concepto no válido.');
+    const ids = (b.ids || []).filter(id => books.doc(id));
+    const parts = [];
+    return books.undoable(() => parts.join(' · '), user, () => {
+      const out = {};
+      if (b.plant !== undefined && ids.length) { Object.assign(out, books.setPlant(ids, b.plant, user, reason)); parts.push(`${ids.length === 1 ? '1 factura' : ids.length + ' facturas'} → ${b.plant || 'sin planta'}`); }
+      if (b.cat !== undefined) {
+        if (b.scope === 'partner') {
+          const pids = [...new Set([...(b.partnerIds || []), ...ids.map(id => books.doc(id).partnerId)])].filter(Boolean);
+          for (const pid of pids) { const p = books.setPartnerBudgetCat(pid, b.cat || null, user, reason, lab); parts.push(`${p.name} → ${b.cat ? lab(b.cat) : 'sin concepto'}`); }
+          // its facturas follow the supplier again
+          const own = ids.filter(id => books.doc(id).budgetCat); if (own.length) books.setDocBudgetCat(own, null, user, reason, lab);
+        } else if (ids.length) { books.setDocBudgetCat(ids, b.cat || null, user, reason, lab); parts.push(`${ids.length === 1 ? '1 factura' : ids.length + ' facturas'} → ${b.cat ? lab(b.cat) : 'concepto del proveedor'}`); }
+      }
+      return out;
+    });
+  }));
+  app.get('/api/acc/undo', R(req => { const u = books.nextUndo(who(req)); return { label: u ? u.label : '', at: u ? u.at : null }; }));
+  app.post('/api/acc/undo', W(req => books.undo(who(req))));
+  app.post('/api/acc/docs/unpay', W(req => books.undoable(r => `Quitar ${r.cancelled === 1 ? '1 pago' : r.cancelled + ' pagos'}`, who(req), () => books.unpayDocs((req.body || {}).ids, who(req), String((req.body || {}).reason || '').slice(0, 200)))));
   app.get('/api/acc/corrections', R(req => (books.db.corrections || []).filter(c => !req.query.doc || c.docId === req.query.doc).slice(-Math.min(3000, parseInt(req.query.limit, 10) || 1000)).reverse()));
   /* Weekly budget per site (presupuesto por sucursal) */
   const BUD = require('./budget');
   app.get('/api/acc/budget', R(req => BUD.report(books, /^\d{4}-\d{2}-\d{2}$/.test(req.query.week || '') ? req.query.week : new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10))));
-  app.put('/api/acc/budget', W(req => { const b = req.body || {}; if (!/^\d{4}-\d{2}-\d{2}$/.test(b.week || '')) throw httpErr(400, 'Falta la semana.'); BUD.setBudget(books, BUD.mondayOf(b.week), b.amounts, who(req)); return BUD.report(books, b.week); }));
-  app.post('/api/acc/budget/spend', W(req => { const e = BUD.addSpend(books, req.body || {}, who(req)); return BUD.report(books, e.date); }));
-  app.delete('/api/acc/budget/spend/:id', W(req => { BUD.removeSpend(books, req.params.id, who(req)); return { ok: true }; }));
+  app.put('/api/acc/budget', W(req => { const b = req.body || {}; if (!/^\d{4}-\d{2}-\d{2}$/.test(b.week || '')) throw httpErr(400, 'Falta la semana.'); books.undoable(`Presupuesto de la semana del ${BUD.mondayOf(b.week)}`, who(req), () => BUD.setBudget(books, BUD.mondayOf(b.week), b.amounts, who(req))); return BUD.report(books, b.week); }));
+  app.post('/api/acc/budget/spend', W(req => { const e = books.undoable(e => `Gasto a mano ${BUD.CAT_LABEL[e.cat]} ${e.amount.toFixed(2)}`, who(req), () => BUD.addSpend(books, req.body || {}, who(req))); return BUD.report(books, e.date); }));
+  app.delete('/api/acc/budget/spend/:id', W(req => { books.undoable('Borrar gasto a mano', who(req), () => BUD.removeSpend(books, req.params.id, who(req))); return { ok: true }; }));
   app.put('/api/acc/partners/:id/budget-cat', W(req => {
-    const p = books.partner(req.params.id); if (!p) throw httpErr(404, 'No se encontró el contacto.');
     const cat = (req.body || {}).cat || null;
     if (cat && !BUD.CAT_LABEL[cat]) throw httpErr(400, 'Concepto no válido.');
-    if (p.budgetCat && p.budgetCat !== cat) books.correction(who(req), { docId: null, doc: 'Proveedor', folio: '', partner: p.name, total: null, field: 'concepto del proveedor', from: BUD.CAT_LABEL[p.budgetCat], to: cat ? BUD.CAT_LABEL[cat] : 'sin concepto', reason: String((req.body || {}).reason || '').slice(0, 200) });
-    p.budgetCat = cat; books.log(who(req), 'editó', 'contacto', p.id, `${p.name}: concepto de presupuesto ${cat ? BUD.CAT_LABEL[cat] : 'ninguno'}`);
+    books.undoable(p => `${p.name} → ${cat ? BUD.CAT_LABEL[cat] : 'sin concepto'}`, who(req), () => books.setPartnerBudgetCat(req.params.id, cat, who(req), String((req.body || {}).reason || '').slice(0, 200), k => BUD.CAT_LABEL[k] || k));
     return { ok: true, cat };
   }));
-  app.post('/api/acc/docs/budget-cat', W(req => { const b = req.body || {}; if (b.cat && !BUD.CAT_LABEL[b.cat]) throw httpErr(400, 'Concepto no válido.'); return { updated: books.setDocBudgetCat(b.ids, b.cat || null, who(req), String(b.reason || '').slice(0, 200), k => BUD.CAT_LABEL[k] || k) }; }));
+  app.post('/api/acc/docs/budget-cat', W(req => { const b = req.body || {}; if (b.cat && !BUD.CAT_LABEL[b.cat]) throw httpErr(400, 'Concepto no válido.'); return { updated: books.undoable(n => `${n === 1 ? '1 factura' : n + ' facturas'} → ${b.cat ? BUD.CAT_LABEL[b.cat] : 'concepto del proveedor'}`, who(req), () => books.setDocBudgetCat(b.ids, b.cat || null, who(req), String(b.reason || '').slice(0, 200), k => BUD.CAT_LABEL[k] || k)) }; }));
   app.get('/api/acc/budget/available', R(req => BUD.availableFor(books, req.query.partner, req.query.date)));
   app.get('/api/acc/plant-spend', R(req => books.plantSpend(req.query.from || '', req.query.to || '')));
   app.post('/api/acc/docs/:id/erase', W(req => books.eraseDoc(req.params.id, who(req))));
@@ -209,7 +229,7 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
     books.log(who(req), 'quitó comprobante', 'pagos', p.number, f.name);
     return { files: p.files };
   }));
-  app.post('/api/acc/payments/:id/cancel', W(req => books.cancelPayment(req.params.id, who(req), String((req.body || {}).reason || '').slice(0, 200))));
+  app.post('/api/acc/payments/:id/cancel', W(req => books.undoable(p => `Cancelar pago ${p.number}`, who(req), () => books.cancelPayment(req.params.id, who(req), String((req.body || {}).reason || '').slice(0, 200)))));
 
   /* ---------- contacts ---------- */
   app.get('/api/acc/partners', R(req => {

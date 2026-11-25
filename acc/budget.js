@@ -68,7 +68,7 @@ function budgetFor(books, week) {
   return { amounts: DEFAULT_BUDGET, from: null };
 }
 function setBudget(books, week, amounts, user) {
-  const B = store(books);
+  books.snap('budget', { id: 'b' }); const B = store(books);
   const clean = {};
   for (const s of sites(books)) {
     const row = (amounts || {})[s.id] || {};
@@ -82,7 +82,7 @@ function setBudget(books, week, amounts, user) {
 }
 
 function addSpend(books, data, user) {
-  const B = store(books);
+  books.snap('budget', { id: 'b' }); const B = store(books);
   const date = String(data.date || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw Object.assign(new Error('Falta la fecha.'), { status: 400 });
   if (!sites(books).some(s => s.id === data.site)) throw Object.assign(new Error('Elige la sucursal.'), { status: 400 });
@@ -95,7 +95,7 @@ function addSpend(books, data, user) {
   return e;
 }
 function removeSpend(books, id, user) {
-  const B = store(books), i = B.spend.findIndex(x => x.id === id);
+  books.snap('budget', { id: 'b' }); const B = store(books), i = B.spend.findIndex(x => x.id === id);
   if (i < 0) throw Object.assign(new Error('No se encontró ese gasto.'), { status: 404 });
   const [e] = B.spend.splice(i, 1);
   books.log(user, 'borró', 'gasto de presupuesto', e.id, `${CAT_LABEL[e.cat]} ${e.amount.toFixed(2)}`);
@@ -122,13 +122,13 @@ function report(books, weekIn) {
       const d = books.doc(a.docId); rest -= a.amount;
       const site = siteOfDoc(d, p), cat = catOf(d, p);
       const c = get(site, cat); c.paid = r2(c.paid + a.amount);
-      c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', doc: d ? `${d.serie || ''}${d.folio || ''}` || d.number : '', amount: r2(a.amount) });
+      c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', partnerId: p ? p.id : null, doc: d ? `${d.serie || ''}${d.folio || ''}` || d.number : '', docId: d ? d.id : null, catOwn: !!(d && d.budgetCat), partnerCat: (p && p.budgetCat) || '', plant: d ? books.plantOf(d) : '', amount: r2(a.amount) });
       if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + a.amount); }
     }
     if (rest > 0.009) {
       const site = siteOfPartner(p) || 'sin', cat = catOf(null, p);
       const c = get(site, cat); c.paid = r2(c.paid + rest);
-      c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', doc: 'anticipo / sin factura', amount: r2(rest) });
+      c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', partnerId: p ? p.id : null, doc: 'anticipo / sin factura', docId: null, catOwn: false, partnerCat: (p && p.budgetCat) || '', plant: '', amount: r2(rest) });
       if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + rest); }
     }
   }

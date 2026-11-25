@@ -48,7 +48,24 @@
     if (r.status === 401) { location.href = '/login'; throw new Error('Sesión expirada.'); }
     let j = null; try { j = await r.json(); } catch (e) { j = null; }
     if (!r.ok) throw new Error((j && j.error) || `Error ${r.status}`);
+    if (method !== 'GET' && !url.startsWith('/api/acc/undo')) refreshUndo();
     return j;
+  }
+  /* Undo: one button (and Ctrl+Z / Cmd+Z) that reverts the user's last change of plant, concept, payment or budget */
+  let undoLabel = '';
+  async function refreshUndo() {
+    try { const u = await (window.aveFetch || fetch)('/api/acc/undo').then(r => r.ok ? r.json() : { label: '' }); undoLabel = u.label || ''; } catch (e) { undoLabel = ''; }
+    const b = document.getElementById('undoBtn'); if (!b) return;
+    b.hidden = !undoLabel || !canEdit(); b.querySelector('span').textContent = undoLabel; b.title = `Deshacer: ${undoLabel} (Ctrl+Z)`;
+  }
+  let undoing = false;
+  async function doUndo() {
+    if (undoing || !canEdit()) return;
+    if (!undoLabel) return toast('No hay nada que deshacer.');
+    undoing = true;
+    try { const r = await post('/api/acc/undo'); toast(`Deshecho: ${r.undone}`); await refreshUndo(); render(); }
+    catch (e) { toast(e.message, true); }
+    finally { undoing = false; }
   }
   const get = u => api('GET', u), post = (u, b) => api('POST', u, b || {}), put = (u, b) => api('PUT', u, b);
   const qs = o => Object.entries(o).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
@@ -922,7 +939,8 @@
             h('td', { class: 'n' + (row.available < 0 ? ' neg' : '') }, row.budget ? money(row.available) : ''),
             h('td', { class: 'barcell' }, row.budget ? [bar(row.pct, o), h('span', { class: 'small' + (o ? ' neg' : ' muted') }, row.pct + '%')] : null));
           tr.addEventListener('click', () => { open ? budState.open.delete(key) : budState.open.add(key); render(); });
-          const det = open ? h('tr', { class: 'det' }, h('td', { colspan: 5 }, row.items.length ? h('ul', { class: 'budlist' }, row.items.map(it => h('li', {}, h('a', { href: '#/pago/' + it.id }, it.number), ` · ${fdm(it.date)} · ${it.partner}${it.doc ? ' · ' + it.doc : ''} `, h('b', {}, money(it.amount))))) : h('span', { class: 'muted small' }, row.manual ? 'Solo hay gastos capturados a mano (abajo).' : 'Sin pagos esta semana.'))) : null;
+          const det = open ? h('tr', { class: 'det' }, h('td', { colspan: 5 }, row.items.length ? h('ul', { class: 'budlist' }, row.items.map(it => budItem(it, st, row))) : h('span', { class: 'muted small' }, row.manual ? 'Solo hay gastos capturados a mano (abajo).' : 'Sin pagos esta semana.'))) : null;
+          if (canEdit()) dropTarget(tr, st, row.cat);
           return [tr, det];
         });
       return h('section', { class: 'panel budcard' + (over ? ' over' : '') },
@@ -933,6 +951,51 @@
           h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colspan: 5, class: 'empty2' }, 'Sin presupuesto ni pagos esta semana.'))))));
     };
     const catSel = (val, attrs) => sel([['', '— Elegir concepto —'], ...BUD_CATS], val || '', attrs);
+    /* fixing a mistake: move a paid factura to another concept or another sucursal/planta (or drag it onto a concept row) */
+    const siteOf = id => r.siteList.find(x => x.id === id);
+    const plantChoices = [...r.siteList.flatMap(x => x.plants.map(p => [p, `${p} · ${x.name}`])), ['-', 'Sin planta']];
+    const askScope = async (it, cat) => {
+      if (!it.docId) return 'partner';
+      if (it.catOwn || !it.partnerCat) return 'doc';
+      return dialog('¿Cambiar solo esta factura?', h('p', {}, `${it.partner} tiene el concepto "${BUD_LABEL[it.partnerCat] || it.partnerCat}" para todas sus facturas. ¿Cambias solo la ${it.doc} a "${BUD_LABEL[cat]}" o todas las de ${it.partner}?`),
+        [{ label: 'Cancelar' }, { label: 'Solo esta factura', value: 'doc' }, { label: `Todas las de ${it.partner}`, primary: true, value: 'partner' }]);
+    };
+    const reassign = async (it, change) => {
+      const body = { ids: it.docId ? [it.docId] : [], partnerIds: it.partnerId ? [it.partnerId] : [] };
+      if (change.cat) { const sc = await askScope(it, change.cat); if (!sc) return; body.cat = change.cat; body.scope = sc; }
+      if (change.plant !== undefined) { if (!it.docId) return toast('Este pago no tiene factura; no se puede mover de planta.', true); body.plant = change.plant; }
+      const x = await act(() => post('/api/acc/docs/reassign', body));
+      if (x) { toast('Listo. ' + (x.followed || x.released ? learnMsg(x) : '') + ' Si fue un error, usa Deshacer (Ctrl+Z).'); render(); }
+    };
+    const budItem = (it, st, row) => {
+      const li = h('li', { class: 'bi', draggable: canEdit() && !!it.partnerId ? 'true' : 'false' },
+        h('div', { class: 'bil' }, h('a', { href: '#/pago/' + it.id }, it.number), ` · ${fdm(it.date)} · `, it.docId ? h('a', { href: '#/doc/' + it.docId }, `${it.partner}${it.doc ? ' · ' + it.doc : ''}`) : `${it.partner} · ${it.doc}`, ' ', h('b', {}, money(it.amount)),
+          it.catOwn ? h('span', { class: 'muted small' }, ' (concepto puesto en la factura)') : null),
+        canEdit() ? h('div', { class: 'bia' },
+          sel([['', 'Cambiar concepto…'], ...BUD_CATS.filter(([k]) => k !== row.cat)], '', { 'aria-label': 'Cambiar concepto', onchange: e => e.target.value && reassign(it, { cat: e.target.value }) }),
+          it.docId ? sel([['', 'Mover a planta…'], ...plantChoices.filter(([p]) => p !== it.plant)], '', { 'aria-label': 'Mover a otra planta', onchange: e => e.target.value && reassign(it, { plant: e.target.value === '-' ? '' : e.target.value }) }) : null) : null);
+      li.addEventListener('dragstart', e => { budDrag = { it, site: st.id, cat: row.cat }; e.dataTransfer.setData('text/plain', it.id); e.dataTransfer.effectAllowed = 'move'; li.classList.add('dragging'); });
+      li.addEventListener('dragend', () => { li.classList.remove('dragging'); });
+      return li;
+    };
+    let budDrag = null;
+    const dropTarget = (tr, st, cat) => {
+      tr.addEventListener('dragover', e => { if (!budDrag) return; e.preventDefault(); tr.classList.add('drop'); });
+      tr.addEventListener('dragleave', () => tr.classList.remove('drop'));
+      tr.addEventListener('drop', async e => {
+        e.preventDefault(); tr.classList.remove('drop'); const d = budDrag; budDrag = null; if (!d) return;
+        const change = {};
+        if (cat !== d.cat && cat !== 'sin') change.cat = cat;
+        if (st.id !== d.site) {
+          const s2 = siteOf(st.id);
+          if (st.id === 'sin') change.plant = '';
+          else if (s2 && s2.plants.length === 1) change.plant = s2.plants[0];
+          else if (s2) { const pl = await dialog(`¿A qué planta de ${s2.name}?`, h('p', {}, 'Esta sucursal tiene varias plantas.'), [{ label: 'Cancelar' }, ...s2.plants.map(p => ({ label: p, value: p, primary: true }))]); if (!pl) return; change.plant = pl; }
+        }
+        if (!Object.keys(change).length) return;
+        reassign(d.it, change);
+      });
+    };
     const addSpend = async () => {
       const v = { date: today() >= wk && today() <= r.end ? today() : wk, site: r.siteList[0].id, cat: 'nomina', amount: '', note: '' };
       const body = h('div', { class: 'form' },
@@ -949,7 +1012,7 @@
       budState.edit ? null : h('button', { class: 'btn', type: 'button', onclick: addSpend }, 'Agregar gasto (nómina, IMSS…)')] : null;
     const T = r.totals;
     return h('div', { class: 'stack' },
-      phead('Presupuesto semanal', 'Tope de gasto por sucursal. Cada pago a proveedor cuenta en la sucursal de la planta de la factura y en el concepto del proveedor; nómina, IMSS y otros se capturan a mano. Una factura solo aparece aquí cuando ya está pagada, en la semana de la fecha del pago.', tools),
+      phead('Presupuesto semanal', 'Tope de gasto por sucursal. Cada pago a proveedor cuenta en la sucursal de la planta de la factura y en el concepto del proveedor; nómina, IMSS y otros se capturan a mano. Una factura solo aparece aquí cuando ya está pagada, en la semana de la fecha del pago. Para corregir: abre un concepto y cambia el concepto o la planta de cada factura, o arrástrala a otro concepto u otra sucursal.', tools),
       h('div', { class: 'filters' },
         h('button', { class: 'btn sm', type: 'button', onclick: () => go('presupuesto', { week: wkAdd(wk, -7) }) }, '← Semana anterior'),
         h('b', { class: 'wklabel' }, `Semana del ${fdm(wk)} al ${fdm(r.end)} ${r.end.slice(0, 4)}`),
@@ -1232,10 +1295,18 @@
   /* ---------- boot ---------- */
   $('#navToggle').addEventListener('click', () => { const n = $('#nav'); n.classList.toggle('open'); $('#navToggle').setAttribute('aria-expanded', String(n.classList.contains('open'))); });
   window.addEventListener('hashchange', render);
+  document.body.append(h('button', { id: 'undoBtn', class: 'undo-btn', type: 'button', hidden: true, onclick: doUndo }, h('b', {}, 'Deshacer'), h('span', {}), h('kbd', {}, /Mac|iPhone|iPad/.test(navigator.platform) ? 'Cmd+Z' : 'Ctrl+Z')));
+  document.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+    const t = e.target; // inside a text box, Ctrl+Z keeps undoing the typing
+    if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable || (t.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit'].includes(t.type)))) return;
+    if (document.querySelector('dialog[open]')) return;
+    e.preventDefault(); doUndo();
+  });
   (async () => {
     try { await refreshMeta(); }
     catch (e) { clear(main); add(main, [h('div', { class: 'msg bad' }, e.message)]); return; }
     add(clear($('#me')), [h('b', {}, ME.name), { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta', personal: 'Personal' }[ME.role]]);
-    render();
+    render(); refreshUndo();
   })();
 })();
