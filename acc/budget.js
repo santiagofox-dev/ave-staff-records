@@ -120,10 +120,14 @@ function report(books, weekIn) {
     let rest = pay.amount;
     for (const a of pay.allocations || []) {
       const d = books.doc(a.docId); rest -= a.amount;
-      const site = siteOfDoc(d, p), cat = catOf(d, p);
-      const c = get(site, cat); c.paid = r2(c.paid + a.amount);
-      c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', partnerId: p ? p.id : null, doc: d ? `${d.serie || ''}${d.folio || ''}` || d.number : '', docId: d ? d.id : null, catOwn: !!(d && d.budgetCat), partnerCat: (p && p.budgetCat) || '', plant: d ? books.plantOf(d) : '', amount: r2(a.amount) });
-      if (cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + a.amount); }
+      // a factura split between plants pays each plant and concept its share
+      const parts = d && d.splits && d.splits.length ? books.splitsOf(d).map(x => ({ site: x.plant ? siteOfPlant[x.plant] || 'otras' : 'sin', cat: x.cat || 'sin', amount: r2(a.amount * x.frac), plant: x.plant, split: true }))
+        : [{ site: siteOfDoc(d, p), cat: catOf(d, p), amount: a.amount, plant: d ? books.plantOf(d) : '' }];
+      for (const part of parts) {
+        const c = get(part.site, part.cat); c.paid = r2(c.paid + part.amount);
+        c.items.push({ kind: 'pago', id: pay.id, number: pay.number, date: pay.date, partner: p ? p.name : '', partnerId: p ? p.id : null, doc: d ? `${d.serie || ''}${d.folio || ''}` || d.number : '', docId: d ? d.id : null, catOwn: !!(d && d.budgetCat), partnerCat: (p && p.budgetCat) || '', plant: part.plant, split: !!part.split, amount: r2(part.amount) });
+        if (part.cat === 'sin' && p) { const u = uncategorized[p.id] = uncategorized[p.id] || { partnerId: p.id, name: p.name, paid: 0, guess: guessCat(p.name) }; u.paid = r2(u.paid + part.amount); }
+      }
     }
     if (rest > 0.009) {
       const site = siteOfPartner(p) || 'sin', cat = catOf(null, p);

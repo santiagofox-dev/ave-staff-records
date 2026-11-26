@@ -37,14 +37,14 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- documents ---------- */
   const docRow = d => {
     const p = books.partner(d.partnerId);
-    return { review: d.vendorReview ? d.vendorReview.status : '', reviewNote: d.vendorReview ? d.vendorReview.comment || '' : '', cash: d.cashSale ? d.cashSale.operation : '', plant: books.plantOf(d), plantSet: !!d.plant || !!d.noPlant, test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length, bcat: d.budgetCat || (p && p.budgetCat) || '', bcatSet: !!d.budgetCat, fixes: d.fixes || 0 };
+    return { review: d.vendorReview ? d.vendorReview.status : '', reviewNote: d.vendorReview ? d.vendorReview.comment || '' : '', cash: d.cashSale ? d.cashSale.operation : '', plant: books.plantOf(d), plantSet: !!d.plant || !!d.noPlant, test: !!d.test, portal: !!d.portal, received: d.received || d.date, id: d.id, type: d.type, number: d.number, state: d.state, partnerId: d.partnerId, partner: p ? p.name : '', rfc: p ? p.rfc : '', date: d.date, due: d.due, currency: d.currency, total: d.total, totalMxn: d.totalMxn, residual: books.residual(d), pay: books.payState(d), erasedBy: d.erased ? d.erased.by : '', erasedAt: d.erased ? d.erased.at : '', uuid: d.uuid, serie: d.serie, folio: d.folio, source: d.source, warnings: (d.warnings || []).length, files: (d.files || []).length, bcat: d.budgetCat || (p && p.budgetCat) || '', bcatSet: !!d.budgetCat, fixes: d.fixes || 0, splits: d.splits && d.splits.length ? d.splits.map(x => ({ plant: x.plant, cat: x.cat, amount: x.amount })) : null, splitPartner: books.isSplitPartner(p) };
   };
   app.get('/api/acc/docs', R(req => {
     const { type, state, pay, q, partner } = req.query, from = D(req.query.from), to = D(req.query.to);
     const types = String(type || '').split(',').filter(t => TYPES[t]);
     const ql = String(q || '').toLowerCase().trim();
     const plantQ = req.query.plant || '';
-    let rows = books.db.docs.filter(d => (req.query.origin !== 'portal' || d.portal) && (req.query.origin !== 'disputed' || (d.vendorReview && d.vendorReview.status === 'disputed')) && (!plantQ || (plantQ === '-' ? !books.plantOf(d) : books.plantOf(d) === plantQ)) && (!types.length || types.includes(d.type)) && (!state || d.state === state) && (!from || d.date >= from) && (!to || d.date <= to) && (!partner || d.partnerId === partner)).map(docRow);
+    let rows = books.db.docs.filter(d => (req.query.origin !== 'portal' || d.portal) && (req.query.origin !== 'disputed' || (d.vendorReview && d.vendorReview.status === 'disputed')) && (!plantQ || (plantQ === '-' ? !books.plantOf(d) && !(d.splits && d.splits.length) : books.plantOf(d) === plantQ || (d.splits || []).some(x => x.plant === plantQ))) && (!types.length || types.includes(d.type)) && (!state || d.state === state) && (!from || d.date >= from) && (!to || d.date <= to) && (!partner || d.partnerId === partner)).map(docRow);
     if (pay) rows = rows.filter(r => pay === 'abierto' ? ['pendiente', 'vencido', 'parcial'].includes(r.pay) : r.pay === pay);
     if (ql) rows = rows.filter(r => [r.number, r.partner, r.rfc, r.uuid, r.serie + r.folio, String(r.total)].some(v => String(v || '').toLowerCase().includes(ql)));
     rows.sort((a, b) => b.date.localeCompare(a.date) || String(b.number || '').localeCompare(String(a.number || '')));
@@ -74,6 +74,32 @@ module.exports = function accRoutes(app, { DATA_DIR, users, ownerName, rfc, port
   /* ---------- cash sales typed by hand ---------- */
   app.get('/api/acc/cash-sales', R(req => { const r = books.cashSales(req.query.from || '', req.query.to || '', req.query.operation || ''); return { ...r, rows: r.rows.map(d => ({ ...docRow(d), operation: d.cashSale.operation, by: d.cashSale.by, subtotal: d.subtotal, iva: d.traslados, concept: (d.lines[0] || {}).description || '' })) }; }));
   app.post('/api/acc/cash-sales', W(req => { const d = books.recordCashSale(req.body || {}, who(req)); return docRow(d); }));
+  /* ---------- cash purchases typed by hand (optional ticket photo) ---------- */
+  app.get('/api/acc/cash-purchases', R(req => { const r = books.cashPurchases(req.query.from || '', req.query.to || '', req.query.plant || ''); return { ...r, rows: r.rows.map(d => ({ ...docRow(d), by: d.cashSale.by, concept: (d.lines[0] || {}).description || '', catLabel: BUD.CAT_LABEL[d.budgetCat] || '' })) }; }));
+  const ticketUp = multer({ storage: multer.memoryStorage(), limits: { files: 5, fileSize: 25 * 1024 * 1024 } }).array('files', 5);
+  app.post('/api/acc/cash-purchases', (req, res, next) => {
+    if (!canEdit(req)) return res.status(403).json({ error: 'Tu usuario es de solo consulta.' });
+    ticketUp(req, res, err => {
+      if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pasa de 25 MB.' : 'No se pudieron recibir los archivos.' });
+      try {
+        let data = {}; try { data = JSON.parse((req.body && req.body.data) || '{}'); } catch (e) { throw httpErr(400, 'Datos no válidos.'); }
+        if (data.cat && !BUD.CAT_LABEL[data.cat]) throw httpErr(400, 'Concepto no válido.');
+        const ok = /\.(pdf|jpe?g|png|webp|heic|heif|xml)$/i;
+        const files = (req.files || []).map(f => ({ name: Buffer.from(f.originalname, 'latin1').toString('utf8'), buf: f.buffer }));
+        const bad = files.find(f => !ok.test(f.name)); if (bad) throw httpErr(400, `"${bad.name}" no es PDF ni imagen.`);
+        const d = books.recordCashPurchase(data, who(req), k => BUD.CAT_LABEL[k] || k);
+        d.files = d.files || [];
+        for (const f of files) {
+          const ext = path.extname(f.name).toLowerCase(), stored = require('crypto').randomBytes(10).toString('hex') + ext;
+          fs.writeFileSync(path.join(books.filesDir, stored), f.buf);
+          d.files.push({ name: f.name, stored, kind: ext === '.pdf' ? 'pdf' : ext === '.xml' ? 'xml' : 'imagen', size: f.buf.length, by: who(req), at: new Date().toISOString() });
+        }
+        books.save();
+        res.json(docRow(d));
+      } catch (e) { next(e); }
+    });
+  });
+  app.post('/api/acc/docs/:id/splits', W(req => { const b = req.body || {}; const d = books.undoable(dd => `Reparto de ${dd.serie || ''}${dd.folio || dd.number || ''}`, who(req), () => books.setSplits(req.params.id, b.splits || [], who(req), String(b.reason || '').slice(0, 200), k => BUD.CAT_LABEL[k] || k)); return docRow(d); }));
   /* ---------- plants ---------- */
   app.post('/api/acc/docs/plant', W(req => { const b = req.body || {}; return books.undoable(r => `${r.updated === 1 ? '1 factura' : r.updated + ' facturas'} → ${b.plant === '@' ? 'planta del proveedor' : b.plant || 'sin planta'}`, who(req), () => books.setPlant(b.ids, b.plant, who(req), String(b.reason || '').slice(0, 200))); }));
   /* Move facturas in one step: plant and/or concept (for this factura, or for the whole supplier). One undo for all of it. */

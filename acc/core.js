@@ -196,6 +196,7 @@ class Books {
   plantCity(name) { const c = (this.db.settings.plants || DEFAULT_PLANTS).find(x => x.plants.includes(name)); return c ? c.city : ''; }
   // the plant an invoice is charged to: chosen on the invoice, or the supplier's only plant
   plantOf(d) {
+    if (d.splits && d.splits.length) return ''; // split between several plants: see splitsOf()
     if (d.plant) return LEGACY_PLANT[d.plant] || d.plant;
     if (d.noPlant) return ''; // taken out of the supplier's plant on purpose
     const p = this.partner(d.partnerId);
@@ -268,8 +269,9 @@ class Books {
     for (const id of ids || []) {
       const d = this.doc(id);
       if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') continue;
-      this.snap('doc', d, ['plant', 'noPlant']);
-      changed.push([d, this.plantOf(d) || '']);
+      this.snap('doc', d, ['plant', 'noPlant', 'splits']);
+      changed.push([d, d.splits && d.splits.length ? 'repartida' : (this.plantOf(d) || '')]);
+      delete d.splits;
       d.plant = plant || ''; partners.add(d.partnerId);
       if (plant || inherit) delete d.noPlant; else d.noPlant = true;
     }
@@ -339,27 +341,66 @@ class Books {
       const p = this.partner(d.partnerId), before = d.budgetCat || (p && p.budgetCat) || '';
       this.snap('doc', d, ['budgetCat']);
       d.budgetCat = cat || null; n++;
+      if (d.splits && d.splits.length && cat) { this.snap('doc', d, ['splits']); d.splits = d.splits.map(x => ({ ...x, cat })); }
       const after = d.budgetCat || (p && p.budgetCat) || '';
       if (before && before !== after) this.correction(user, { ...this.docLabel(d), field: 'concepto', from: label(before), to: after ? label(after) : 'sin concepto', reason: reason || '' });
     }
     this.log(user, 'asignó concepto de presupuesto', 'documentos', '', `${n} → ${cat ? label(cat) : 'el del proveedor'}`);
     return n;
   }
+  /* ---------- one factura split between plants / clients (PCC Cuisine and the like) ----------
+     d.splits = [{ plant, cat, amount }] with amounts in MXN (IVA included) adding up to the factura total.
+     Gasto por planta and the weekly budget take each part to its own plant and concept. */
+  isSplitPartner(p) { return !!p && (!!p.splitPlants || /PCC\s*CUISINE/i.test(p.name || '')); }
+  /** The parts of a factura: its splits, or one part with its single plant and concept. Fractions add up to 1. */
+  splitsOf(d) {
+    const p = this.partner(d.partnerId), cat = d.budgetCat || (p && p.budgetCat) || '';
+    if (d.splits && d.splits.length) {
+      const tot = d.splits.reduce((a, x) => a + x.amount, 0) || 1;
+      return d.splits.map(x => ({ plant: x.plant || '', cat: x.cat || cat, amount: x.amount, frac: x.amount / tot }));
+    }
+    return [{ plant: this.plantOf(d) || '', cat, amount: d.totalMxn, frac: 1 }];
+  }
+  setSplits(id, list, user, reason, label) {
+    const d = this.doc(id);
+    if (!d || d.state === 'erased' || TYPES[d.type].side !== 'ap') throw httpErr(400, 'Solo se reparten facturas de proveedor.');
+    const plants = new Set(this.plantNames());
+    const clean = (list || []).map(x => ({ plant: String(x.plant || ''), cat: String(x.cat || ''), amount: r2(x.amount) })).filter(x => x.amount);
+    if (clean.length === 1) throw httpErr(400, 'Para una sola planta no hace falta repartir: asígnale la planta a la factura.');
+    for (const x of clean) {
+      if (!plants.has(x.plant)) throw httpErr(400, `Elige la planta de cada renglón${x.plant ? ` ("${x.plant}" no existe)` : ''}.`);
+      if (!x.cat) throw httpErr(400, `Elige el concepto del renglón de ${x.plant}.`);
+      if (!(x.amount > 0)) throw httpErr(400, 'Los importes deben ser mayores a cero.');
+    }
+    const sum = r2(clean.reduce((a, x) => a + x.amount, 0));
+    if (clean.length && Math.abs(sum - d.totalMxn) > 0.05) throw httpErr(400, `Los renglones suman ${sum.toFixed(2)} y la factura es de ${d.totalMxn.toFixed(2)} MXN. Ajusta los importes (diferencia ${(d.totalMxn - sum).toFixed(2)}).`);
+    const desc = l => (l || []).map(x => `${x.plant} · ${label(x.cat)} · ${x.amount.toFixed(2)}`).join('; ');
+    const before = d.splits && d.splits.length ? desc(d.splits) : (this.plantOf(d) || '');
+    this.snap('doc', d, ['splits', 'plant', 'noPlant']);
+    if (clean.length) { d.splits = clean; d.plant = ''; delete d.noPlant; } else delete d.splits;
+    const after = clean.length ? desc(clean) : (this.plantOf(d) || 'sin planta');
+    if (before && before !== after) this.correction(user, { ...this.docLabel(d), field: 'reparto', from: before, to: after, reason: reason || '' });
+    this.log(user, clean.length ? 'repartió' : 'quitó el reparto de', 'documento', d.id, clean.length ? desc(clean) : '');
+    return d;
+  }
   plantSpend(from, to) {
     const groups = {}, vendors = {};
     let unassigned = [];
     for (const d of this.db.docs) {
       if (d.state !== 'posted' || TYPES[d.type].side !== 'ap' || (from && d.date < from) || (to && d.date > to)) continue;
-      const sg = TYPES[d.type].sign, rate = d.rate || 1;
-      const sub = r2(sg * (d.subtotal - (d.discount || 0)) * rate), tax = r2(sg * (d.traslados - (d.retenciones || 0)) * rate), tot = r2(sg * d.totalMxn);
-      const plant = this.plantOf(d) || '';
-      const g = groups[plant] = groups[plant] || { plant: plant || 'Sin planta', city: plant ? this.plantCity(plant) : '', count: 0, subtotal: 0, taxes: 0, total: 0, vendors: {} };
-      g.count++; g.subtotal = r2(g.subtotal + sub); g.taxes = r2(g.taxes + tax); g.total = r2(g.total + tot);
-      const p = this.partner(d.partnerId), vk = d.partnerId || '-';
-      const v = g.vendors[vk] = g.vendors[vk] || { partnerId: d.partnerId, name: p ? p.name : '—', count: 0, total: 0 };
-      v.count++; v.total = r2(v.total + tot);
-      (g.docs = g.docs || []).push({ id: d.id, ref: `${d.serie || ''}${d.folio || ''}` || d.number || '', partner: p ? p.name : '—', date: d.date, total: tot, own: !!d.plant || !!d.noPlant, refund: sg < 0 });
-      if (!plant) unassigned.push(d.id);
+      const sg = TYPES[d.type].sign, rate = d.rate || 1, parts = this.splitsOf(d), split = parts.length > 1;
+      for (const part of parts) {
+        const f = part.frac;
+        const sub = r2(sg * (d.subtotal - (d.discount || 0)) * rate * f), tax = r2(sg * (d.traslados - (d.retenciones || 0)) * rate * f), tot = r2(sg * d.totalMxn * f);
+        const plant = part.plant;
+        const g = groups[plant] = groups[plant] || { plant: plant || 'Sin planta', city: plant ? this.plantCity(plant) : '', count: 0, subtotal: 0, taxes: 0, total: 0, vendors: {} };
+        g.count++; g.subtotal = r2(g.subtotal + sub); g.taxes = r2(g.taxes + tax); g.total = r2(g.total + tot);
+        const p = this.partner(d.partnerId), vk = d.partnerId || '-';
+        const v = g.vendors[vk] = g.vendors[vk] || { partnerId: d.partnerId, name: p ? p.name : '—', count: 0, total: 0 };
+        v.count++; v.total = r2(v.total + tot);
+        (g.docs = g.docs || []).push({ id: d.id, ref: `${d.serie || ''}${d.folio || ''}` || d.number || '', partner: p ? p.name : '—', date: d.date, total: tot, own: !!d.plant || !!d.noPlant, refund: sg < 0, split });
+        if (!plant) unassigned.push(d.id);
+      }
     }
     const list = Object.values(groups).map(g => ({ ...g, vendors: Object.values(g.vendors).sort((a, b) => b.total - a.total), docs: (g.docs || []).sort((a, b) => b.date.localeCompare(a.date) || a.partner.localeCompare(b.partner)) }));
     const order = this.plantNames();
@@ -445,6 +486,46 @@ class Books {
     pay.cashSaleDoc = d.id; d.cashSale.paymentId = pay.id;
     return d;
   }
+  /* Cash purchase ("Compra en efectivo") typed by hand: a supplier bill posted and paid at once from the cash
+     account, with its plant and budget concept, so it counts in Gasto por planta and the weekly budget. */
+  recordCashPurchase(data, user, label) {
+    const total = r2(data.total);
+    if (!(total > 0)) throw httpErr(400, 'El importe debe ser mayor a cero.');
+    const date = data.date || today();
+    if (!isDate(date)) throw httpErr(400, 'Falta la fecha.');
+    if (this.locked(date)) throw httpErr(400, `El periodo está cerrado hasta ${this.db.settings.lockDate}.`);
+    const plant = String(data.plant || '');
+    if (!plant || !this.plantNames().includes(plant)) throw httpErr(400, 'Elige la planta.');
+    if (!data.cat) throw httpErr(400, 'Elige el concepto.');
+    const tax = data.tax === 'IVA16' ? 'IVA16' : 'NONE';
+    const bank = this.bank(data.bankId) || this.db.banks.find(b => /caja/i.test(b.name)) || this.db.banks[0];
+    if (!bank) throw httpErr(400, 'No hay cuenta de caja.');
+    const account = data.account && this.account(data.account) ? data.account : this.db.settings.accounts.expense;
+    let p = data.partnerId ? this.partner(data.partnerId) : null;
+    const name = String(data.supplier || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!p && name) p = this.db.partners.find(x => x.name.toUpperCase() === name.toUpperCase()) || this.upsertPartner({ name: name.toUpperCase(), supplier: true, terms: 0, notes: 'Compras en efectivo' }, user);
+    if (!p) { p = this.db.partners.find(x => x.name === 'COMPRAS EN EFECTIVO (SIN PROVEEDOR)') || this.upsertPartner({ name: 'COMPRAS EN EFECTIVO (SIN PROVEEDOR)', supplier: true, terms: 0, notes: 'Compras en efectivo sin proveedor identificado' }, user); }
+    if (!p.supplier) p.supplier = true;
+    const base = tax === 'IVA16' ? r2(total / 1.16) : total, iva = r2(total - base);
+    const concept = String(data.concept || '').trim().slice(0, 200) || `Compra en efectivo · ${label(data.cat)}`;
+    const t = TAX_PRESETS.IVA16;
+    const d = this.newDoc('in_invoice', { partnerId: p.id, date, metodoPago: 'PUE', formaPago: '01', ref: String(data.ref || 'Compra en efectivo').slice(0, 80), notes: String(data.notes || '').slice(0, 500), source: 'efectivo',
+      lines: [{ description: concept, qty: 1, price: base, discount: 0, amount: base, account, taxCodes: tax === 'IVA16' ? ['IVA16'] : [], taxes: tax === 'IVA16' ? [{ kind: 'traslado', tax: 'IVA', rate: t.rate, factor: t.factor || 'Tasa', base, amount: iva, code: 'IVA16' }] : [] }] }, user);
+    d.total = total; this.computeDoc(d);
+    d.plant = plant; d.budgetCat = data.cat;
+    d.cashSale = { kind: 'compra', operation: plant, by: user, at: new Date().toISOString() };
+    this.postDoc(d.id, user);
+    const pay = this.createPayment({ dir: 'out', partnerId: p.id, date, bankId: bank.id, amount: d.total, method: '01', ref: 'Compra en efectivo', notes: d.number, allocations: [{ docId: d.id, amount: d.total }] }, user);
+    pay.cashSaleDoc = d.id; d.cashSale.paymentId = pay.id;
+    return d;
+  }
+  cashPurchases(from, to, plant) {
+    const rows = this.db.docs.filter(d => d.cashSale && d.cashSale.kind === 'compra' && (!from || d.date >= from) && (!to || d.date <= to) && (!plant || d.plant === plant))
+      .sort((a, b) => b.date.localeCompare(a.date) || String(b.number).localeCompare(String(a.number)));
+    const by = {};
+    for (const d of rows) if (d.state === 'posted') { const o = by[d.plant] = by[d.plant] || { plant: d.plant, count: 0, total: 0 }; o.count++; o.total = r2(o.total + d.total); }
+    return { rows, byPlant: Object.values(by).sort((a, b) => b.total - a.total) };
+  }
   /* Invoices paid at issue (PUE) are already paid: record the payment on the invoice date, from Caja when the
      forma de pago is cash (01) and from the bank otherwise. */
   payPue(ids, user) {
@@ -471,11 +552,11 @@ class Books {
     if (pay && pay.state === 'posted') { pay.state = 'cancelled'; this.log(user, 'canceló', 'pago', pay.id, `${pay.number} (venta en efectivo ${d.number || ''})`); }
   }
   cashSales(from, to, operation) {
-    const rows = this.db.docs.filter(d => d.cashSale && (!from || d.date >= from) && (!to || d.date <= to) && (!operation || d.cashSale.operation === operation))
+    const rows = this.db.docs.filter(d => d.cashSale && d.cashSale.kind !== 'compra' && (!from || d.date >= from) && (!to || d.date <= to) && (!operation || d.cashSale.operation === operation))
       .sort((a, b) => b.date.localeCompare(a.date) || String(b.number).localeCompare(String(a.number)));
     const ops = {};
     for (const d of rows) if (d.state === 'posted') { const o = ops[d.cashSale.operation] = ops[d.cashSale.operation] || { operation: d.cashSale.operation, count: 0, subtotal: 0, iva: 0, total: 0 }; o.count++; o.subtotal = r2(o.subtotal + d.subtotal); o.iva = r2(o.iva + d.traslados); o.total = r2(o.total + d.total); }
-    const known = [...new Set([...(this.db.settings.cashOps || []), ...this.db.docs.filter(d => d.cashSale).map(d => d.cashSale.operation)])].sort((a, b) => a.localeCompare(b, 'es'));
+    const known = [...new Set([...(this.db.settings.cashOps || []), ...this.db.docs.filter(d => d.cashSale && d.cashSale.kind !== 'compra').map(d => d.cashSale.operation)])].sort((a, b) => a.localeCompare(b, 'es'));
     return { rows, byOp: Object.values(ops).sort((a, b) => b.total - a.total), operations: known };
   }
   defaultDue(d) {

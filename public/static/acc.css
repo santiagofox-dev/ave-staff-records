@@ -246,3 +246,7 @@ ul.budlist li.bi.dragging{opacity:.4}
 ul.budlist .bia{display:flex;gap:6px}
 ul.budlist .bia select{font-size:12px;padding:3px 6px;max-width:190px}
 tr.drop td{background:color-mix(in srgb,var(--accent) 12%,var(--surface));box-shadow:inset 0 0 0 2px var(--accent)}
+.split-t select,.split-t input{width:100%}
+.split-t td.n input{text-align:right;max-width:160px}
+.split-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:center;margin-top:8px}
+.split-foot .bad{color:var(--bad);font-weight:700} .split-foot .ok{color:var(--ok);font-weight:700}
