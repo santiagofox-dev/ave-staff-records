@@ -56,7 +56,7 @@ test('kárdex matching: same number with small name typos, repeated records, and
     b: { id: 'b', number: '131', name: 'Nancy Ramos Martinez' }, c: { id: 'c', number: '131', name: 'Nancy Ramos Martinez', status: 'activo' },
     d: { id: 'd', number: '253', name: 'Alma Rosa Villalobos Ramos', status: 'baja' },
     e: { id: 'e', number: '99', name: 'Victor Manuel Peña Garibay' } } };
-  const m = require('../vacaciones')({ post() {}, get() {}, patch() {}, delete() {} }, { state, persist() {}, who() {} });
+  const m = require('../vacaciones')({ post() {}, get() {}, patch() {}, put() {}, delete() {} }, { state, persist() {}, who() {} });
   const plan = m.planKardex({ people: [
     { number: '258', name: 'MARTINEZ CARRASCO NORMA ELENA', taken: [] }, { number: '131', name: 'RAMOS MARTINEZ NANCY', taken: [] },
     { number: '253', name: 'VILLALOBOS RAMOS ALMA ROSA', taken: [] }, { number: '99', name: 'TORRES MUÑIZ VICTOR MANUEL', taken: [] }] });
@@ -64,4 +64,25 @@ test('kárdex matching: same number with small name typos, repeated records, and
   assert.strictEqual(plan[1].match.id, 'b'); assert.deepStrictEqual(plan[1].twins, ['c']);
   assert.strictEqual(plan[2].match.id, 'd');
   assert.strictEqual(plan[3].match, null); // same number, different person
+});
+
+test('every change to vacaciones is editable and leaves a trace (before, after, who, when)', () => {
+  const routes = {}; const app = {}; for (const m of ['get', 'post', 'put', 'patch', 'delete']) app[m] = (p, h) => { routes[m + ' ' + p] = h; };
+  const state = { employees: { a: { id: 'a', number: '1', name: 'Ana Lopez Ruiz', hire: '2022-01-10', vac: { opening: { date: '2026-09-21', saldo: 11 }, taken: [{ id: 'k1', from: '2025-12-01', to: '2025-12-07', days: 6, kind: 'kardex', note: '' }] } } } };
+  require('../vacaciones')(app, { state, persist() {}, who: req => req.user });
+  const call = (m, p, params, body, user = 'laura') => { let out; routes[m + ' ' + p]({ params, body, query: {}, user }, { json: x => { out = x; }, status: c => ({ json: x => { out = { status: c, ...x }; } }) }); return out; };
+  let r = call('post', '/api/employees/:id/vacaciones', { id: 'a' }, { from: '2026-11-20', days: 1 });
+  const fi = r.vac.taken.find(t => t.kind === 'FI');
+  r = call('put', '/api/employees/:id/vacaciones/:entry', { id: 'a', entry: fi.id }, { days: 2, kind: 'falta', reason: 'Eran dos días' }, 'allan');
+  r = call('put', '/api/employees/:id/vacaciones/:entry', { id: 'a', entry: 'k1' }, { days: 5 });
+  assert.strictEqual(r.vac.taken.find(t => t.id === 'k1').days, 5); // kárdex rows are editable too
+  r = call('put', '/api/employees/:id/vacaciones-saldo', { id: 'a' }, { date: '2026-09-21', saldo: 9, reason: 'Corrección RH' });
+  r = call('delete', '/api/employees/:id/vacaciones/:entry', { id: 'a', entry: fi.id }, {});
+  const L = state.employees.a.vac.log;
+  assert.deepStrictEqual(L.map(x => x.action), ['alta', 'cambio', 'cambio', 'saldo', 'baja']);
+  assert.strictEqual(L[1].by, 'allan'); assert.strictEqual(L[1].before.days, 1); assert.strictEqual(L[1].after.days, 2); assert.strictEqual(L[1].after.kind, 'falta'); assert.strictEqual(L[1].reason, 'Eran dos días');
+  assert.deepStrictEqual([L[3].before.saldo, L[3].after.saldo], [11, 9]);
+  assert.ok(L.every(x => x.at && x.by));
+  assert.strictEqual(r.summary.balance, 9);
+  assert.strictEqual(call('put', '/api/employees/:id/vacaciones/:entry', { id: 'a', entry: 'k1' }, { from: '2025-12-09', to: '2025-12-01' }).status, 400);
 });

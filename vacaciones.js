@@ -36,6 +36,27 @@ module.exports = function (app, { state, persist, who }) {
   const entry = (e, x, by) => ({ id: crypto.randomBytes(6).toString('hex'), from: x.from, to: x.to || x.from, days: Math.round((+x.days || 0) * 100) / 100, kind: x.kind || 'FI', note: String(x.note || '').slice(0, 200), src: x.src || undefined, by, at: new Date().toISOString() });
   const touch = e => { e.updatedAt = new Date().toISOString(); };
   const withSummary = e => ({ id: e.id, vac: e.vac || null, summary: VAC.summary(e, todayCJ()) });
+  /* every change to someone's vacaciones leaves a trace: what it was, what it is now, who and when */
+  const pick = t => t ? { from: t.from, to: t.to, days: t.days, kind: t.kind, note: t.note } : null;
+  function log(e, by, action, before, after, reason) {
+    e.vac = e.vac || { taken: [] }; e.vac.log = e.vac.log || [];
+    e.vac.log.push({ at: new Date().toISOString(), by, action, before: before || null, after: after || null, reason: String(reason || '').slice(0, 200) || undefined });
+    if (e.vac.log.length > 1000) e.vac.log.splice(0, e.vac.log.length - 1000);
+  }
+  /** Validates and normalizes an entry's fields; returns { error } or the fields. */
+  function fields(b, prev) {
+    const from = b.from !== undefined ? b.from : prev && prev.from;
+    if (!YMD.test(from || '')) return { error: 'Pon la fecha de inicio.' };
+    const to = YMD.test((b.to !== undefined ? b.to : prev && prev.to) || '') ? (b.to !== undefined ? b.to : prev.to) : from;
+    if (to < from) return { error: 'La fecha final es anterior a la inicial.' };
+    const raw = b.days !== undefined ? b.days : prev && prev.days;
+    const days = raw === '' || raw == null ? VAC.workDays(from, to) : Math.round(+raw * 100) / 100;
+    if (!(days > 0 && days <= 60)) return { error: 'Los días deben ser de 0.5 a 60.' };
+    let kind = b.kind !== undefined ? b.kind : prev ? prev.kind : 'FI';
+    if (!(KINDS.includes(kind) || (prev && prev.kind === 'kardex' && kind === 'kardex'))) kind = 'FI'; // an absence is a falta sin justificar unless said otherwise
+    const note = String((b.note !== undefined ? b.note : prev && prev.note) || '').slice(0, 200);
+    return { from, to, days, kind, note };
+  }
 
   /** Who in Expedientes is this person from another tool (number + name, or a unique name). */
   function findEmployee(number, name, site) {
@@ -118,7 +139,10 @@ module.exports = function (app, { state, persist, who }) {
             const e = state.employees[id]; if (!e) continue;
             const keep = ((e.vac && e.vac.taken) || []).filter(t => t.kind !== 'kardex' && (t.from || '') > k.asOf);
             const hist = p.taken.filter(t => !t.before).map(t => entry(e, { ...t, kind: 'kardex', note: '' }, by));
-            e.vac = { opening: { date: k.asOf, saldo: r.saldo, file: req.file.originalname, by, at: new Date().toISOString() }, taken: [...hist, ...keep] };
+            const before = e.vac && e.vac.opening ? { date: e.vac.opening.date, saldo: e.vac.opening.saldo, file: e.vac.opening.file } : null;
+            const oldK = ((e.vac && e.vac.taken) || []).filter(t => !keep.includes(t)).length;
+            e.vac = { ...(e.vac || {}), opening: { date: k.asOf, saldo: r.saldo, file: req.file.originalname, by, at: new Date().toISOString() }, taken: [...hist, ...keep] };
+            log(e, by, 'kardex', before && { ...before, registros: oldK }, { date: k.asOf, saldo: r.saldo, file: req.file.originalname, registros: hist.length });
             if (!e.hire && p.hire) e.hire = p.hire;
             touch(e);
           }
@@ -134,48 +158,72 @@ module.exports = function (app, { state, persist, who }) {
   app.get('/api/vacaciones', (req, res) => res.json(emps().filter(e => e.status !== 'baja').map(withSummary)));
   app.post('/api/employees/:id/vacaciones', (req, res) => {
     const e = state.employees[req.params.id]; if (!e) return res.status(404).json({ error: 'No existe ese empleado.' });
-    const b = req.body || {};
-    if (!YMD.test(b.from || '')) return res.status(400).json({ error: 'Pon la fecha de inicio.' });
-    const to = YMD.test(b.to || '') ? b.to : b.from;
-    if (to < b.from) return res.status(400).json({ error: 'La fecha final es anterior a la inicial.' });
-    const days = b.days === '' || b.days == null ? VAC.workDays(b.from, to) : +b.days;
-    if (!(days > 0 && days <= 60)) return res.status(400).json({ error: 'Los días deben ser de 0.5 a 60.' });
-    const kind = KINDS.includes(b.kind) ? b.kind : 'FI'; // an absence is a falta sin justificar unless said otherwise
+    const b = req.body || {}, f = fields(b, null);
+    if (f.error) return res.status(400).json(f);
     e.vac = e.vac || { taken: [] }; e.vac.taken = e.vac.taken || [];
-    e.vac.taken.push(entry(e, { from: b.from, to, days, kind, note: b.note }, who(req)));
+    const t = entry(e, f, who(req)); e.vac.taken.push(t);
+    log(e, who(req), 'alta', null, { id: t.id, ...pick(t) }, b.reason);
     touch(e); persist();
     res.json(withSummary(e));
   });
-  /* a falta sin justificar can be passed to vacaciones (and back) */
-  app.patch('/api/employees/:id/vacaciones/:entry', (req, res) => {
+  /* edit any entry (dates, days, type, note), including the ones that came from the kárdex */
+  const edit = (req, res) => {
     const e = state.employees[req.params.id]; if (!e || !e.vac) return res.status(404).json({ error: 'No existe.' });
     const t = (e.vac.taken || []).find(x => x.id === req.params.entry);
     if (!t) return res.status(404).json({ error: 'No existe ese registro.' });
-    if (t.kind === 'kardex') return res.status(400).json({ error: 'Los registros del Kárdex de CONTPAQi solo se cambian volviendo a cargar el Kárdex.' });
-    const kind = (req.body || {}).kind;
-    if (!KINDS.includes(kind)) return res.status(400).json({ error: 'Tipo no válido.' });
-    t.kind = kind; t.changedBy = who(req); t.changedAt = new Date().toISOString();
+    const b = req.body || {}, f = fields(b, t);
+    if (f.error) return res.status(400).json(f);
+    const before = pick(t);
+    if (JSON.stringify(before) === JSON.stringify(f)) return res.json(withSummary(e));
+    Object.assign(t, f); t.changedBy = who(req); t.changedAt = new Date().toISOString();
+    log(e, who(req), 'cambio', { id: t.id, ...before }, { id: t.id, ...pick(t) }, b.reason);
     touch(e); persist();
     res.json(withSummary(e));
-  });
+  };
+  app.patch('/api/employees/:id/vacaciones/:entry', edit);
+  app.put('/api/employees/:id/vacaciones/:entry', edit);
   app.delete('/api/employees/:id/vacaciones/:entry', (req, res) => {
     const e = state.employees[req.params.id]; if (!e || !e.vac) return res.status(404).json({ error: 'No existe.' });
     const i = (e.vac.taken || []).findIndex(t => t.id === req.params.entry);
     if (i < 0) return res.status(404).json({ error: 'No existe ese registro.' });
-    if (e.vac.taken[i].kind === 'kardex') return res.status(400).json({ error: 'Los registros del Kárdex de CONTPAQi solo se cambian volviendo a cargar el Kárdex.' });
-    e.vac.taken.splice(i, 1); touch(e); persist();
+    const [t] = e.vac.taken.splice(i, 1);
+    log(e, who(req), 'baja', { id: t.id, ...pick(t) }, null, (req.body || {}).reason || req.query.reason);
+    touch(e); persist();
+    res.json(withSummary(e));
+  });
+  /* the starting balance (from the kárdex, or typed by hand) */
+  app.put('/api/employees/:id/vacaciones-saldo', (req, res) => {
+    const e = state.employees[req.params.id]; if (!e) return res.status(404).json({ error: 'No existe ese empleado.' });
+    const b = req.body || {}; e.vac = e.vac || { taken: [] }; e.vac.taken = e.vac.taken || [];
+    const prev = e.vac.opening ? { date: e.vac.opening.date, saldo: e.vac.opening.saldo, file: e.vac.opening.file } : null;
+    if (b.clear) {
+      if (!prev) return res.json(withSummary(e));
+      delete e.vac.opening; log(e, who(req), 'saldo', prev, null, b.reason);
+    } else {
+      if (!YMD.test(b.date || '')) return res.status(400).json({ error: 'Pon la fecha del saldo.' });
+      const saldo = Math.round(+b.saldo * 100) / 100;
+      if (!Number.isFinite(saldo) || Math.abs(saldo) > 400) return res.status(400).json({ error: 'El saldo debe ser un número de días.' });
+      if (prev && prev.date === b.date && prev.saldo === saldo) return res.json(withSummary(e));
+      e.vac.opening = { ...(e.vac.opening || {}), date: b.date, saldo, by: who(req), at: new Date().toISOString(), edited: true };
+      log(e, who(req), 'saldo', prev, { date: b.date, saldo, file: e.vac.opening.file }, b.reason);
+    }
+    touch(e); persist();
     res.json(withSummary(e));
   });
 
   /* ---------- from Asistencia: a day marked VAC in the weekly review ---------- */
   function fromAsistencia({ key, number, name, site, ymd, on, by }) {
     // remove any earlier entry for this same cell, then add it again if the day is VAC
-    for (const e of emps()) if (e.vac && (e.vac.taken || []).some(t => t.src === key)) { e.vac.taken = e.vac.taken.filter(t => t.src !== key); touch(e); }
+    for (const e of emps()) if (e.vac && (e.vac.taken || []).some(t => t.src === key)) {
+      for (const t of e.vac.taken.filter(x => x.src === key)) log(e, by, 'baja', { id: t.id, ...pick(t) }, null, 'Quitado el VAC en Asistencia');
+      e.vac.taken = e.vac.taken.filter(t => t.src !== key); touch(e);
+    }
     if (!on) { persist(); return null; }
     const e = findEmployee(number, name, site);
     if (!e) { persist(); return { found: false }; }
     e.vac = e.vac || { taken: [] }; e.vac.taken = e.vac.taken || [];
-    e.vac.taken.push(entry(e, { from: ymd, to: ymd, days: 1, kind: 'falta', note: 'Marcado como VAC en Asistencia', src: key }, by));
+    const t = entry(e, { from: ymd, to: ymd, days: 1, kind: 'falta', note: 'Marcado como VAC en Asistencia', src: key }, by);
+    e.vac.taken.push(t); log(e, by, 'alta', null, { id: t.id, ...pick(t) }, 'Marcado como VAC en Asistencia');
     touch(e); persist();
     const s = VAC.summary(e, todayCJ());
     return { found: true, name: e.name, balance: s.balance };
