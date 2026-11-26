@@ -8,7 +8,7 @@
 <link rel="preload" href="/static/fonts/source-sans-3-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/fonts.css?v=1">
 <link rel="stylesheet" href="/static/styles.css?v=10">
-<link rel="stylesheet" href="/static/asis.css?v=4">
+<link rel="stylesheet" href="/static/asis.css?v=5">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="/static/shell.css?v=3">
 </head>
@@ -38,7 +38,23 @@
   <div class="ptabs" id="plantTabs" role="tablist" aria-label="Planta"></div>
 
   <div class="asteps" id="home">
-    <section class="panel">
+    <section class="panel span2" id="pLocal" hidden>
+      <div class="sn">1</div>
+      <h2>Checador en sitio</h2>
+      <p class="muted small">La terminal de rostro guarda las checadas en la PC de la planta, aunque no haya internet, y esa PC las manda aquí cada hora.</p>
+      <div class="mets" id="locMets"></div>
+      <div id="locWarn" class="flags"></div>
+      <h3 class="sub">Estaciones (PC en la planta)</h3>
+      <div id="locStations"></div>
+      <div class="actions"><button class="btn primary" id="locNew" type="button">Nueva estación</button><a class="btn" id="locZip" href="/api/checador/programa.zip">Descargar el programa para la PC</a><a class="btn" id="locCsv" href="#">Descargar checadas (CSV)</a></div>
+      <div id="locToken" aria-live="polite"></div>
+      <h3 class="sub">Personal de la planta</h3>
+      <div class="kv" id="locEmp"></div>
+      <div class="actions"><label class="btn filebtn"><input id="locEmpFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">Subir lista de personal (Excel)</label><span class="muted small">Columnas: número de empleado, NSS y EMPLEADO. Ese número es el que se da de alta en la terminal.</span></div>
+      <div id="locEmpMsg" aria-live="polite"></div>
+      <details class="photos" id="locTodayBox"><summary>Checadas de hoy</summary><div id="locToday"></div></details>
+    </section>
+    <section class="panel" id="pChk">
       <div class="sn">1</div>
       <h2>Carga el checador</h2>
       <p class="muted small">Sube el Excel que genera el CHECADOR INTERNO. Con él se arma la lista del personal y se revisan las horas.</p>
@@ -140,6 +156,6 @@
 
 <script src="/static/shell.js?v=2"></script>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/asis.js?v=14"></script>
+<script src="/static/asis.js?v=15"></script>
 </body>
 </html>

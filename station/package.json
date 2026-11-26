@@ -1,0 +1,9 @@
+{
+  "name": "ave-checador-sitio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Checador en sitio de Grupo AVE: lee la terminal de rostro, guarda todo en la PC y lo sube a gpoave.com cada hora.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

@@ -1,0 +1,3 @@
+node-zklib 1.3.0 (https://github.com/caobo171/node-zklib), licencia ISC.
+Se incluye aquí para que el programa no necesite internet para instalar dependencias.
+Único cambio: helpers/errorLog.js escribe su bitácora en la carpeta de logs del programa.

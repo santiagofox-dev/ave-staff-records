@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checador · Grupo AVE</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="k">
+  <header>
+    <img src="/static/logo.png" alt="Grupo AVE">
+    <div class="where" id="where">Checador</div>
+    <div class="clock"><b id="time">--:--</b><div class="muted" id="date"></div></div>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+  <main>
+    <section><h2>Checadas de hoy <span class="muted small" id="count"></span></h2><ul id="today"></ul></section>
+    <section><h2>Adentro ahora <span class="muted small" id="inCount"></span></h2><ul id="inside"></ul></section>
+  </main>
+  <footer>
+    <span id="dev"><span class="dot"></span>Terminal</span>
+    <span id="net"><span class="dot"></span>Internet</span>
+    <a href="/admin">Administración</a>
+  </footer>
+  <div class="hello" id="hello" hidden></div>
+</div>
+<script src="/static/kiosk.js"></script>
+</body>
+</html>

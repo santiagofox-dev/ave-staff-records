@@ -31,7 +31,9 @@
   let S = null;
   let PLANT = (() => { try { return localStorage.getItem('asisPlant') || 'monclova'; } catch (e) { return 'monclova'; } })();
   const q = (u, extra) => `${u}?planta=${encodeURIComponent(PLANT)}${extra ? '&' + extra : ''}`;
-  const isExcel = () => S && S.plant.source === 'excel';
+  const isLocal = () => S && S.plant.source === 'local';
+  // the on-site checador plants review like the INCIDENCIAS plants (no photos)
+  const isExcel = () => S && (S.plant.source === 'excel' || S.plant.source === 'local');
 
   /* ---------- home ---------- */
   async function loadState() {
@@ -43,10 +45,12 @@
     } }, p.name)));
     $('#eyebrow').textContent = `Grupo AVE · ${S.plant.name}`;
     $('#keyWarn').hidden = S.hasKey || isExcel();
-    $('#pPrint').hidden = isExcel(); $('#pInc').hidden = !isExcel();
+    $('#pPrint').hidden = isExcel(); $('#pInc').hidden = !isExcel() || isLocal();
+    $('#pLocal').hidden = !isLocal(); $('#pChk').hidden = isLocal();
+    if (isLocal()) localPanel().catch(e => $('#locWarn').replaceChildren(h('div', { class: 'msg bad' }, e.message)));
     $('#drop').hidden = isExcel(); $('#thumbs').hidden = isExcel();
-    $('#revHelp').textContent = isExcel() ? 'Elige la semana. Se compara lo que dicen las incidencias contra el checador de esa misma semana.' : 'Toma una foto por hoja, de frente y con las cuatro esquinas negras visibles. Antes, carga el checador de esa misma semana.';
-    $('#readBtn').textContent = isExcel() ? 'Comparar' : 'Leer y comparar';
+ $('#revHelp').textContent = isLocal() ? 'Elige la semana. Se arma con las checadas que llegaron de la planta: faltas, retardos, salidas antes y horas extra. Ahí mismo marcas INC, VAC o permisos.' : isExcel() ? 'Elige la semana. Se compara lo que dicen las incidencias contra el checador de esa misma semana.' : 'Toma una foto por hoja, de frente y con las cuatro esquinas negras visibles. Antes, carga el checador de esa misma semana.';
+    $('#readBtn').textContent = isLocal() ? 'Revisar semana' : isExcel() ? 'Comparar' : 'Leer y comparar';
     if (isExcel()) {
       $('#incState').replaceChildren(...(S.incidencias.length ? S.incidencias.slice(0, 6).map(w => h('div', {}, h('span', {}, `${weekTxt(w.monday)} (${w.sheet})`), h('b', {}, `${w.rows} personas`))) : [h('div', {}, h('span', { class: 'muted' }, 'Sin incidencias cargadas'))]));
     }
@@ -56,7 +60,7 @@
       ...Object.entries(r.turnos).sort().map(([t, n]) => h('div', {}, h('span', { class: 'muted' }, t), h('b', {}, n))),
       h('div', {}, h('span', {}, 'Último checador'), h('b', {}, r.week ? `semana ${weekTxt(r.week)}` : 'sin cargar')),
       r.merged.length ? h('div', {}, h('span', {}, 'IDs combinados (misma persona)'), h('b', {}, r.merged.map(m => m.ids.join(' = ')).join(', '))) : null].filter(Boolean));
-    $('#subtitle').textContent = isExcel() ? 'Compara las incidencias que manda la planta contra el checador. Si no coinciden, gana el checador.' : 'Imprime la lista de cada semana y compárala contra el checador. Si la hoja y el checador no coinciden, gana el checador.';
+    $('#subtitle').textContent = isLocal() ? 'La terminal de rostro de la planta checa al personal; aquí llegan las checadas cada hora y se revisa la semana para nómina.' : isExcel() ? 'Compara las incidencias que manda la planta contra el checador. Si no coinciden, gana el checador.' : 'Imprime la lista de cada semana y compárala contra el checador. Si la hoja y el checador no coinciden, gana el checador.';
     $('#limits').textContent = '';
     if (!$('#printWeek').value) $('#printWeek').value = S.nextMonday;
     if (!$('#revWeek').value) { const both = S.weeks.find(w => !isExcel() || w.incidencias); $('#revWeek').value = (both && both.monday) || (S.weeks[0] && S.weeks[0].monday) || S.thisMonday; }
@@ -77,8 +81,9 @@
     const mon = monday(v), w = S && S.weeks.find(x => x.monday === mon), inc = S && S.incidencias.find(x => x.monday === mon);
     $('#revLabel').replaceChildren(`Lun ${dm(mon)} a ${isExcel() ? 'Dom ' + dm(add(mon, 6)) : 'Sáb ' + dm(add(mon, 5))}`,
       h('div', { class: 'small ' + (w ? 'muted' : '') }, w ? `Checador cargado: ${w.file}` : h('span', { class: 'pill warn' }, 'Falta el checador de esta semana')),
-      isExcel() ? h('div', { class: 'small ' + (inc ? 'muted' : '') }, inc ? `Incidencias: ${inc.sheet} (${inc.rows} personas)` : h('span', { class: 'pill warn' }, 'Faltan las incidencias de esta semana')) : null);
-    if (isExcel()) $('#readBtn').disabled = !(w && inc);
+      ...(isExcel() && !isLocal() ? [h('div', { class: 'small ' + (inc ? 'muted' : '') }, inc ? `Incidencias: ${inc.sheet} (${inc.rows} personas)` : h('span', { class: 'pill warn' }, 'Faltan las incidencias de esta semana'))] : []));
+    if (isLocal()) { $('#revLabel').children[0] && ($('#revLabel').children[0].textContent = w ? `Checadas recibidas de la planta (actualizado ${when(w.uploadedAt)})` : 'Se arma con las checadas al revisar'); $('#readBtn').disabled = false; }
+    else if (isExcel()) $('#readBtn').disabled = !(w && inc);
   }
   $('#printWeek').addEventListener('change', printLinks);
   $('#revWeek').addEventListener('change', revLabel);
@@ -99,6 +104,59 @@
       await loadState();
       if (r.weeks.length) { $('#revWeek').value = r.weeks[r.weeks.length - 1]; revLabel(); }
     } catch (err) { box.replaceChildren(h('div', { class: 'msg bad' }, err.message)); }
+    e.target.value = '';
+  });
+
+  /* ---------- checador en sitio (Jabil Torres) ---------- */
+  const ago = iso => { if (!iso) return 'nunca'; const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? 'hace un momento' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} días`; };
+  async function localPanel() {
+    const L = await api(q('/api/checador/state'));
+    const todayD = L.days[L.days.length - 1] || { punches: 0, people: 0 };
+    $('#locMets').replaceChildren(
+      h('div', { class: 'met' }, h('b', {}, L.employees), h('span', {}, 'personas en la lista')),
+      h('div', { class: 'met' }, h('b', {}, todayD.people), h('span', {}, `checaron hoy (${todayD.punches} checadas)`)),
+      h('div', { class: 'met' }, h('b', {}, L.inside.length), h('span', {}, 'adentro ahora')),
+      h('div', { class: 'met' + (L.stations.some(s => !s.revoked && s.lastSync && Date.now() - Date.parse(s.lastSync) < 3 * 3600e3) ? ' ok' : ' warn') }, h('b', {}, L.stations.filter(s => !s.revoked).length), h('span', {}, 'estaciones')));
+    const warn = [];
+    if (!L.employees) warn.push(h('div', { class: 'msg warn' }, 'Falta subir la lista de personal de la planta (abajo). Con ella la PC muestra nombres y aquí se detectan las faltas.'));
+    if (L.unknown.length) warn.push(h('div', { class: 'msg warn' }, `La terminal registró números que no están en la lista: ${L.unknown.join(', ')}. Revisa cómo los dieron de alta o agrégalos a la lista.`));
+    for (const s of L.stations.filter(x => !x.revoked)) {
+      if (!s.lastSync) warn.push(h('div', { class: 'msg warn' }, `La estación "${s.name}" todavía no se conecta. Instala el programa en la PC de la planta y pega su código.`));
+      else if (Date.now() - Date.parse(s.lastSync) > 3 * 3600e3) warn.push(h('div', { class: 'msg warn' }, `La estación "${s.name}" no se ha sincronizado desde ${when(s.lastSync)}. Puede ser el internet de la planta: las checadas siguen guardadas en la PC y llegan cuando vuelva.`));
+      const d = s.info && s.info.device;
+      if (d && d.kind !== 'none' && !d.ok) warn.push(h('div', { class: 'msg bad' }, `En la estación "${s.name}" la terminal no responde${d.error ? `: ${d.error}` : ''}.`));
+    }
+    $('#locWarn').replaceChildren(...warn);
+    const live = L.stations.filter(s => !s.revoked);
+    $('#locStations').replaceChildren(live.length ? h('table', { class: 'hist' }, h('thead', {}, h('tr', {}, ['Estación', 'Última sincronización', 'Terminal', 'Pendientes en la PC', 'Versión', ''].map(t => h('th', {}, t)))),
+      h('tbody', {}, live.map(s => { const d = s.info && s.info.device; return h('tr', {}, h('td', {}, h('b', {}, s.name), h('div', { class: 'muted small' }, `creada ${when(s.createdAt)} por ${s.by}`)),
+        h('td', {}, s.lastSync ? `${when(s.lastSync)} (${ago(s.lastSync)})` : h('span', { class: 'pill warn' }, 'nunca')),
+        h('td', {}, !d ? '—' : d.kind === 'none' ? 'sin terminal' : h('span', { class: 'pill ' + (d.ok ? 'ok' : 'bad') }, d.ok ? `conectada${d.serial ? ' · ' + d.serial : ''}` : 'sin conexión')),
+        h('td', { class: 'n' }, s.pending || 0), h('td', {}, s.version || ''),
+        h('td', {}, h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (!confirm(`¿Desactivar la estación "${s.name}"? Su código deja de funcionar y la PC ya no podrá enviar checadas hasta que le pegues uno nuevo.`)) return; await api('/api/checador/stations/' + s.id, { method: 'DELETE' }); localPanel(); } }, 'Desactivar'))); }))) : h('p', { class: 'muted small' }, 'Aún no hay estaciones. Crea una para obtener el código que se pega en el programa de la PC.'));
+    const e = $('#locEmp');
+    e.replaceChildren(h('div', {}, h('span', {}, 'Personas'), h('b', {}, L.employees)), L.employeesFile ? h('div', {}, h('span', {}, 'Último archivo'), h('b', {}, `${L.employeesFile} (${when(L.employeesAt)})`)) : null,
+      h('div', {}, h('span', {}, 'Turnos'), h('b', {}, L.shifts.map(t => `${t.name} ${t.start}–${t.end}`).join(' · '))));
+    $('#locCsv').href = q('/api/checador/punches.csv');
+    const SRC = { face: 'rostro', manual: 'manual', import: 'archivo', finger: 'huella', card: 'tarjeta' };
+    $('#locToday').replaceChildren(L.todayPunches.length ? h('table', { class: 'hist' }, h('thead', {}, h('tr', {}, ['Hora', 'ID', 'Nombre', 'Origen'].map(t => h('th', {}, t)))),
+      h('tbody', {}, L.todayPunches.map(p => h('tr', {}, h('td', {}, p.time), h('td', {}, p.emp), h('td', {}, p.name || h('span', { class: 'pill warn' }, 'no está en la lista')), h('td', {}, (SRC[p.src] || p.src) + (p.by ? ` (autorizó ${p.by})` : '')))))) : h('p', { class: 'muted small' }, 'Sin checadas hoy (o la PC todavía no sincroniza).'));
+  }
+  $('#locNew').addEventListener('click', async () => {
+    const name = prompt('Nombre de la estación (ej. Entrada principal):', 'Entrada principal'); if (!name) return;
+    try {
+      const r = await api('/api/checador/stations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ planta: PLANT, name }) });
+      const copy = h('button', { class: 'btn sm', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(r.token); copy.textContent = 'Copiado'; } catch (e) { copy.textContent = 'Selecciónalo y cópialo'; } } }, 'Copiar');
+      $('#locToken').replaceChildren(h('div', { class: 'tokenbox' }, h('b', {}, `Código de la estación "${r.station.name}"`), h('code', {}, r.token), copy,
+        h('p', { class: 'muted small' }, 'Pégalo en el programa de la PC (Administración → Configuración). Solo se muestra esta vez: si se pierde, crea otra estación y desactiva esta.')));
+      localPanel();
+    } catch (e) { $('#locToken').replaceChildren(h('div', { class: 'msg bad' }, e.message)); }
+  });
+  $('#locEmpFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const fd = new FormData(); fd.append('planta', PLANT); fd.append('file', f);
+    try { const r = await api('/api/checador/employees', { method: 'POST', body: fd }); $('#locEmpMsg').replaceChildren(h('div', { class: 'msg' }, `Listo: ${r.count} personas.${r.added.length && r.added.length < r.count ? ` Nuevas: ${r.added.join(', ')}.` : ''}${r.removed.length ? ` Ya no están: ${r.removed.join(', ')}.` : ''} La PC de la planta recibe la lista en su próxima sincronización.`)); await loadState(); }
+    catch (err) { $('#locEmpMsg').replaceChildren(h('div', { class: 'msg bad' }, err.message)); }
     e.target.value = '';
   });
 
@@ -169,7 +227,7 @@
     $('#hist').replaceChildren(h('table', { class: 'hist' },
       h('thead', {}, h('tr', {}, ['Semana', 'Subida', 'Por', isExcel() ? 'Origen' : 'Fotos', 'Por revisar', 'TE checador', isExcel() ? 'TE incidencias' : 'TE hoja'].map(t => h('th', {}, t)))),
       h('tbody', {}, runs.map(r => h('tr', { class: 'go', tabindex: 0, onclick: () => { location.hash = 'r=' + r.id; }, onkeydown: e => { if (e.key === 'Enter') location.hash = 'r=' + r.id; } },
-        h('td', {}, weekTxt(r.monday)), h('td', {}, when(r.createdAt)), h('td', {}, r.by || ''), h('td', { class: 'n' }, r.source === 'excel' ? 'Excel' : r.photos),
+        h('td', {}, weekTxt(r.monday)), h('td', {}, when(r.createdAt)), h('td', {}, r.by || ''), h('td', { class: 'n' }, r.local ? 'Checador' : r.source === 'excel' ? 'Excel' : r.photos),
         h('td', { class: 'n' }, r.status !== 'read' ? h('span', { class: 'pill warn' }, 'leyendo') : r.summary ? h('span', { class: 'pill ' + (r.summary.bad ? 'bad' : 'ok') }, r.summary.bad) : '—'),
         h('td', { class: 'n' }, r.summary ? num(r.summary.teChk) + ' h' : '—'), h('td', { class: 'n' }, r.summary ? num(r.summary.teSheet) + ' h' : '—'))))));
   }
@@ -188,7 +246,7 @@
     const r = RUN, an = r.analysis;
     $('#runTitle').textContent = `${r.plantName} · Semana ${weekTxt(r.monday)}`;
     $('#photosBox').hidden = r.source === 'excel';
-    $('#legendTxt').textContent = r.source === 'excel' ? 'Arriba: checador · Abajo: lo que dice incidencias. Haz clic en una celda para corregirla.' : 'Arriba: checador · Abajo: lo que dice la hoja. Haz clic en una celda para corregir la lectura.';
+    $('#legendTxt').textContent = r.local ? 'Arriba: checador · Abajo: incidencias que marques aquí (vacío = asistió). Haz clic en una celda para marcar INC, VAC, PSS o corregir.' : r.source === 'excel' ? 'Arriba: checador · Abajo: lo que dice incidencias. Haz clic en una celda para corregirla.' : 'Arriba: checador · Abajo: lo que dice la hoja. Haz clic en una celda para corregir la lectura.';
     $('#legUnc').hidden = r.source === 'excel';
     $('#xlsBtn').href = `/api/asis/runs/${r.id}/excel`;
     $('#xlsBtn').hidden = !(an && an.results);

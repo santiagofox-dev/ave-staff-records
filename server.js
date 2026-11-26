@@ -157,6 +157,10 @@ app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true 
 const portal = (() => { let x = null; try { x = require('./extract'); } catch (e) { x = null; }
   return require('./acc/portal')(app, { books: () => books, pdf: x && { text: x.pdfText, layout: x.pdfLayoutText }, publicUrl: process.env.PUBLIC_URL || (PROD ? 'https://gpoave.com' : ''), secret: SESSION_SECRET }); })();
 
+/* On-site checador (face terminal PCs): they sync with a station token, not a login */
+const checador = require('./checador')({ DATA_DIR });
+checador.publicRoutes(app);
+
 /* everything below needs a login */
 app.use(requireAuth);
 app.get('/api/me', (req, res) => res.json({ ...req.user, roleLabel: users.ROLES[req.user.role] || 'Administrador' }));
@@ -358,7 +362,8 @@ require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
 require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
 
 /* ---- Asistente asistencia (Monclova) ---- */
-const asistencia = require('./asistencia')(app, { DATA_DIR });
+const asistencia = require('./asistencia')(app, { DATA_DIR, checador });
+checador.adminRoutes(app, { who: req => (req.user && (req.user.name || req.user.username)) || 'admin' });
 
 /* ---- Contabilidad (accounting) ---- */
 const books = require('./acc/routes')(app, { portal, DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });

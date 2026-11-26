@@ -1,0 +1,33 @@
+AVE CHECADOR EN SITIO
+=====================
+
+Que hace
+- Lee la terminal de rostro y guarda cada checada en esta PC (carpeta C:\AVE-Checador\datos).
+- Funciona sin internet. Cada hora envia las checadas a gpoave.com; si no hay internet,
+  las guarda y las manda en cuanto vuelva la conexion. No se pierde nada.
+- Muestra en pantalla quien checo hoy y quien esta adentro.
+
+Instalar (una sola vez, con internet)
+1. Copia esta carpeta a la PC de la planta (Windows 10 u 11).
+2. Clic derecho en INSTALAR.bat -> "Ejecutar como administrador".
+   Instala Node.js si hace falta, deja el checador arrancando solo al prender la PC
+   y abre la pantalla de Administracion.
+3. En Administracion: crea un PIN, pega el "Codigo de la estacion" que se genera en
+   gpoave.com -> Asistencia -> Jabil Torres -> Estaciones, y elige el tipo de terminal y su IP.
+4. Al guardar, sincroniza y baja la lista de empleados.
+
+Terminal de rostro
+- Da de alta a cada persona en la terminal con su NUMERO DE EMPLEADO (el mismo de la lista:
+  382, 483, 486...). Asi el sistema sabe quien es.
+- Conecta la terminal y la PC al mismo switch/router (no necesita internet entre ellas).
+- Pon a la terminal una IP fija (ej. 192.168.1.201) y la PC en la misma red.
+
+Actualizar
+- Descarga la version nueva de gpoave.com y vuelve a ejecutar INSTALAR.bat como administrador.
+  Las checadas guardadas se conservan.
+
+Si algo falla
+- Pantalla: http://localhost:8787     Administracion: http://localhost:8787/admin
+- En Administracion -> Estado esta la bitacora.
+- Si la terminal se desconecta: exporta las checadas a USB desde la terminal e importalas
+  en Administracion -> Importar archivo. Tambien se puede registrar una checada a mano.

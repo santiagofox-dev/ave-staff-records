@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Administración · Checador AVE</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="login" id="login" hidden>
+  <img src="/static/logo.png" alt="Grupo AVE">
+  <h2 id="loginTitle">Administración del checador</h2>
+  <p class="muted small" id="loginHelp">Escribe el PIN de administrador.</p>
+  <form id="loginForm"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" required>
+  <div class="row"><button class="btn primary" type="submit">Entrar</button><a href="/" class="small">Volver a la pantalla</a></div></form>
+  <div id="loginMsg"></div>
+</div>
+<div class="a" id="app" hidden>
+  <header><img src="/static/logo.png" alt="Grupo AVE"><h1>Checador en sitio</h1><div class="row" style="margin:0"><a class="btn" href="/">Pantalla</a><button class="btn" id="logout" type="button">Salir</button></div></header>
+  <div class="tabs" role="tablist" id="tabs">
+    <button type="button" data-t="estado" aria-selected="true">Estado</button>
+    <button type="button" data-t="horas">Horas de la semana</button>
+    <button type="button" data-t="manual">Checada manual</button>
+    <button type="button" data-t="importar">Importar archivo</button>
+    <button type="button" data-t="config">Configuración</button>
+  </div>
+
+  <div data-p="estado">
+    <div class="card"><h2>Estado</h2><dl class="kv" id="status"></dl>
+      <div class="row"><button class="btn primary" id="syncBtn" type="button">Sincronizar ahora</button><button class="btn" id="readBtn" type="button">Leer la terminal ahora</button><span id="stMsg" class="small"></span></div></div>
+    <div class="card"><h2>Bitácora</h2><pre class="log" id="log"></pre></div>
+  </div>
+
+  <div data-p="horas" hidden>
+    <div class="card"><h2>Horas por persona</h2>
+      <p class="help">Se calcula en esta PC con las checadas guardadas, aunque no haya internet. La revisión oficial (retardos, incidencias y nómina) se hace en gpoave.com → Asistencia.</p>
+      <div class="row"><label for="wk" style="margin:0">Semana del</label><input id="wk" type="date" style="width:auto"><button class="btn" id="prevW" type="button">Anterior</button><button class="btn" id="nextW" type="button">Siguiente</button><a class="btn" id="csv" href="#">Descargar checadas (CSV)</a></div>
+      <div class="wrapt" style="margin-top:10px"><table id="rep"></table></div></div>
+  </div>
+
+  <div data-p="manual" hidden>
+    <div class="card"><h2>Registrar una checada a mano</h2>
+      <p class="help">Solo cuando la terminal falló o alguien no pudo checar. Queda marcada como manual, con quién la autorizó, y así llega a gpoave.com.</p>
+      <form id="manForm" class="grid2" style="margin-top:10px">
+        <div><label for="mEmp">Empleado</label><select id="mEmp" required></select></div>
+        <div><label for="mDate">Fecha</label><input id="mDate" type="date" required></div>
+        <div><label for="mTime">Hora</label><input id="mTime" type="time" required></div>
+        <div><label for="mBy">Autoriza (nombre del supervisor)</label><input id="mBy" maxlength="60" required></div>
+        <div style="grid-column:1/-1"><label for="mNote">Motivo</label><input id="mNote" maxlength="200" placeholder="ej. la terminal no reconoció su rostro"></div>
+        <div><button class="btn primary" type="submit">Guardar checada</button></div>
+      </form><div id="manMsg"></div></div>
+  </div>
+
+  <div data-p="importar" hidden>
+    <div class="card"><h2>Importar checadas de un archivo</h2>
+      <p class="help">Para cuando la terminal no está conectada a la red: exporta las checadas a una memoria USB desde el menú de la terminal y elige el archivo aquí (.dat, .txt o .csv). Si es Excel, guárdalo como CSV. Las checadas repetidas se ignoran.</p>
+      <div class="row"><input id="impFile" type="file" accept=".dat,.txt,.csv" style="width:auto"></div><div id="impMsg"></div></div>
+  </div>
+
+  <div data-p="config" hidden>
+    <form id="cfgForm">
+      <div class="card"><h2>Conexión con gpoave.com</h2>
+        <div class="grid2">
+          <div><label for="cToken">Código de la estación</label><input id="cToken" autocomplete="off" placeholder="ave_…"><p class="help" id="tokHelp">Se genera en gpoave.com → Asistencia → Jabil Torres → Estaciones. Se muestra una sola vez.</p></div>
+          <div><label for="cName">Nombre de esta estación</label><input id="cName" maxlength="60" placeholder="ej. Entrada principal"></div>
+          <div><label for="cServer">Servidor</label><input id="cServer"></div>
+        </div></div>
+      <div class="card"><h2>Terminal de rostro</h2>
+        <div class="grid2">
+          <div><label for="dKind">Tipo</label><select id="dKind">
+            <option value="none">Sin terminal (solo archivo y manual)</option>
+            <option value="zk-pull">ZKTeco o compatible: la PC la lee por red (puerto 4370)</option>
+            <option value="zk-push">ZKTeco con "Servidor ADMS / nube": la terminal envía a esta PC</option>
+            <option value="hik">Hikvision (DS-K1T…): la PC la lee por red</option></select></div>
+          <div class="dIp"><label for="dIp">IP de la terminal</label><input id="dIp" placeholder="192.168.1.201"></div>
+          <div class="dIp"><label for="dPort">Puerto</label><input id="dPort" type="number" min="1" max="65535"></div>
+          <div class="dHik"><label for="dUser">Usuario de la terminal</label><input id="dUser" autocomplete="off"></div>
+          <div class="dHik"><label for="dPass">Contraseña de la terminal</label><input id="dPass" type="password" autocomplete="new-password"></div>
+          <div class="dPush"><label for="dPush">Puerto de esta PC para recibir</label><input id="dPush" type="number" min="1024" max="65535"></div>
+        </div>
+        <p class="help" id="kindHelp"></p></div>
+      <div class="card"><h2>PIN de administrador</h2><div class="grid2"><div><label for="newPin">PIN nuevo (déjalo vacío para no cambiarlo)</label><input id="newPin" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></div></div>
+        <p class="help" id="dataDir"></p></div>
+      <div class="row"><button class="btn primary" type="submit">Guardar</button><span id="cfgMsg" class="small"></span></div>
+    </form>
+  </div>
+</div>
+<script src="/static/admin.js"></script>
+</body>
+</html>

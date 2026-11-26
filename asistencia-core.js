@@ -27,6 +27,11 @@ const PLANTS = {
     // Allan, Nov 19 2026
     defaults: [{ re: /TURNO\s*1\b/i, start: '06:00', end: '15:00', limit: 45 }, { re: /TURNO\s*2\b/i, start: '15:00', end: '23:00', limit: 45 },
       { re: /TURNO\s*3\b/i, limit: 45 }, { re: /TURNO\s*4\b/i, limit: 36 }] },
+  // Face terminal + on-site PC that syncs every hour (Allan, Nov 26 2026). Three shifts, Monday to Friday.
+  // Shift times are placeholders until confirmed; they are edited in "Turnos y límites".
+  'jabil-torres': { id: 'jabil-torres', name: 'Jabil Torres', print: 'JABIL TORRES', code: 'JTO', source: 'local', sheetDays: DAYS7, trackLate: true,
+    defaults: [{ name: 'TURNO 1', re: /TURNO\s*1\b/i, start: '06:00', end: '15:00', limit: 45 }, { name: 'TURNO 2', re: /TURNO\s*2\b/i, start: '15:00', end: '23:00', limit: 45 },
+      { name: 'TURNO 3', re: /TURNO\s*3\b/i, start: '23:00', end: '06:00', limit: 45 }] },
 };
 const toM = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
 const spanH = (a, b) => Math.round(((b - a + (b <= a ? 1440 : 0)) / 60) * 100) / 100;
@@ -371,7 +376,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
         if (JUSTIFIED.includes(clave) || clave === 'BAJ') final = clave;
         else {
           final = 'FI';
-          if (row && !clave) f.push(['bad', `${H} no reporta falta, pero el checador no tiene registro. Se cuenta como FI.`]);
+          if (row && !clave) f.push(['bad', P.source === 'local' ? 'Sin checadas este día: se cuenta como FI. Si tuvo incapacidad, vacaciones o permiso, márcalo en la celda.' : `${H} no reporta falta, pero el checador no tiene registro. Se cuenta como FI.`]);
           if (clave === 'RET') f.push(['bad', `${H} dice RET, pero el checador no tiene registro ese día. Se cuenta como FI.`]);
         }
       } else if (st === 'descanso') {
@@ -384,7 +389,7 @@ function compare(sheetRows, week, monday, { turnosRead, plant = 'monclova', sett
         const why = [late > tol ? `entró ${late} min tarde (${clock.in}, turno ${rule.start}): ${retMin} min de retardo después de los ${tol} de tolerancia` : '', early > 0 ? `salió ${early} min antes (${clock.out}, turno ${rule.end}), se descuentan ${early} min` : ''].filter(Boolean).join(' y ');
         if (bad) { count.RET++; retHit = true; }
         // A few minutes early is common: shown and deducted, but only flagged as "Atención" past the late tolerance
-        if (bad && clave !== 'RET') f.push([late > tol || early > tol ? 'warn' : 'info', `El checador marca que ${why} y ${H} no reporta RET.`]);
+        if (bad && clave !== 'RET') f.push([late > tol || early > tol ? 'warn' : 'info', P.source === 'local' ? `El checador marca que ${why}.` : `El checador marca que ${why} y ${H} no reporta RET.`]);
         if (!bad && clave === 'RET') f.push(['warn', `${H} reporta RET, pero en el checador llegó y salió a tiempo (${span}).`]);
       }
       if (te && (st === 'trabajo' || st === 'descanso-trabajado') && te > clock.extra + 0.5) f.push(['warn', `${H} anota ${te} h de TE; el checador da ${clock.extra} h ese día.`]);

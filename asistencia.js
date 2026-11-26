@@ -10,7 +10,7 @@ const A = require('./asistencia-core');
 const PDF = require('./asistencia-pdf');
 const AI = require('./asistencia-ai');
 
-module.exports = function (app, { DATA_DIR }) {
+module.exports = function (app, { DATA_DIR, checador }) {
   const ROOT = path.join(DATA_DIR, 'asistencia');
   const RUNS = path.join(ROOT, 'runs');
   fs.mkdirSync(RUNS, { recursive: true });
@@ -49,7 +49,7 @@ module.exports = function (app, { DATA_DIR }) {
     const raw = readJ(f, null), v = raw && make(raw);
     memo.set(f, { k, v }); return v;
   }
-  const runMeta = id => cached(path.join(runDir(id), 'run.json'), r => ({ id: r.id, plant: r.plant || 'monclova', monday: r.monday, createdAt: r.createdAt, by: r.by, status: r.status, source: r.source || 'foto', photos: (r.photos || []).length, summary: r.lastSummary || null }));
+  const runMeta = id => cached(path.join(runDir(id), 'run.json'), r => ({ id: r.id, plant: r.plant || 'monclova', monday: r.monday, createdAt: r.createdAt, by: r.by, status: r.status, source: r.source || 'foto', local: !!r.local, photos: (r.photos || []).length, summary: r.lastSummary || null }));
   function listRuns(pl) {
     return fs.readdirSync(RUNS).filter(x => RUN_ID.test(x)).map(runMeta).filter(Boolean).filter(r => !pl || r.plant === pl)
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 40).map(r => ({ ...r }));
@@ -61,6 +61,8 @@ module.exports = function (app, { DATA_DIR }) {
       const t = out[p.turno] || (out[p.turno] = { turno: p.turno, horario: p.horario, people: 0 }); t.people++;
     }
     for (const name of Object.keys(st.turnos || {})) if (!out[name]) out[name] = { turno: name, horario: '', people: 0 };
+    for (const d of A.PLANTS[pl].defaults || []) if (d.name && !out[d.name]) out[d.name] = { turno: d.name, horario: '', people: 0 };
+    delete out['']; delete out['SIN CHECADAS']; // people whose shift isn't known yet (no punches)
     return Object.values(out).sort((a, b) => a.turno.localeCompare(b.turno)).map(t => {
       const r = A.ruleFor(pl, st, t.turno, t.horario), ht = A.horarioTimes(t.horario);
       return { ...t, ...r, checador: ht ? `${ht[0]}–${ht[1]}` : '', saved: !!(st.turnos || {})[t.turno] };
@@ -209,6 +211,22 @@ module.exports = function (app, { DATA_DIR }) {
     const fail = (msg, code = 400) => { fs.rmSync(runDir(req.runId), { recursive: true, force: true }); res.status(code).json({ error: msg }); };
     if (err) return fail(err.message || 'No se pudieron recibir las fotos.');
     const pl = plantOf(req), P = A.PLANTS[pl];
+    if (P.source === 'local') {
+      // on-site checador: the week comes from the synced punches; every person starts as "asistió" and the
+      // admin marks INC / VAC / PSS where needed (same review as the INCIDENCIAS plants)
+      const mon = YMD.test((req.body || {}).semana || '') ? A.mondayOf(req.body.semana) : null;
+      if (!mon) return fail('Elige la semana.');
+      const wk = checador.ensureWeek(pl, mon);
+      const w = week(pl, mon);
+      if (!w || !wk.people) return fail('Todavía no hay checadas ni personal cargado para esa semana.');
+      const blank = Object.fromEntries(A.DAYS7.map(k => [k, { clave: '', te: null }]));
+      const rows = Object.values(w.people).sort((a, b) => (a.turno || '').localeCompare(b.turno || '') || a.name.localeCompare(b.name))
+        .map(p => ({ key: `${mon}:${p.id}`, id: p.id, name: p.name, puesto: '', dept: p.turno || '', days: JSON.parse(JSON.stringify(blank)), uncertain: [], note: '' }));
+      const run = { id: req.runId, plant: pl, source: 'excel', local: true, monday: mon, createdAt: new Date().toISOString(), by: who(req), status: 'read', edits: {}, photos: [],
+        incid: { file: 'Checador en sitio', sheet: 'Checador en sitio', title: 'Checador en sitio', rows } };
+      saveRun(run);
+      return res.status(201).json(publicRun(run));
+    }
     if (P.source === 'excel') {
       const mon = YMD.test((req.body || {}).semana || '') ? A.mondayOf(req.body.semana) : null;
       const x = mon && incid(pl, mon);
@@ -254,14 +272,14 @@ module.exports = function (app, { DATA_DIR }) {
     if (!rows.length) return { nothingRead: true };
     const byId = {}; for (const p of Object.values(w.people)) for (const id of p.ids || [p.id]) byId[id] = p;
     const turnosRead = excel ? null : [...new Set(rows.map(r => r.turno || (byId[r.id] && byId[r.id].turno)).filter(Boolean))];
-    const cmp = A.compare(rows, w.people, run.monday, { turnosRead, plant: pl, settings: settings(pl), sheetLabel: excel ? 'incidencias' : 'la hoja', overrides: run.overrides || {} });
+    const cmp = A.compare(rows, w.people, run.monday, { turnosRead, plant: pl, settings: settings(pl), sheetLabel: run.local ? 'la revisión' : excel ? 'incidencias' : 'la hoja', overrides: run.overrides || {} });
     const codes = (run.photos || []).map(p => p.sheet_code).filter(Boolean);
     const wrongWeek = codes.filter(c => { const m = /-(\d{6})-/.exec(c); return m && m[1] !== run.monday.replace(/-/g, '').slice(2); });
     return { ...cmp, turnosRead: turnosRead || [...new Set(cmp.results.map(r => r.turno))], wrongWeek, checador: { file: w.file, uploadedAt: w.uploadedAt } };
   }
   function publicRun(run) {
     const pl = run.plant || 'monclova';
-    const out = { id: run.id, plant: pl, plantName: A.PLANTS[pl].name, source: run.source || 'foto', incid: run.incid ? { file: run.incid.file, sheet: run.incid.sheet, title: run.incid.title } : null, monday: run.monday, createdAt: run.createdAt, by: run.by, status: run.status, reading: run.reading || null,
+    const out = { id: run.id, plant: pl, plantName: A.PLANTS[pl].name, source: run.source || 'foto', local: !!run.local, incid: run.incid ? { file: run.incid.file, sheet: run.incid.sheet, title: run.incid.title } : null, monday: run.monday, createdAt: run.createdAt, by: run.by, status: run.status, reading: run.reading || null,
       photos: (run.photos || []).map(p => ({ n: p.n, name: p.name, sheet_code: p.sheet_code || null, codeDiffers: !!p.codeDiffers, manager_signed: p.manager_signed ?? null, rows: (p.rows || []).length, warning: p.warning || null, error: p.error || null })),
       dates: A.DAYS7.map((key, i) => ({ key, ymd: A.addDays(run.monday, i) })), sheetDays: A.PLANTS[pl].sheetDays, tolMin: settings(pl).tolMin ?? 15, model: AI.MODEL() };
     if (run.status === 'read') {
