@@ -10,7 +10,7 @@ const A = require('./asistencia-core');
 const PDF = require('./asistencia-pdf');
 const AI = require('./asistencia-ai');
 
-module.exports = function (app, { DATA_DIR, checador }) {
+module.exports = function (app, { DATA_DIR, checador, vacaciones }) {
   const ROOT = path.join(DATA_DIR, 'asistencia');
   const RUNS = path.join(ROOT, 'runs');
   fs.mkdirSync(RUNS, { recursive: true });
@@ -323,7 +323,16 @@ module.exports = function (app, { DATA_DIR, checador }) {
       if (h != null && !(h >= 0 && h <= 24)) return res.status(400).json({ error: 'Las horas deben estar entre 0 y 24.' });
       r.overrides[k] = { final, hours: h, note: String(note || '').slice(0, 200), by: who(req), at: new Date().toISOString() };
     }
-    saveRun(r); res.json(publicRun(r));
+    saveRun(r);
+    // a day marked VAC is a vacation day in the employee's file (Expedientes); un-marking gives it back
+    let vac = null;
+    if (vacaciones) {
+      const pl = r.plant || 'monclova', w = week(pl, r.monday), ro = roster(pl);
+      const p = (w && w.people && w.people[person]) || ro.people[person] || {};
+      try { vac = vacaciones.fromAsistencia({ key: `asis:${r.id}:${person}:${day}`, number: person, name: p.name || '', site: A.PLANTS[pl].name, ymd: A.addDays(r.monday, A.DAYS7.indexOf(day)), on: final === 'VAC', by: who(req) }); }
+      catch (e) { console.error('vacaciones', e); }
+    }
+    res.json({ ...publicRun(r), vac });
   });
   app.delete('/api/asis/runs/:id', (req, res) => {
     const id = req.params.id; if (!RUN_ID.test(id)) return res.status(400).json({ error: 'Identificador no válido.' });

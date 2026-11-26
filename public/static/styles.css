@@ -205,3 +205,23 @@ dialog::backdrop{background:var(--scrim)}
 .usize input{width:100%;min-width:0;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--surface);color:var(--fg);font-size:12.5px}
 .uwhen{font-size:11.5px;color:var(--muted);min-height:14px}
 @media (max-width:640px){.uni{grid-template-columns:minmax(0,1fr)}}
+/* vacaciones */
+.vsum{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.vsum div{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.vsum b{display:block;font-family:var(--f-display);font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.vsum span{font-size:12px;color:var(--muted)}
+.vsum .neg b{color:var(--bad)} .vsum .pos b{color:var(--ok)}
+.vtable{border-collapse:collapse;width:100%;font-size:13px}
+.vtable th,.vtable td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.vtable th{font-family:var(--f-display);text-transform:uppercase;letter-spacing:.05em;font-size:11px;color:var(--muted)}
+.vtable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.vtable tr.go{cursor:pointer} .vtable tr.go:hover td{background:var(--sunk)}
+.vtable .neg{color:var(--bad);font-weight:700} .vtable .pos{color:var(--ok);font-weight:700}
+.vtable tr.done td{color:var(--muted)}
+.addrow.vac{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.4fr) minmax(0,1.6fr) auto}
+@media (max-width:760px){.addrow.vac{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.vhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:4px 0 10px}
+.vmsg{border-left:4px solid var(--ok);background:var(--ok-bg);padding:8px 12px;border-radius:6px;font-size:14px;margin:8px 0}
+.vmsg.warn{border-color:var(--warn);background:var(--warn-bg)}
+.vplan{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin:8px 0}
+.filebtn{position:relative;overflow:hidden;cursor:pointer}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}

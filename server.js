@@ -172,7 +172,7 @@ const COMMON = p => p === '/app' || p === '/api/hub' || p === '/api/me' || p ===
 const ROLE_PATHS = {
   contador: p => p.startsWith('/contabilidad') || p.startsWith('/api/acc/'),
   consulta: p => p.startsWith('/contabilidad') || p.startsWith('/api/acc/'),
-  personal: p => p === '/expedientes' || p === '/api/employees' || p.startsWith('/api/employees/') || p.startsWith('/files/') || p.startsWith('/reports/'),
+  personal: p => p === '/expedientes' || p === '/api/employees' || p.startsWith('/api/employees/') || p.startsWith('/api/vacaciones') || p.startsWith('/files/') || p.startsWith('/reports/'),
 };
 const canOpen = (u, p) => u.role === 'admin' || COMMON(p) || !!(ROLE_PATHS[u.role] && ROLE_PATHS[u.role](p));
 app.use((req, res, next) => {
@@ -231,6 +231,7 @@ app.put('/api/employees/:id', (req, res) => {
     src: prev ? prev.src : undefined,
     trainings,
     uniform: prev ? prev.uniform : undefined,
+    vac: prev ? prev.vac : undefined,
     docs: prev ? prev.docs : [],
     createdAt: prev ? prev.createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -365,7 +366,9 @@ require('./importer')(app, { state, persist, UPLOAD_DIR, DATA_DIR });
 require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
 
 /* ---- Asistente asistencia (Monclova) ---- */
-const asistencia = require('./asistencia')(app, { DATA_DIR, checador });
+/* ---- Vacaciones (Expedientes): LFT art. 76, kárdex CONTPAQi, días tomados ---- */
+const vacaciones = require('./vacaciones')(app, { state, persist, who: req => (req.user && (req.user.name || req.user.username)) || 'admin' });
+const asistencia = require('./asistencia')(app, { DATA_DIR, checador, vacaciones });
 checador.adminRoutes(app, { who: req => (req.user && (req.user.name || req.user.username)) || 'admin' });
 comedor.adminRoutes(app, { who: req => (req.user && (req.user.name || req.user.username)) || 'admin' });
 

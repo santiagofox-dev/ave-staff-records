@@ -108,6 +108,7 @@ function renderRoster() {
   let list = employees.filter(e => (plantSel === '__bajas' ? isBaja(e) : !isBaja(e) && (!plantSel || (e.site || '') === plantSel)) && (!q || [e.name, e.number, e.position, e.site, e.curp].some(v => (v || '').toLowerCase().includes(q))));
   if (filter === 'attn') list = list.filter(e => ['bad', 'warn'].includes(eStatus(e).key));
   if (filter === 'uni') list = list.filter(e => !uniDone(e));
+  if (filter === 'vac') { el.innerHTML = vacListHTML(list); wireVacList(); return; }
   if (filter === 'bday') {
     // soonest birthday first; this week's highlighted at the top, then the rest of the year
     const withB = list.map(e => ({ e, b: nextBirthday(e) })).filter(x => x.b).sort((a, b) => a.b.days - b.b.days || (a.e.name || '').localeCompare(b.e.name || '', LOC));
@@ -159,7 +160,7 @@ function rowHTML(e, opt = {}) {
 const P = ['name', 'number', 'position', 'site', 'curp', 'rfc', 'nss', 'contractType', 'address', 'status', 'bajaDate', 'birthday', 'hire', 'phone', 'emerg', 'notes'];
 const isBaja = e => e.status === 'baja';
 const active = () => employees.filter(e => !isBaja(e) && !/no es empleado/i.test(e.name));
-function setLocked(v) { $('#uniCard').classList.toggle('locked', v); $('#trainCard').classList.toggle('locked', v); $('#docCard').classList.toggle('locked', v); }
+function setLocked(v) { $('#uniCard').classList.toggle('locked', v); $('#vacCard').classList.toggle('locked', v); $('#trainCard').classList.toggle('locked', v); $('#docCard').classList.toggle('locked', v); }
 /* ---------- uniforme ---------- */
 const UNI = [['camisa', 'Camisa'], ['pantalon', 'Pantalón'], ['zapatos', 'Zapatos']];
 const UNI_LABEL = { '': 'Pendiente', pedido: 'Pedido', entregado: 'Entregado' };
@@ -215,6 +216,7 @@ function openFile(id) {
   $('#trainForm').reset(); $('#docForm').reset();
   renderFileLists();
   renderUni();
+  renderVac();
   const d = $('#dlg'); if (!d.open) d.showModal();
   if (isNew) setTimeout(() => $('#p_name').focus(), 30);
 }
@@ -287,6 +289,89 @@ $('#docForm').addEventListener('submit', async ev => {
   finally { btn.disabled = false; btn.textContent = 'Subir'; }
 });
 
+/* ---------- vacaciones (LFT art. 76) ---------- */
+const isoToday = () => { const t = today(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+const vacOf = e => VAC.summary(e, isoToday());
+const num1 = n => (Math.round((n || 0) * 10) / 10).toLocaleString(LOC);
+const antig = s => !s.hire ? '—' : s.years ? `${s.years} año${s.years === 1 ? '' : 's'}${s.months ? ` ${s.months} m` : ''}` : `${s.months} mes${s.months === 1 ? '' : 'es'}`;
+let kdxFile = null, kdxPlan = null;
+function vacListHTML(list) {
+  const rows = list.map(e => ({ e, s: vacOf(e) })).sort((a, b) => (b.s.balance ?? -1e9) - (a.s.balance ?? -1e9) || (a.e.name || '').localeCompare(b.e.name || '', LOC));
+  const noHire = rows.filter(r => !r.s.hire).length, withK = rows.filter(r => r.s.opening).length;
+  const owed = rows.reduce((a, r) => a + Math.max(0, r.s.balance || 0), 0);
+  return `<div class="vhead"><span class="muted small">${rows.length} empleados · ${num1(owed)} días de vacaciones pendientes en total${withK ? ` · ${withK} con saldo inicial del Kárdex` : ''}${noHire ? ` · <b>${noHire} sin fecha de ingreso</b> (no se puede calcular)` : ''}</span>
+    <label class="btn sm filebtn">Cargar Kárdex de vacaciones (CONTPAQi)<input type="file" id="kdxFile" accept=".xlsx"></label></div>
+    <div id="kdxBox">${kdxPlan ? kdxHTML(kdxPlan) : ''}</div>
+    <table class="vtable"><thead><tr><th>Empleado</th><th>No.</th><th>Ingreso</th><th>Antigüedad</th><th class="n">Días por ley (este año)</th><th class="n">Saldo</th><th>Tomar antes de</th><th>Próximo aniversario</th></tr></thead><tbody>${rows.map(({ e, s }) => `<tr class="go" data-open="${esc(e.id)}">
+      <td>${esc(e.name)}<br><span class="sub">${esc(e.site || '')}</span></td><td class="mono">${esc(e.number || '—')}</td><td class="mono">${s.hire ? fmt(s.hire) : '<span class="chip warn">Falta</span>'}</td><td>${antig(s)}</td>
+      <td class="n">${s.hire ? s.thisYearDays : ''}</td><td class="n ${s.balance > 0 ? 'pos' : s.balance < 0 ? 'neg' : ''}">${s.balance == null ? '—' : num1(s.balance)}</td>
+      <td class="mono">${s.takeBy ? fmt(s.takeBy) : ''}</td><td class="mono">${s.nextAnniversary ? `${fmt(s.nextAnniversary)} (+${s.nextDays})` : ''}</td></tr>`).join('')}</tbody></table>
+    <div class="note small">Ley Federal del Trabajo art. 76 (reforma vigente desde 2023): 12 días al cumplir 1 año, 14, 16, 18, 20 al cumplir 5, y desde el sexto año +2 días por cada 5 años (22 de 6 a 10 años, 24 de 11 a 15…). Deben darse dentro de los 6 meses después del aniversario (art. 81), con prima vacacional de al menos 25% (art. 80). El saldo negativo son días adelantados.</div>`;
+}
+function kdxHTML(r) {
+  const un = r.rows.filter(x => !x.match), hd = r.rows.filter(x => x.hireDiff), dup = r.rows.filter(x => x.dup), fill = r.rows.filter(x => x.fillHire);
+  return `<div class="vmsg${un.length ? ' warn' : ''}"><b>${r.applied ? 'Cargado' : 'Revisión del Kárdex'} al ${fmt(r.asOf)}${r.company ? ' · ' + esc(r.company) : ''}:</b> ${r.matched} de ${r.total} empleados encontrados en Expedientes.
+    ${r.applied ? 'Su saldo de esa fecha queda como saldo inicial; de ahí en adelante se suman los aniversarios por ley y se restan los días que se registren.' : 'Nada se ha guardado todavía.'}
+    ${fill.length ? ` A ${fill.length} se les pondrá la fecha de ingreso que trae el Kárdex.` : ''}
+    ${!r.applied && r.matched ? ' <button class="btn sm primary" type="button" id="kdxApply">Aplicar a los ' + r.matched + '</button>' : ''}</div>
+    ${un.length || hd.length || dup.length ? `<details class="vplan"><summary class="small">${[un.length && `${un.length} sin encontrar`, hd.length && `${hd.length} con fecha de ingreso distinta`, dup.length && `${dup.length} repetidos`].filter(Boolean).join(' · ')}</summary>
+      <table class="vtable"><thead><tr><th>Kárdex</th><th>Saldo</th><th>Ingreso (Kárdex)</th><th>Expedientes</th></tr></thead><tbody>${[...un, ...hd, ...dup].map(x => `<tr><td>${esc(x.number)} · ${esc(x.name)}</td><td class="n">${num1(x.saldo)}</td><td class="mono">${x.hire ? fmt(x.hire) : ''}</td><td>${x.match ? `${esc(x.match.name)} · ingreso ${x.match.hire ? fmt(x.match.hire) : '—'}${x.dup ? ' (ya usado)' : ''}` : '<span class="chip warn">No encontrado</span>'}</td></tr>`).join('')}</tbody></table></details>` : ''}`;
+}
+function wireVacList() {
+  const f = $('#kdxFile'); if (f) f.addEventListener('change', async e => {
+    kdxFile = e.target.files[0]; if (!kdxFile) return;
+    const fd = new FormData(); fd.append('file', kdxFile);
+    $('#kdxBox').innerHTML = '<div class="vmsg">Leyendo el Kárdex…</div>';
+    try { kdxPlan = await api('POST', '/api/vacaciones/kardex', fd); $('#kdxBox').innerHTML = kdxHTML(kdxPlan); wireKdxApply(); }
+    catch (err) { $('#kdxBox').innerHTML = `<div class="vmsg warn">${esc(err.message)}</div>`; }
+  });
+  wireKdxApply();
+}
+function wireKdxApply() {
+  const b = $('#kdxApply'); if (!b) return;
+  b.addEventListener('click', async () => {
+    b.disabled = true; const fd = new FormData(); fd.append('file', kdxFile); fd.append('apply', '1');
+    try { kdxPlan = await api('POST', '/api/vacaciones/kardex', fd); employees = await api('GET', '/api/employees'); render(); toast(`Kárdex aplicado a ${kdxPlan.matched} empleados`); }
+    catch (err) { toast(err.message); b.disabled = false; }
+  });
+}
+function renderVac() {
+  const e = getEmp(openId), box = $('#vacBox');
+  if (!e) { box.innerHTML = ''; return; }
+  const s = vacOf(e);
+  if (!s.hire) { box.innerHTML = '<div class="empty">Pon la <b>fecha de ingreso</b> en los datos del empleado para calcular sus vacaciones.</div>'; return; }
+  const kinds = { vacaciones: 'Vacaciones', falta: 'Falta pasada a vacaciones', kardex: 'Kárdex CONTPAQi' };
+  box.innerHTML = `<div class="vsum">
+      <div class="${s.balance > 0 ? 'pos' : s.balance < 0 ? 'neg' : ''}"><b>${num1(s.balance)}</b><span>días por tomar${s.balance < 0 ? ' (adelantados)' : ''}</span></div>
+      <div><b>${antig(s)}</b><span>antigüedad (ingreso ${fmt(s.hire)})</span></div>
+      <div><b>${s.thisYearDays}</b><span>días por ley este año</span></div>
+      <div><b>${s.nextDays}</b><span>gana el ${fmt(s.nextAnniversary)}</span></div>
+      ${s.takeBy ? `<div><b>${fmt(s.takeBy)}</b><span>debe tomarlas antes de (art. 81)</span></div>` : ''}
+    </div>
+    ${s.opening ? `<div class="note">Saldo inicial del Kárdex de CONTPAQi al ${fmt(s.opening.date)}: <b>${num1(s.opening.saldo)}</b> días. Después de esa fecha se suman los aniversarios por ley y se restan los días registrados aquí.</div>` : ''}
+    ${s.prescribed > 0 ? `<div class="note">Ojo: ${num1(s.prescribed)} de estos días son de periodos de hace más de 18 meses (art. 516 LFT, podrían estar prescritos). Si ya los tomó, carga el Kárdex de CONTPAQi o regístralos.</div>` : ''}
+    <details><summary class="small">Periodos por aniversario (${s.periods.length})</summary><table class="vtable"><thead><tr><th>Año</th><th>Aniversario</th><th class="n">Días</th><th>Tomar antes de</th></tr></thead><tbody>${s.periods.slice().reverse().map(p => `<tr class="${p.counted ? '' : 'done'}"><td>${p.year}</td><td class="mono">${fmt(p.date)}</td><td class="n">${p.days}</td><td class="mono">${fmt(p.takeBy)}${p.counted ? '' : ' · incluido en el Kárdex'}</td></tr>`).join('')}</tbody></table></details>
+    <div class="list">${s.taken.length ? s.taken.slice().reverse().map(t => `<div class="item"><span><span class="t">${t.from ? `${fmt(t.from)}${t.to && t.to !== t.from ? ' – ' + fmt(t.to) : ''}` : 'Antes del registro'} · ${dias(t.days)}</span><br><span class="s">${esc(kinds[t.kind] || t.kind)}${t.note ? ' · ' + esc(t.note) : ''}${t.by && t.kind !== 'kardex' ? ' · ' + esc(t.by) : ''}</span></span>
+      <span class="chip ${t.kind === 'falta' ? 'warn' : 'none'}">${t.kind === 'kardex' ? 'CONTPAQi' : t.kind === 'falta' ? 'Falta → vacaciones' : 'Vacaciones'}</span>
+      ${t.kind === 'kardex' ? '<span></span>' : `<button class="btn sm danger" data-delvac="${esc(t.id)}">Quitar</button>`}</div>`).join('') : '<div class="empty">Sin vacaciones registradas.</div>'}</div>`;
+  box.querySelectorAll('[data-delvac]').forEach(b => armed(b, 'Confirmar', async () => {
+    try { const r = await api('DELETE', `/api/employees/${openId}/vacaciones/${b.dataset.delvac}`); const emp = getEmp(openId); emp.vac = r.vac; renderVac(); if (filter === 'vac') renderRoster(); toast('Registro quitado'); }
+    catch (err) { toast(err.message); }
+  }));
+}
+const vacDays = () => { const f = $('#v_from').value, t = $('#v_to').value || f; if (f) $('#v_days').value = VAC.workDays(f, t) || ''; };
+$('#v_from').addEventListener('change', () => { if (!$('#v_to').value || $('#v_to').value < $('#v_from').value) $('#v_to').value = $('#v_from').value; vacDays(); });
+$('#v_to').addEventListener('change', vacDays);
+$('#vacForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  if (!$('#v_from').value) { toast('Pon la fecha de inicio.'); return; }
+  try {
+    const r = await api('POST', `/api/employees/${openId}/vacaciones`, { from: $('#v_from').value, to: $('#v_to').value, days: $('#v_days').value, kind: $('#v_kind').value, note: $('#v_note').value });
+    const emp = getEmp(openId); emp.vac = r.vac; $('#vacForm').reset(); renderVac(); if (filter === 'vac') renderRoster();
+    toast(`Registrado. Le quedan ${num1(r.summary.balance)} días.`);
+  } catch (err) { toast(err.message); }
+});
+
 /* ---------- contraseña ---------- */
 $('#pwBtn').addEventListener('click', () => { $('#pwForm').reset(); $('#pwErr').hidden = true; $('#pwDlg').showModal(); $('#pw_cur').focus(); });
 $('#pwClose').addEventListener('click', () => $('#pwDlg').close());
@@ -316,7 +401,7 @@ $('#q').addEventListener('input', renderRoster);
 $('#plant').addEventListener('change', () => { plantSel = $('#plant').value; try { localStorage.setItem('ave-plant', plantSel); } catch (e) {} renderRoster(); });
 function setFilter(f) {
   filter = f;
-  for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday'], ['#fUni', 'uni']]) $(id).setAttribute('aria-pressed', String(v === f));
+  for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday'], ['#fUni', 'uni'], ['#fVac', 'vac']]) $(id).setAttribute('aria-pressed', String(v === f));
   try { const u = new URL(location.href); if (f === 'bday') u.searchParams.set('vista', 'cumpleanos'); else u.searchParams.delete('vista'); history.replaceState(null, '', u); } catch (e) {}
   renderRoster();
 }
@@ -324,6 +409,7 @@ $('#fAll').addEventListener('click', () => setFilter('all'));
 $('#fAttn').addEventListener('click', () => setFilter('attn'));
 $('#fBday').addEventListener('click', () => setFilter('bday'));
 $('#fUni').addEventListener('click', () => setFilter('uni'));
+$('#fVac').addEventListener('click', () => setFilter('vac'));
 if (new URLSearchParams(location.search).get('vista') === 'cumpleanos') { filter = 'bday'; for (const [id, v] of [['#fAll', 'all'], ['#fAttn', 'attn'], ['#fBday', 'bday'], ['#fUni', 'uni']]) $(id).setAttribute('aria-pressed', String(v === 'bday')); }
 function syncReports() {
   $('#rWeekly').href = '/reports/weekly.pdf?days=' + win;

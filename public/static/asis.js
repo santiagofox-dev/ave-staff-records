@@ -360,8 +360,15 @@
     try {
       if (editing.sheet0 && ($('#cClave').value !== editing.sheet0.clave || String($('#cTe').value) !== String(editing.sheet0.te))) RUN = await J(`/api/asis/runs/${RUN.id}/cell`, { key: editing.key, day: editing.day, clave: $('#cClave').value, te: $('#cTe').value });
       const fin = $('#cFinal').value, hrs = $('#cHours').value, note = $('#cNote').value.trim();
-      if (fin !== editing.final0 || String(hrs) !== String(editing.hours0 ?? '') || note !== (editing.note0 || '')) RUN = await J(`/api/asis/runs/${RUN.id}/override`, { person: editing.person, day: editing.day, final: fin, hours: (fin === 'A' || fin === 'DT') ? hrs : '', note });
+      let vacMsg = '';
+      if (fin !== editing.final0 || String(hrs) !== String(editing.hours0 ?? '') || note !== (editing.note0 || '')) {
+        RUN = await J(`/api/asis/runs/${RUN.id}/override`, { person: editing.person, day: editing.day, final: fin, hours: (fin === 'A' || fin === 'DT') ? hrs : '', note });
+        const v = RUN.vac;
+        if (fin === 'VAC') vacMsg = v && v.found ? `Día de vacaciones registrado en el expediente de ${v.name}. Le quedan ${v.balance} días.` : 'Marcado como VAC, pero no encontré a esta persona en Expedientes: regístralo allá para que se descuente de sus vacaciones.';
+        else if (editing.final0 === 'VAC') vacMsg = 'Se devolvió el día de vacaciones en Expedientes.';
+      }
       renderRun();
+      if (vacMsg) { const n = h('div', { class: 'msg' + (RUN.vac && RUN.vac.found === false ? ' warn' : '') }, vacMsg); $('#runFlags').prepend(n); setTimeout(() => n.remove(), 9000); }
     } catch (e) { alert(e.message); }
   });
   function hoursVis() { const f = $('#cFinal').value; $('#cHoursF').hidden = !(f === 'A' || f === 'DT'); }
