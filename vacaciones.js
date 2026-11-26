@@ -20,6 +20,15 @@ function sameName(a, b) {
   let hit = 0; for (const w of s) if (l.has(w)) hit++;
   return hit === s.size && s.size >= 2;
 }
+/** Same person when the employee number already matches: most of the words agree, allowing small typos
+    ("CARRASCO"/"CARRASO", "VANNESA"/"VANESSA"). */
+function lev(a, b) { const m = a.length, n = b.length; let p = Array.from({ length: n + 1 }, (_, j) => j); for (let i = 1; i <= m; i++) { const c = [i]; for (let j = 1; j <= n; j++) c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); p = c; } return p[n]; }
+function likeName(a, b) {
+  const A = [...toks(a)], B = [...toks(b)]; if (!A.length || !B.length) return false;
+  const [s, l] = A.length <= B.length ? [A, B] : [B, A];
+  let hit = 0; for (const w of s) if (l.some(x => x === w || lev(x, w) <= (Math.min(x.length, w.length) >= 6 ? 2 : 1))) hit++;
+  return hit >= 2 && hit >= Math.ceil(s.length * 0.6);
+}
 const numKey = n => String(n || '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
 
 module.exports = function (app, { state, persist, who }) {
@@ -35,7 +44,15 @@ module.exports = function (app, { state, persist, who }) {
     let c = n ? list.filter(e => numKey(e.number) === n && sameName(e.name, name)) : [];
     if (c.length !== 1) c = list.filter(e => sameName(e.name, name) && (!site || !e.site || e.site === site));
     if (c.length !== 1) c = list.filter(e => sameName(e.name, name));
-    return c.length === 1 ? c[0] : null;
+    if (c.length === 1) return c[0];
+    // same number and a close name (typos between CONTPAQi and Expedientes), including people already dados de baja
+    if (n) { const all = emps().filter(e => numKey(e.number) === n && likeName(e.name, name)); const act = all.filter(e => e.status !== 'baja'); if (act.length) return act[0]; if (all.length) return all[0]; }
+    return null;
+  }
+  /** Repeated records of the same person in Expedientes (same number and name): they all get the same data. */
+  function twins(e, number, name) {
+    const n = numKey(number); if (!n) return [];
+    return emps().filter(x => x.id !== e.id && numKey(x.number) === n && likeName(x.name, name) && x.status === e.status);
   }
 
   /* ---------- CONTPAQi Kárdex de vacaciones ---------- */
@@ -74,10 +91,12 @@ module.exports = function (app, { state, persist, who }) {
     const used = new Set(), rows = [];
     for (const p of k.people) {
       const e = findEmployee(p.number, p.name);
+      const tw = e ? twins(e, p.number, p.name) : [];
       const dHire = e && e.hire && p.hire ? Math.abs((Date.parse(e.hire) - Date.parse(p.hire)) / 864e5) : null;
-      rows.push({ number: p.number, name: p.name, saldo: Math.round(p.saldo * 100) / 100, taken: p.taken.reduce((a, t) => a + t.days, 0), hire: p.hire || '', match: e ? { id: e.id, name: e.name, number: e.number || '', site: e.site || '', hire: e.hire || '' } : null,
+      rows.push({ number: p.number, name: p.name, saldo: Math.round(p.saldo * 100) / 100, taken: p.taken.reduce((a, t) => a + t.days, 0), hire: p.hire || '',
+        match: e ? { id: e.id, name: e.name, number: e.number || '', site: e.site || '', hire: e.hire || '', baja: e.status === 'baja' } : null, twins: tw.map(x => x.id),
         dup: e ? used.has(e.id) : false, hireDiff: dHire != null && dHire > 3, fillHire: !!(e && !e.hire && p.hire) });
-      if (e) used.add(e.id);
+      if (e) { used.add(e.id); tw.forEach(x => used.add(x.id)); }
     }
     return rows;
   }
@@ -94,12 +113,15 @@ module.exports = function (app, { state, persist, who }) {
         const by = who(req);
         for (const r of plan) {
           if (!r.match || r.dup) continue;
-          const e = state.employees[r.match.id], p = k.people.find(x => x.number === r.number && x.name === r.name);
-          const keep = ((e.vac && e.vac.taken) || []).filter(t => t.kind !== 'kardex' && (t.from || '') > k.asOf);
-          const hist = p.taken.filter(t => !t.before).map(t => entry(e, { ...t, kind: 'kardex', note: '' }, by));
-          e.vac = { opening: { date: k.asOf, saldo: r.saldo, file: req.file.originalname, by, at: new Date().toISOString() }, taken: [...hist, ...keep] };
-          if (!e.hire && p.hire) e.hire = p.hire;
-          touch(e);
+          const p = k.people.find(x => x.number === r.number && x.name === r.name);
+          for (const id of [r.match.id, ...(r.twins || [])]) {
+            const e = state.employees[id]; if (!e) continue;
+            const keep = ((e.vac && e.vac.taken) || []).filter(t => t.kind !== 'kardex' && (t.from || '') > k.asOf);
+            const hist = p.taken.filter(t => !t.before).map(t => entry(e, { ...t, kind: 'kardex', note: '' }, by));
+            e.vac = { opening: { date: k.asOf, saldo: r.saldo, file: req.file.originalname, by, at: new Date().toISOString() }, taken: [...hist, ...keep] };
+            if (!e.hire && p.hire) e.hire = p.hire;
+            touch(e);
+          }
         }
         persist();
       }
@@ -159,5 +181,5 @@ module.exports = function (app, { state, persist, who }) {
     return { found: true, name: e.name, balance: s.balance };
   }
 
-  return { fromAsistencia, readKardex, planKardex, findEmployee, sameName };
+  return { fromAsistencia, readKardex, planKardex, findEmployee, sameName, likeName };
 };

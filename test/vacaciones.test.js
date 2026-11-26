@@ -49,3 +49,19 @@ test('days given in advance come out of the next anniversary; kárdex balance go
   const later = V.summary(emp, '2026-08-01'); // kárdex balance expired 2026-07-15; the 2025 period on 2026-08-01 (not yet)
   assert.strictEqual(later.expired, 15); assert.strictEqual(later.balance, 18 + 20);
 });
+
+test('kárdex matching: same number with small name typos, repeated records, and bajas', () => {
+  const state = { employees: {
+    a: { id: 'a', number: '258', name: 'Norma Elena Martinez Carraso' },
+    b: { id: 'b', number: '131', name: 'Nancy Ramos Martinez' }, c: { id: 'c', number: '131', name: 'Nancy Ramos Martinez' },
+    d: { id: 'd', number: '253', name: 'Alma Rosa Villalobos Ramos', status: 'baja' },
+    e: { id: 'e', number: '99', name: 'Victor Manuel Peña Garibay' } } };
+  const m = require('../vacaciones')({ post() {}, get() {}, patch() {}, delete() {} }, { state, persist() {}, who() {} });
+  const plan = m.planKardex({ people: [
+    { number: '258', name: 'MARTINEZ CARRASCO NORMA ELENA', taken: [] }, { number: '131', name: 'RAMOS MARTINEZ NANCY', taken: [] },
+    { number: '253', name: 'VILLALOBOS RAMOS ALMA ROSA', taken: [] }, { number: '99', name: 'TORRES MUÑIZ VICTOR MANUEL', taken: [] }] });
+  assert.strictEqual(plan[0].match.id, 'a');
+  assert.strictEqual(plan[1].match.id, 'b'); assert.deepStrictEqual(plan[1].twins, ['c']);
+  assert.strictEqual(plan[2].match.id, 'd');
+  assert.strictEqual(plan[3].match, null); // same number, different person
+});
