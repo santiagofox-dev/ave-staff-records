@@ -5,6 +5,7 @@
    before 1-ene-2023 earned the old amount.
    Art. 81: the vacation must be granted within the 6 months after the anniversary.
    Art. 516: the right prescribes one year after it became due (so ~18 months after the anniversary).
+   The CONTPAQi kárdex is trusted first: its balance stands as of its date, and the law applies from there.
    Art. 80: prima vacacional of at least 25% of the salary of the vacation days. */
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.VAC = factory(); })(this, function () {
   'use strict';
@@ -52,16 +53,18 @@
     out.proportional = Math.round(out.nextDays * frac * 100) / 100; // owed for the running year if the person leaves today
     const r2 = x => Math.round(x * 100) / 100;
 
-    // starting point: the kárdex balance belongs to the most recent periods up to that date (the oldest ones are the
-    // first to be used and the first to expire). Without a kárdex, every period starts full.
+    // starting point: the CONTPAQi kárdex comes first. Its balance is taken as correct on its date (nothing in it is
+    // treated as expired then); the anniversaries before it are already inside that balance. From the kárdex date on,
+    // the law applies: that balance is due on the kárdex date (give it within 6 months, art. 81; it prescribes a year
+    // later, art. 516) and every later anniversary adds its own period. Without a kárdex, every period starts full.
     let debt = 0;
     if (vac.opening) {
-      let rem = +vac.opening.saldo || 0;
-      const before = out.periods.filter(p => !p.counted);
-      if (rem < 0) { debt = -rem; rem = 0; }
-      for (let i = before.length - 1; i >= 0 && rem > 0; i--) { const p = before[i]; p.left = Math.min(p.days, rem); rem = r2(rem - p.left); }
-      if (rem > 0 && before.length) before[before.length - 1].left = r2(before[before.length - 1].left + rem); // more than the law table (old company policy)
-      else if (rem > 0) out.periods.unshift({ year: 0, date: openDate, days: rem, takeBy: addMonths(openDate, 6), prescribes: addMonths(openDate, 18), counted: false, left: rem, used: 0, opening: true });
+      const saldo = +vac.opening.saldo || 0;
+      if (saldo < 0) debt = -saldo;
+      else if (saldo > 0) {
+        const at = out.periods.findIndex(p => p.counted);
+        out.periods.splice(at < 0 ? out.periods.length : at, 0, { year: 0, date: openDate, days: saldo, takeBy: addMonths(openDate, 6), prescribes: addMonths(openDate, 18), counted: false, left: saldo, used: 0, opening: true });
+      }
     }
     // events after the starting point, in order: anniversaries add a period, days taken use the oldest one in force
     const ev = [];

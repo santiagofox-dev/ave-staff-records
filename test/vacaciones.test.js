@@ -40,10 +40,12 @@ test('days given in advance come out of the next anniversary; kárdex balance go
   const a = V.summary({ hire: '2024-06-17', vac: { taken: [{ from: '2025-03-03', days: 4, kind: 'vacaciones' }] } }, '2025-05-01');
   assert.strictEqual(a.balance, -4); assert.strictEqual(a.advanced, 4);
   assert.strictEqual(V.summary({ hire: '2024-06-17', vac: { taken: [{ from: '2025-03-03', days: 4, kind: 'vacaciones' }] } }, '2025-07-01').balance, 8);
-  // hired 2021: kárdex at 2025-01-15 says 20 left → the 2024-02-01 period (16) gets 16, the 2023-02-01 one (14) gets 4
-  const k = V.summary({ hire: '2021-02-01', vac: { opening: { date: '2025-01-15', saldo: 20 }, taken: [] } }, '2025-06-01');
-  const p = Object.fromEntries(k.periods.map(x => [x.year, x.left]));
-  assert.strictEqual(p[3], 16); assert.strictEqual(p[2], 4); assert.strictEqual(p[1], 0);
-  assert.strictEqual(k.expired, 4); // 2023-02-01 period expired 2024-08-01
-  assert.strictEqual(k.balance, 16 + 18); // + 2025-02-01 (year 4 = 18)
+  // the kárdex is trusted first: 20 days on 2025-01-15 stand as they are, even if old periods would have expired by law;
+  // from then on the law applies: that balance is due on the kárdex date and expires 18 months later
+  const emp = { hire: '2021-02-01', vac: { opening: { date: '2025-01-15', saldo: 20 }, taken: [{ from: '2025-03-03', days: 5, kind: 'vacaciones' }] } };
+  const k = V.summary(emp, '2025-06-01');
+  assert.strictEqual(k.expired, 0);
+  assert.strictEqual(k.balance, 15 + 18); // 20 − 5 from the kárdex balance (oldest first) + 2025-02-01 (year 4 = 18)
+  const later = V.summary(emp, '2026-08-01'); // kárdex balance expired 2026-07-15; the 2025 period on 2026-08-01 (not yet)
+  assert.strictEqual(later.expired, 15); assert.strictEqual(later.balance, 18 + 20);
 });
