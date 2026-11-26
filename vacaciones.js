@@ -52,7 +52,7 @@ module.exports = function (app, { state, persist, who }) {
   /** Repeated records of the same person in Expedientes (same number and name): they all get the same data. */
   function twins(e, number, name) {
     const n = numKey(number); if (!n) return [];
-    return emps().filter(x => x.id !== e.id && numKey(x.number) === n && likeName(x.name, name) && x.status === e.status);
+    return emps().filter(x => x.id !== e.id && numKey(x.number) === n && likeName(x.name, name) && (x.status === 'baja') === (e.status === 'baja'));
   }
 
   /* ---------- CONTPAQi Kárdex de vacaciones ---------- */

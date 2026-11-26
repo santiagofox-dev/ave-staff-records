@@ -53,7 +53,7 @@ test('days given in advance come out of the next anniversary; kárdex balance go
 test('kárdex matching: same number with small name typos, repeated records, and bajas', () => {
   const state = { employees: {
     a: { id: 'a', number: '258', name: 'Norma Elena Martinez Carraso' },
-    b: { id: 'b', number: '131', name: 'Nancy Ramos Martinez' }, c: { id: 'c', number: '131', name: 'Nancy Ramos Martinez' },
+    b: { id: 'b', number: '131', name: 'Nancy Ramos Martinez' }, c: { id: 'c', number: '131', name: 'Nancy Ramos Martinez', status: 'activo' },
     d: { id: 'd', number: '253', name: 'Alma Rosa Villalobos Ramos', status: 'baja' },
     e: { id: 'e', number: '99', name: 'Victor Manuel Peña Garibay' } } };
   const m = require('../vacaciones')({ post() {}, get() {}, patch() {}, delete() {} }, { state, persist() {}, who() {} });
