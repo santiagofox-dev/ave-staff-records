@@ -1,5 +1,5 @@
 'use strict';
-/* Supplier portal: sign in, choose Jabil B1 or B3, upload invoice + delivery-receipt photo, see own invoices, change password. */
+/* Supplier portal: sign in, choose the plant (any of ours), upload invoice + delivery-receipt photo, see own invoices, change password. */
 (() => {
   const $ = s => document.querySelector(s);
   const parts = location.pathname.split('/').filter(Boolean);
@@ -33,7 +33,7 @@
     try { d = await api('GET', '/api/portal/me'); }
     catch (e) { return showLogin(e.status === 401 ? '' : e.message); }
     show('hello', 'form', 'mine', 'acct');
-    if (window.__plantButtons) window.__plantButtons(d.plants || ['Jabil B1', 'Jabil B3']);
+    if (window.__plantButtons) window.__plantButtons(d.plantGroups || [{ city: '', plants: d.plants || [] }]);
     put($('#hello'), h('div', { class: 'pv-who' }, h('span', {}, 'Usuario: ' + d.vendor.username), h('button', { type: 'button', id: 'out2' }, 'Salir')),
       h('div', { class: 'eyebrow' }, 'Proveedor de ' + d.company.name), h('h1', {}, d.vendor.name), h('p', {}, d.vendor.rfc ? 'RFC ' + d.vendor.rfc : 'Tu RFC se registra con tu primera factura.'),
       h('span', { class: 'pv-terms' }, d.vendor.terms ? `Crédito: ${d.vendor.terms} días desde que recibimos tu factura` : 'Pago de contado'),
@@ -67,11 +67,12 @@
     $('#err').textContent = '';
   }
   fact.addEventListener('change', refresh); rec.addEventListener('change', refresh);
-  // plant buttons come from the plants assigned to this supplier
-  function plantButtons(list) {
-    const box = document.querySelector('.pv-plants'), cur = plant();
-    box.replaceChildren(...list.map(p => { const i = h('input', { type: 'radio', name: 'plant', value: p }); if (p === cur || list.length === 1) i.checked = true; i.addEventListener('change', refresh); const parts = p.split(' '), last = parts.pop(); return h('label', { class: 'pv-plant' }, i, h('span', {}, parts.length ? parts.join(' ') + ' ' : '', h('strong', {}, last))); }));
-    $('#plantRule').hidden = list.length < 2;
+  // plant buttons: every plant we serve, grouped by city
+  function plantButtons(groups) {
+    const box = document.querySelector('.pv-plants'), cur = plant(), all = groups.flatMap(g => g.plants);
+    const btn = p => { const i = h('input', { type: 'radio', name: 'plant', value: p }); if (p === cur || all.length === 1) i.checked = true; i.addEventListener('change', refresh); return h('label', { class: 'pv-plant' }, i, h('span', {}, h('strong', {}, p))); };
+    box.replaceChildren(...groups.map(g => h('div', { class: 'pv-city' }, g.city ? h('div', { class: 'pv-cityname' }, g.city) : null, h('div', { class: 'pv-cityplants' }, g.plants.map(btn)))));
+    $('#plantRule').hidden = all.length < 2;
     refresh();
   }
   window.__plantButtons = plantButtons;

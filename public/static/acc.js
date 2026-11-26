@@ -789,7 +789,7 @@
   /* ================= SUPPLIER PORTAL ================= */
   route(/^portal$/, async () => {
     const data = await get('/api/acc/portal');
-    const msg = v => `Hola, ${v.name}. Este es tu acceso al portal de proveedores de Grupo AVE para enviarnos tus facturas (XML y PDF) con la foto del recibo de entrega firmado o sellado: ${v.link}  Usuario: ${v.username || '(pídelo a Grupo AVE)'}. Importante: cada factura debe ser solo para Jabil B1 o solo para Jabil B3, nunca ambas en la misma factura. Tus días de crédito cuentan desde el día que la subes. Puedes cambiar tu contraseña dentro del portal.`;
+    const msg = v => `Hola, ${v.name}. Este es tu acceso al portal de proveedores de Grupo AVE para enviarnos tus facturas (XML y PDF) con la foto del recibo de entrega firmado o sellado: ${v.link}  Usuario: ${v.username || '(pídelo a Grupo AVE)'}. Importante: cada factura debe ser para una sola planta; si entregaste en varias, haz una factura para cada una. Tus días de crédito cuentan desde el día que la subes. Puedes cambiar tu contraseña dentro del portal.`;
     const copy = async (text, ok) => { try { await navigator.clipboard.writeText(text); toast(ok); } catch (e) { await dialog('Copia el texto', h('textarea', { class: 'inp', rows: 5, readOnly: true }, text)); } };
     const add = canEdit() ? (() => {
       const others = META.partners.filter(p => p.supplier && !data.vendors.some(v => v.id === p.id));
@@ -818,7 +818,7 @@
             const r = await act(() => post(`/api/acc/portal/${v.id}/credentials`, {}));
             if (!r) return;
             await dialog('Acceso del proveedor', h('div', { class: 'kv' }, h('dt', {}, 'Proveedor'), h('dd', {}, r.name), h('dt', {}, 'Portal'), h('dd', {}, v.login), h('dt', {}, 'Su enlace'), h('dd', {}, v.link), h('dt', {}, 'Usuario'), h('dd', { class: 'mono' }, r.username), h('dt', {}, 'Contraseña'), h('dd', { class: 'mono' }, r.password)),
-              [{ label: 'Copiar todo', run: async () => { await copy(`Portal de proveedores Grupo AVE\n${v.link}\nUsuario: ${r.username}\nContraseña: ${r.password}\nCada factura debe ser solo para Jabil B1 o solo para Jabil B3, nunca ambas en la misma factura.`, 'Copiado.'); return false; } }, { label: 'Listo', primary: true }]);
+              [{ label: 'Copiar todo', run: async () => { await copy(`Portal de proveedores Grupo AVE\n${v.link}\nUsuario: ${r.username}\nContraseña: ${r.password}\nCada factura debe ser para una sola planta; si entregaste en varias, haz una factura para cada una.`, 'Copiado.'); return false; } }, { label: 'Listo', primary: true }]);
             render();
           } }, v.hasPassword ? 'Nueva contraseña' : 'Crear acceso') : null,
           canEdit() ? h('button', { class: 'btn sm quiet', type: 'button', onclick: async () => { if (await confirmDlg('¿Cambiar el enlace?', 'El enlace anterior deja de funcionar. Úsalo si el proveedor lo compartió por error.', 'Cambiar enlace', true)) { if (await act(() => post(`/api/acc/portal/${v.id}/regenerate`), 'Enlace nuevo creado.')) render(); } } }, 'Nuevo enlace') : null,

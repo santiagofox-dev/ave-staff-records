@@ -1,7 +1,7 @@
 'use strict';
 /* Supplier portal. Each enabled supplier signs in with its own username and password (or opens its
    personal link, which fills in the username) and uploads its invoice (XML/PDF) plus a photo of the
-   delivery receipt, choosing the Jabil plant it was delivered to: B1 or B3, never both.
+   delivery receipt, choosing the plant it was delivered to (any of our plants; one plant per invoice).
    Uploads land in Contabilidad as drafts dated "received today", so credit days start from the upload.
    The admin can pause an account at any time; a paused account is signed out on its next request. */
 const path = require('path');
@@ -13,8 +13,9 @@ const { TYPES, addDays } = require('./core');
 const IMG = /\.(jpe?g|png|webp|heic|heif)$/i;
 const IMG_TYPES = /^image\/(jpeg|png|webp|heic|heif)$/i;
 const PLANTS = { B1: 'Jabil B1', B3: 'Jabil B3' };
-// plants a supplier can pick: the ones assigned to it in Contactos, otherwise Jabil B1 / B3
-const plantsFor = v => (Array.isArray(v.plants) && v.plants.length && !v.plantsAuto ? v.plants : Object.values(PLANTS)); // plants learned from facturas don't limit what the supplier can pick
+// every supplier can pick any of our plants (Contabilidad → Configuración), grouped by city
+const plantsFor = b => b.plantNames();
+const plantGroups = b => { const g = []; for (const n of b.plantNames()) { const city = b.plantCity(n) || ''; let x = g.find(y => y.city === city); if (!x) g.push(x = { city, plants: [] }); x.plants.push(n); } return g; };
 const WORDS = ['naranja', 'tortuga', 'ventana', 'canela', 'tomate', 'girasol', 'paloma', 'cereza', 'limonada', 'castillo', 'pradera', 'tortilla', 'mariposa', 'durazno', 'galleta', 'pelota', 'cometa', 'abanico', 'aguacate', 'ballena', 'bosque', 'caballo', 'camino', 'campana', 'cascada', 'cebolla', 'conejo', 'delfin', 'espiga', 'estrella', 'frijol', 'granero', 'guitarra', 'jardin', 'lechuga', 'lluvia', 'maceta', 'manzana', 'molino', 'nopal', 'oliva', 'panal', 'pepino', 'perico', 'pimienta', 'plátano', 'puente', 'rancho', 'sandia', 'semilla', 'sombrero', 'tambor', 'trigo', 'tulipan', 'verano', 'violeta', 'zanahoria', 'avena', 'brisa', 'cactus', 'colibri', 'coyote', 'elote', 'fogata', 'gaviota', 'higuera', 'laguna', 'mezquite', 'nogal', 'papaya', 'piñata'].map(w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ñ/g, 'n'));
 const pick = () => WORDS[crypto.randomInt(WORDS.length)];
 const twoWords = () => { let a = pick(), b = pick(); while (b === a) b = pick(); return `${a}.${b}`; };
@@ -103,7 +104,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
     // the supplier only sees what they uploaded themselves, and invoices of ours they sent too (to confirm or already confirmed)
     const docs = b.db.docs.filter(d => d.partnerId === v.id && TYPES[d.type].side === 'ap' && d.state !== 'erased' && (d.portal || d.vendorReview)).sort((a, c) => (c.received || c.date).localeCompare(a.received || a.date)).slice(0, 60)
       .map(d => ({ ...reviewView(b, d), status: statusOf(b, d) }));
-    res.json({ vendor: { name: v.name, rfc: v.rfc || '', terms: v.terms || 0, username: v.portal.account.username, test: !!v.portal.test }, company: { name: b.db.company.name }, plants: plantsFor(v), docs });
+    res.json({ vendor: { name: v.name, rfc: v.rfc || '', terms: v.terms || 0, username: v.portal.account.username, test: !!v.portal.test }, company: { name: b.db.company.name }, plants: plantsFor(b), plantGroups: plantGroups(b), docs });
   });
 
   /* An invoice our team already loaded (e.g. from the accountant's package) is shown back to the supplier with
@@ -136,7 +137,7 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
         if (ok && !hasReceipt(d)) return res.status(400).json({ error: 'Sube la foto del recibo de entrega de esta factura para confirmarla.' });
         const now = new Date().toISOString(), day = localToday().split('-').reverse().join('/');
         const r = d.vendorReview = { ...(d.vendorReview || {}), doneAt: now };
-        const pl = plantsFor(v).includes(String(plant || '')) ? String(plant) : (r.plant || '');
+        const pl = plantsFor(b).includes(String(plant || '')) ? String(plant) : (r.plant || '');
         if (ok) {
           r.status = 'ok'; r.comment = '';
           if (pl && !d.plant) d.plant = pl;
@@ -160,9 +161,9 @@ module.exports = function portal(app, { books: getBooks, pdf, publicUrl, secret 
     upload.fields([{ name: 'factura', maxCount: 6 }, { name: 'recibo', maxCount: 4 }])(req, res, async err => {
       if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Un archivo pasa de 15 MB.' : 'No se pudieron recibir los archivos.' });
       try {
-        const raw = String((req.body || {}).plant || '').trim(), allowed = plantsFor(v);
+        const raw = String((req.body || {}).plant || '').trim(), allowed = plantsFor(getBooks());
         const plantName = allowed.find(x => x === raw) || PLANTS[raw.toUpperCase()] && allowed.includes(PLANTS[raw.toUpperCase()]) && PLANTS[raw.toUpperCase()] || (allowed.length === 1 ? allowed[0] : '');
-        if (!plantName) return res.status(400).json({ error: `Elige la planta de la factura: ${allowed.join(', ')}.` });
+        if (!plantName) return res.status(400).json({ error: 'Elige la planta de la factura.' });
         const name = f => Buffer.from(f.originalname, 'latin1').toString('utf8');
         const fact = (req.files.factura || []).map(f => ({ name: name(f), buf: f.buffer })).filter(f => /\.(xml|pdf)$/i.test(f.name));
         const recs = (req.files.recibo || []).filter(f => IMG.test(name(f)) || IMG_TYPES.test(f.mimetype));
