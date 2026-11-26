@@ -1,0 +1,28 @@
+AVE MEAL COUNTER (contador de comidas)
+=====================================
+
+Que hace
+- Cada vez que alguien pasa su gafete por el lector, cuenta una comida y la guarda en esta PC
+  (carpeta C:\AVE-Comedor\datos) antes de mostrar "Buen provecho".
+- Funciona sin internet. Cada hora envia las comidas a gpoave.com y recibe la lista de tarjetas
+  del cliente. Si no hay internet, las guarda y las manda cuando vuelva. No se pierde nada.
+- Tarjetas que no estan en la lista: la comida se cuenta y queda marcada para revision.
+
+Lector
+- RF IDeas pcProx Plus (HID Prox 125 kHz, 26 bits), conectado por USB. Escribe el numero de la
+  tarjeta como si fuera un teclado. Debe enviar SOLO el numero de tarjeta y Enter (asi viene de fabrica
+  en la mayoria; se cambia con el programa pcProx Configuration Utility de RF IDeas si hace falta).
+- Prueba: Administracion -> Estado -> Probar el lector.
+
+Instalar (una sola vez, con internet)
+1. Copia esta carpeta a la PC del comedor (Windows 10 u 11) y conecta el lector.
+2. Clic derecho en INSTALAR.bat -> "Ejecutar como administrador".
+3. En Administracion (http://localhost:8790/admin): crea un PIN y pega el codigo de la estacion
+   que se genera en gpoave.com -> Comidas -> Meal Counter -> Nueva estacion.
+4. Al guardar, baja la lista de tarjetas. Pasa un gafete: debe salir el nombre.
+
+Uso
+- La pantalla del comedor se abre sola a pantalla completa al iniciar sesion en Windows.
+  Para salir de pantalla completa: Alt+F4.
+- Si alguien olvida el gafete o hay visitantes: Administracion -> Comida manual.
+- La pantalla debe estar "activa" para leer: si aparece el aviso oscuro, haz clic en el.

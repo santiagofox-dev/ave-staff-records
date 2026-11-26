@@ -1,0 +1,9 @@
+{
+  "name": "ave-comedor-sitio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Meal Counter de Grupo AVE: cuenta las comidas con el lector de tarjetas, guarda todo en la PC y lo sube a gpoave.com cada hora.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

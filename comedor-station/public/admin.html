@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Administración · Meal Counter AVE</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="login" id="login" hidden>
+  <img src="/static/logo.png" alt="Grupo AVE">
+  <h2 id="loginTitle">Administración del Meal Counter</h2>
+  <p class="muted small" id="loginHelp">Escribe el PIN de administrador.</p>
+  <form id="loginForm"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" required>
+  <div class="row"><button class="btn primary" type="submit">Entrar</button><a href="/" class="small">Volver a la pantalla</a></div></form>
+  <div id="loginMsg"></div>
+</div>
+<div class="a" id="app" hidden>
+  <header><img src="/static/logo.png" alt="Grupo AVE"><h1>Meal Counter</h1><div class="row" style="margin:0"><a class="btn" href="/">Pantalla</a><button class="btn" id="logout" type="button">Salir</button></div></header>
+  <div class="tabs" role="tablist" id="tabs">
+    <button type="button" data-t="estado" aria-selected="true">Estado</button>
+    <button type="button" data-t="dias">Comidas por día</button>
+    <button type="button" data-t="manual">Comida manual</button>
+    <button type="button" data-t="config">Configuración</button>
+  </div>
+  <div data-p="estado">
+    <div class="card"><h2>Estado</h2><dl class="kv" id="status"></dl>
+      <div class="row"><button class="btn primary" id="syncBtn" type="button">Sincronizar ahora</button><span id="stMsg" class="small"></span></div></div>
+    <div class="card"><h2>Probar el lector</h2><p class="help">Haz clic en el cuadro y pasa un gafete: debe aparecer el número de la tarjeta. Esto no registra comidas.</p>
+      <input id="test" placeholder="Pasa un gafete aquí" autocomplete="off" style="max-width:360px"><div id="testMsg" class="help"></div></div>
+    <div class="card"><h2>Bitácora</h2><pre class="log" id="log"></pre></div>
+  </div>
+  <div data-p="dias" hidden>
+    <div class="card"><h2>Comidas por día</h2>
+      <p class="help">Contadas en esta PC, aunque no haya internet. La factura al cliente se hace con el Excel de gpoave.com → Comidas → Meal Counter.</p>
+      <div class="row"><label for="wk" style="margin:0">Semana del</label><input id="wk" type="date" style="width:auto"><button class="btn" id="prevW" type="button">Anterior</button><button class="btn" id="nextW" type="button">Siguiente</button><a class="btn" id="csv" href="#">Descargar detalle (CSV)</a></div>
+      <div class="wrapt" style="margin-top:10px"><table id="rep"></table></div>
+      <h2 style="margin-top:14px">Tarjetas no registradas en la semana</h2><div class="wrapt"><table id="unk"></table></div></div>
+  </div>
+  <div data-p="manual" hidden>
+    <div class="card"><h2>Registrar comidas sin gafete</h2>
+      <p class="help">Para quien olvidó el gafete, visitantes o cuando el lector falló. Quedan marcadas como manuales, con quién autorizó, y así llegan a gpoave.com.</p>
+      <form id="manForm" class="grid2" style="margin-top:10px">
+        <div><label for="mEmp">No. de empleado o tarjeta</label><input id="mEmp" inputmode="numeric" placeholder="ej. 2110469"></div>
+        <div><label for="mKind">Es</label><select id="mKind"><option value="emp">Número de empleado</option><option value="card">Número de tarjeta</option></select></div>
+        <div><label for="mQty">Cantidad de comidas</label><input id="mQty" type="number" min="1" max="200" value="1"></div>
+        <div><label for="mBy">Autoriza (nombre del supervisor)</label><input id="mBy" maxlength="60" required></div>
+        <div style="grid-column:1/-1"><label for="mNote">Motivo</label><input id="mNote" maxlength="200" placeholder="ej. olvidó el gafete / 3 visitantes de calidad"></div>
+        <div><button class="btn primary" type="submit">Registrar</button></div>
+      </form><div id="manMsg"></div></div>
+  </div>
+  <div data-p="config" hidden>
+    <form id="cfgForm">
+      <div class="card"><h2>Conexión con gpoave.com</h2>
+        <div class="grid2">
+          <div><label for="cToken">Código de la estación</label><input id="cToken" autocomplete="off" placeholder="avc_…"><p class="help">Se genera en gpoave.com → Comidas → Meal Counter → Nueva estación. Se muestra una sola vez.</p></div>
+          <div><label for="cName">Nombre de esta estación</label><input id="cName" maxlength="60" placeholder="ej. Comedor línea 1"></div>
+          <div><label for="cServer">Servidor</label><input id="cServer"></div>
+        </div><p class="help" id="cardsInfo"></p></div>
+      <div class="card"><h2>PIN de administrador</h2><div class="grid2"><div><label for="newPin">PIN nuevo (déjalo vacío para no cambiarlo)</label><input id="newPin" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></div></div><p class="help" id="dataDir"></p></div>
+      <div class="row"><button class="btn primary" type="submit">Guardar</button><span id="cfgMsg" class="small"></span></div>
+    </form>
+  </div>
+</div>
+<script src="/static/admin.js"></script>
+</body>
+</html>

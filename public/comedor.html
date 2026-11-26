@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Meal Counter · AVE</title>
+<link rel="preload" href="/static/fonts/source-sans-3-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/fonts.css?v=1">
+<link rel="stylesheet" href="/static/styles.css?v=10">
+<link rel="stylesheet" href="/static/asis.css?v=5">
+<link rel="stylesheet" href="/static/comedor.css?v=1">
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="stylesheet" href="/static/shell.css?v=3">
+</head>
+<body class="has-bar" data-tool="comidas">
+<header class="appbar">
+  <a class="appbar-logo" href="/app" aria-label="Inicio · Grupo AVE"><img src="/assets/logo-grupo-ave.png" alt="Grupo AVE Comedores Industriales" width="147" height="30"></a>
+  <nav class="appbar-nav" aria-label="Herramientas">
+    <a href="/app" data-tool="hub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Inicio</span></a>
+    <a href="/expedientes" data-tool="expedientes" data-roles="admin personal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.7.8 2.7 2.6 3 5.2"/></svg><span>Expedientes</span></a>
+    <a href="/comidas" data-tool="comidas" data-roles="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11"/><path d="M17 21V3c-2.2 1.3-3.5 3.8-3.5 7v3H17"/></svg><span>Comidas</span></a>
+    <a href="/asistencia" data-tool="asistencia" data-roles="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 2.5v3M16 2.5v3M4 9.5h16"/><path d="M8.5 14.5l2.2 2.2 4.8-4.7"/></svg><span>Asistencia</span></a>
+    <a href="/contabilidad" data-tool="contabilidad" data-roles="admin contador consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Contabilidad</span></a>
+  </nav>
+  <div class="appbar-user"><a class="appbar-users" href="/usuarios" data-roles="admin" title="Usuarios y permisos" aria-label="Usuarios y permisos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.3-6 8-6s7 2 8 6"/><path d="M19 3l2 2-2 2"/></svg><span>Usuarios</span></a><div class="who"><b></b><span></span></div><div class="avatar" aria-hidden="true"></div><button class="appbar-out" type="button">Salir</button></div>
+</header>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow" id="eyebrow">Grupo AVE · Comedor</div>
+      <h1>Meal Counter</h1>
+      <div class="muted">Comidas contadas con el gafete en el comedor de cada planta. La PC del comedor cuenta aunque no haya internet y manda las comidas aquí cada hora.</div>
+    </div>
+    <a class="btn" href="/comidas">Comidas de nuevos ingresos (DELPHI)</a>
+  </header>
+  <div class="ptabs" id="plantTabs" role="tablist" aria-label="Planta"></div>
+  <div id="warn" class="flags"></div>
+  <div class="mets" id="mets"></div>
+  <div class="cgrid">
+    <section class="panel">
+      <div class="panel-head"><h2>Esta semana</h2><span class="muted small" id="wkLabel"></span></div>
+      <div id="week"></div>
+      <h3 class="sub">Hoy por hora</h3>
+      <div class="hours" id="hours"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Últimas comidas de hoy</h2><span class="muted small">se actualiza con cada sincronización</span></div>
+      <div id="last"></div>
+    </section>
+  </div>
+  <section class="panel">
+    <div class="panel-head"><h2>Reporte para cobrar</h2></div>
+    <div class="actions">
+      <div class="field inline"><label for="from">Del</label><input id="from" type="date"></div>
+      <div class="field inline"><label for="to">al</label><input id="to" type="date"></div>
+      <button class="btn" id="run" type="button">Ver</button>
+      <a class="btn primary" id="xls" href="#">Descargar Excel</a>
+    </div>
+    <div id="rep"></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Configuración</h2></div>
+    <div class="cgrid">
+      <div>
+        <h3 class="sub">Estaciones (PC del comedor)</h3>
+        <div id="stations"></div>
+        <div class="actions"><button class="btn primary" id="newSt" type="button">Nueva estación</button><a class="btn" href="/api/comedor/programa.zip">Descargar el programa para la PC</a></div>
+        <div id="token" aria-live="polite"></div>
+      </div>
+      <div>
+        <h3 class="sub">Tarjetas del cliente</h3>
+        <div class="kv" id="cards"></div>
+        <div class="actions"><label class="btn filebtn"><input id="cardFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">Subir lista de tarjetas (Excel)</label></div>
+        <p class="muted small">El reporte "ACCESOS ACTIVOS" de seguridad de la planta: No. Empleado, Last Name, First Name y Card Number. La PC del comedor recibe la lista nueva en su próxima sincronización.</p>
+        <div id="cardMsg" aria-live="polite"></div>
+        <h3 class="sub">Cobro</h3>
+        <div class="actions">
+          <div class="field inline"><label for="price">Precio por comida ($)</label><input id="price" type="number" min="0" step="0.01"></div>
+          <div class="field inline"><label for="deb">Misma tarjeta, misma comida si se lee de nuevo antes de (s)</label><input id="deb" type="number" min="0" max="600" step="1"></div>
+          <button class="btn" id="saveSet" type="button">Guardar</button><span id="setMsg" class="small" aria-live="polite"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+<script src="/static/retry.js?v=1"></script>
+<script src="/static/comedor.js?v=1"></script>
+<script src="/static/shell.js?v=2"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meal Counter · Grupo AVE</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/meal.css">
+</head>
+<body>
+<div class="m">
+  <header>
+    <img src="/static/logo.png" alt="Grupo AVE">
+    <div class="where" id="where">Comedor</div>
+    <div class="clock"><b id="time">--:--</b><div class="muted" id="date"></div></div>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+  <main>
+    <section class="hero" id="hero">
+      <div class="state" id="state">Pasa tu gafete por el lector</div>
+      <div class="who" id="who"></div>
+      <div class="sub" id="sub"></div>
+    </section>
+    <aside>
+      <div class="count"><span>Comidas hoy</span><b id="count">0</b><small id="unk"></small></div>
+      <h2>Últimas</h2>
+      <ul id="last"></ul>
+    </aside>
+  </main>
+  <footer>
+    <span id="net"><span class="dot"></span>Internet</span>
+    <span id="cards" class="muted"></span>
+    <a href="/admin">Administración</a>
+  </footer>
+  <div class="focus" id="focus" hidden>Haz clic aquí para que la pantalla vuelva a leer los gafetes</div>
+</div>
+<script src="/static/meal.js"></script>
+</body>
+</html>

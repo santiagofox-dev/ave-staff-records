@@ -160,6 +160,9 @@ const portal = (() => { let x = null; try { x = require('./extract'); } catch (e
 /* On-site checador (face terminal PCs): they sync with a station token, not a login */
 const checador = require('./checador')({ DATA_DIR });
 checador.publicRoutes(app);
+/* Meal Counter (comedor PCs with card reader): same idea, its own tokens */
+const comedor = require('./comedor')({ DATA_DIR });
+comedor.publicRoutes(app);
 
 /* everything below needs a login */
 app.use(requireAuth);
@@ -364,6 +367,7 @@ require('./meals')(app, { DATA_DIR, getUser: () => state.auth.user });
 /* ---- Asistente asistencia (Monclova) ---- */
 const asistencia = require('./asistencia')(app, { DATA_DIR, checador });
 checador.adminRoutes(app, { who: req => (req.user && (req.user.name || req.user.username)) || 'admin' });
+comedor.adminRoutes(app, { who: req => (req.user && (req.user.name || req.user.username)) || 'admin' });
 
 /* ---- Contabilidad (accounting) ---- */
 const books = require('./acc/routes')(app, { portal, DATA_DIR, users, ownerName: () => state.auth.user, rfc: process.env.COMPANY_RFC });
