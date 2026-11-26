@@ -218,6 +218,8 @@ dialog::backdrop{background:var(--scrim)}
 .vtable tr.go{cursor:pointer} .vtable tr.go:hover td{background:var(--sunk)}
 .vtable .neg{color:var(--bad);font-weight:700} .vtable .pos{color:var(--ok);font-weight:700}
 .vtable tr.done td{color:var(--muted)}
+.vtable tr.gone td{color:var(--muted);text-decoration:line-through}
+.item .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .addrow.vac{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.4fr) minmax(0,1.6fr) auto}
 @media (max-width:760px){.addrow.vac{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .vhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:4px 0 10px}

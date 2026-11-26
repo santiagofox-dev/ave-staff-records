@@ -7,7 +7,7 @@
 <title>Expedientes de Personal AVE</title>
 <link rel="preload" href="/static/fonts/source-sans-3-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/fonts.css?v=1">
-<link rel="stylesheet" href="/static/styles.css?v=11">
+<link rel="stylesheet" href="/static/styles.css?v=12">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="stylesheet" href="/static/shell.css?v=3">
 </head>
@@ -157,13 +157,13 @@
     </section>
 
     <section class="card" id="vacCard">
-      <h3>Vacaciones</h3>
+      <h3>Vacaciones y faltas</h3>
       <div id="vacBox"></div>
       <form class="addrow vac" id="vacForm" novalidate>
         <div class="field"><label for="v_from">Desde</label><input id="v_from" type="date"></div>
         <div class="field"><label for="v_to">Hasta</label><input id="v_to" type="date"></div>
         <div class="field"><label for="v_days">Días</label><input id="v_days" type="number" min="0.5" max="60" step="0.5"></div>
-        <div class="field"><label for="v_kind">Es</label><select id="v_kind"><option value="vacaciones">Vacaciones</option><option value="falta">Falta que se pasa a vacaciones</option></select></div>
+        <div class="field"><label for="v_kind">Es</label><select id="v_kind"><option value="FI" selected>Falta sin justificar</option><option value="falta">Falta pasada a vacaciones</option><option value="vacaciones">Vacaciones</option></select></div>
         <div class="field n"><label for="v_note">Nota</label><input id="v_note" maxlength="200" placeholder="Opcional"></div>
         <button class="btn" type="submit">Registrar</button>
       </form>
@@ -222,8 +222,8 @@
 
 <div class="toast" id="toast" hidden></div>
 <script src="/static/retry.js?v=1"></script>
-<script src="/static/vac.js?v=2"></script>
-<script src="/static/app.js?v=11"></script>
+<script src="/static/vac.js?v=3"></script>
+<script src="/static/app.js?v=12"></script>
 <script src="/static/shell.js?v=2"></script>
 </body>
 </html>

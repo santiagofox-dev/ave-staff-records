@@ -298,20 +298,20 @@ let kdxFile = null, kdxPlan = null;
 function vacListHTML(list) {
   const rows = list.map(e => ({ e, s: vacOf(e) })).sort((a, b) => (b.s.balance ?? -1e9) - (a.s.balance ?? -1e9) || (a.e.name || '').localeCompare(b.e.name || '', LOC));
   const noHire = rows.filter(r => !r.s.hire).length, withK = rows.filter(r => r.s.opening).length;
-  const owed = rows.reduce((a, r) => a + Math.max(0, r.s.balance || 0), 0);
-  return `<div class="vhead"><span class="muted small">${rows.length} empleados · ${num1(owed)} días de vacaciones pendientes en total${withK ? ` · ${withK} con saldo inicial del Kárdex` : ''}${noHire ? ` · <b>${noHire} sin fecha de ingreso</b> (no se puede calcular)` : ''}</span>
+  const owed = rows.reduce((a, r) => a + Math.max(0, r.s.balance || 0), 0), lost = rows.reduce((a, r) => a + (r.s.expired || 0), 0);
+  return `<div class="vhead"><span class="muted small">${rows.length} empleados · ${num1(owed)} días de vacaciones vigentes por tomar${lost ? ` · ${num1(lost)} vencidos` : ''}${withK ? ` · ${withK} con saldo inicial del Kárdex` : ''}${noHire ? ` · <b>${noHire} sin fecha de ingreso</b> (no se puede calcular)` : ''}</span>
     <label class="btn sm filebtn">Cargar Kárdex de vacaciones (CONTPAQi)<input type="file" id="kdxFile" accept=".xlsx"></label></div>
     <div id="kdxBox">${kdxPlan ? kdxHTML(kdxPlan) : ''}</div>
-    <table class="vtable"><thead><tr><th>Empleado</th><th>No.</th><th>Ingreso</th><th>Antigüedad</th><th class="n">Días por ley (este año)</th><th class="n">Saldo</th><th>Tomar antes de</th><th>Próximo aniversario</th></tr></thead><tbody>${rows.map(({ e, s }) => `<tr class="go" data-open="${esc(e.id)}">
+    <table class="vtable"><thead><tr><th>Empleado</th><th>No.</th><th>Ingreso</th><th>Antigüedad</th><th class="n">Días por ley (este año)</th><th class="n">Saldo</th><th class="n">Vencidos</th><th>Próximo vencimiento</th><th>Próximo aniversario</th></tr></thead><tbody>${rows.map(({ e, s }) => `<tr class="go" data-open="${esc(e.id)}">
       <td>${esc(e.name)}<br><span class="sub">${esc(e.site || '')}</span></td><td class="mono">${esc(e.number || '—')}</td><td class="mono">${s.hire ? fmt(s.hire) : '<span class="chip warn">Falta</span>'}</td><td>${antig(s)}</td>
       <td class="n">${s.hire ? s.thisYearDays : ''}</td><td class="n ${s.balance > 0 ? 'pos' : s.balance < 0 ? 'neg' : ''}">${s.balance == null ? '—' : num1(s.balance)}</td>
-      <td class="mono">${s.takeBy ? fmt(s.takeBy) : ''}</td><td class="mono">${s.nextAnniversary ? `${fmt(s.nextAnniversary)} (+${s.nextDays})` : ''}</td></tr>`).join('')}</tbody></table>
-    <div class="note small">Ley Federal del Trabajo art. 76 (reforma vigente desde 2023): 12 días al cumplir 1 año, 14, 16, 18, 20 al cumplir 5, y desde el sexto año +2 días por cada 5 años (22 de 6 a 10 años, 24 de 11 a 15…). Deben darse dentro de los 6 meses después del aniversario (art. 81), con prima vacacional de al menos 25% (art. 80). El saldo negativo son días adelantados.</div>`;
+      <td class="n">${s.expired ? num1(s.expired) : ''}</td><td class="mono">${s.nextExpiry ? `${fmt(s.nextExpiry.date)} (${num1(s.nextExpiry.days)})` : ''}</td><td class="mono">${s.nextAnniversary ? `${fmt(s.nextAnniversary)} (+${s.nextDays})` : ''}</td></tr>`).join('')}</tbody></table>
+    <div class="note small">Ley Federal del Trabajo art. 76 (reforma vigente desde 2023): 12 días al cumplir 1 año, 14, 16, 18, 20 al cumplir 5, y desde el sexto año +2 días por cada 5 años (22 de 6 a 10 años, 24 de 11 a 15…). Los días no se acumulan sin límite: deben darse dentro de los 6 meses después del aniversario (art. 81) y el derecho prescribe un año después (art. 516), así que cada periodo vence a los 18 meses de su aniversario. Los días tomados se descuentan del periodo más antiguo vigente. Prima vacacional de al menos 25% (art. 80). Saldo negativo: días adelantados.</div>`;
 }
 function kdxHTML(r) {
   const un = r.rows.filter(x => !x.match), hd = r.rows.filter(x => x.hireDiff), dup = r.rows.filter(x => x.dup), fill = r.rows.filter(x => x.fillHire);
   return `<div class="vmsg${un.length ? ' warn' : ''}"><b>${r.applied ? 'Cargado' : 'Revisión del Kárdex'} al ${fmt(r.asOf)}${r.company ? ' · ' + esc(r.company) : ''}:</b> ${r.matched} de ${r.total} empleados encontrados en Expedientes.
-    ${r.applied ? 'Su saldo de esa fecha queda como saldo inicial; de ahí en adelante se suman los aniversarios por ley y se restan los días que se registren.' : 'Nada se ha guardado todavía.'}
+    ${r.applied ? 'Su saldo de esa fecha queda como saldo inicial y se asigna a los aniversarios más recientes; de ahí en adelante se suman los aniversarios por ley, se restan los días tomados y vence lo que pase de 18 meses.' : 'Nada se ha guardado todavía.'}
     ${fill.length ? ` A ${fill.length} se les pondrá la fecha de ingreso que trae el Kárdex.` : ''}
     ${!r.applied && r.matched ? ' <button class="btn sm primary" type="button" id="kdxApply">Aplicar a los ' + r.matched + '</button>' : ''}</div>
     ${un.length || hd.length || dup.length ? `<details class="vplan"><summary class="small">${[un.length && `${un.length} sin encontrar`, hd.length && `${hd.length} con fecha de ingreso distinta`, dup.length && `${dup.length} repetidos`].filter(Boolean).join(' · ')}</summary>
@@ -340,20 +340,29 @@ function renderVac() {
   if (!e) { box.innerHTML = ''; return; }
   const s = vacOf(e);
   if (!s.hire) { box.innerHTML = '<div class="empty">Pon la <b>fecha de ingreso</b> en los datos del empleado para calcular sus vacaciones.</div>'; return; }
-  const kinds = { vacaciones: 'Vacaciones', falta: 'Falta pasada a vacaciones', kardex: 'Kárdex CONTPAQi' };
+  const kinds = { FI: 'Falta sin justificar', vacaciones: 'Vacaciones', falta: 'Falta pasada a vacaciones', kardex: 'Kárdex CONTPAQi' };
+  const chip = t => t.kind === 'kardex' ? '<span class="chip none">CONTPAQi</span>' : t.kind === 'FI' ? '<span class="chip bad">FI</span>' : t.kind === 'falta' ? '<span class="chip warn">Falta → vacaciones</span>' : '<span class="chip none">Vacaciones</span>';
+  const acts = t => t.kind === 'kardex' ? '<span></span>' : `<span class="acts">${t.kind === 'FI' ? `<button class="btn sm" data-kind="falta" data-vid="${esc(t.id)}">Pasar a vacaciones</button>` : t.kind === 'falta' ? `<button class="btn sm" data-kind="FI" data-vid="${esc(t.id)}">Volver a falta</button>` : ''}<button class="btn sm danger" data-delvac="${esc(t.id)}">Quitar</button></span>`;
+  const periodRow = p => `<tr class="${p.expired ? 'gone' : p.left <= 0 ? 'done' : ''}"><td>${p.year || 'Kárdex'}</td><td class="mono">${fmt(p.date)}</td><td class="n">${num1(p.days)}</td><td class="n">${num1(p.left)}</td><td class="mono">${fmt(p.takeBy)}</td><td class="mono">${fmt(p.prescribes)}${p.expired ? ' · vencido' : ''}</td></tr>`;
   box.innerHTML = `<div class="vsum">
-      <div class="${s.balance > 0 ? 'pos' : s.balance < 0 ? 'neg' : ''}"><b>${num1(s.balance)}</b><span>días por tomar${s.balance < 0 ? ' (adelantados)' : ''}</span></div>
+      <div class="${s.balance > 0 ? 'pos' : s.balance < 0 ? 'neg' : ''}"><b>${num1(s.balance)}</b><span>días vigentes por tomar${s.balance < 0 ? ' (adelantados)' : ''}</span></div>
       <div><b>${antig(s)}</b><span>antigüedad (ingreso ${fmt(s.hire)})</span></div>
       <div><b>${s.thisYearDays}</b><span>días por ley este año</span></div>
       <div><b>${s.nextDays}</b><span>gana el ${fmt(s.nextAnniversary)}</span></div>
-      ${s.takeBy ? `<div><b>${fmt(s.takeBy)}</b><span>debe tomarlas antes de (art. 81)</span></div>` : ''}
+      ${s.nextExpiry ? `<div><b>${fmt(s.nextExpiry.date)}</b><span>vencen ${num1(s.nextExpiry.days)} días${s.nextExpiry.takeBy >= isoToday() ? ` · darlos antes del ${fmt(s.nextExpiry.takeBy)} (art. 81)` : ''}</span></div>` : ''}
+      ${s.expired ? `<div class="neg"><b>${num1(s.expired)}</b><span>días vencidos (art. 516)</span></div>` : ''}
+      ${s.faltas ? `<div><b>${s.faltas}</b><span>faltas sin justificar</span></div>` : ''}
     </div>
-    ${s.opening ? `<div class="note">Saldo inicial del Kárdex de CONTPAQi al ${fmt(s.opening.date)}: <b>${num1(s.opening.saldo)}</b> días. Después de esa fecha se suman los aniversarios por ley y se restan los días registrados aquí.</div>` : ''}
-    ${s.prescribed > 0 ? `<div class="note">Ojo: ${num1(s.prescribed)} de estos días son de periodos de hace más de 18 meses (art. 516 LFT, podrían estar prescritos). Si ya los tomó, carga el Kárdex de CONTPAQi o regístralos.</div>` : ''}
-    <details><summary class="small">Periodos por aniversario (${s.periods.length})</summary><table class="vtable"><thead><tr><th>Año</th><th>Aniversario</th><th class="n">Días</th><th>Tomar antes de</th></tr></thead><tbody>${s.periods.slice().reverse().map(p => `<tr class="${p.counted ? '' : 'done'}"><td>${p.year}</td><td class="mono">${fmt(p.date)}</td><td class="n">${p.days}</td><td class="mono">${fmt(p.takeBy)}${p.counted ? '' : ' · incluido en el Kárdex'}</td></tr>`).join('')}</tbody></table></details>
-    <div class="list">${s.taken.length ? s.taken.slice().reverse().map(t => `<div class="item"><span><span class="t">${t.from ? `${fmt(t.from)}${t.to && t.to !== t.from ? ' – ' + fmt(t.to) : ''}` : 'Antes del registro'} · ${dias(t.days)}</span><br><span class="s">${esc(kinds[t.kind] || t.kind)}${t.note ? ' · ' + esc(t.note) : ''}${t.by && t.kind !== 'kardex' ? ' · ' + esc(t.by) : ''}</span></span>
-      <span class="chip ${t.kind === 'falta' ? 'warn' : 'none'}">${t.kind === 'kardex' ? 'CONTPAQi' : t.kind === 'falta' ? 'Falta → vacaciones' : 'Vacaciones'}</span>
-      ${t.kind === 'kardex' ? '<span></span>' : `<button class="btn sm danger" data-delvac="${esc(t.id)}">Quitar</button>`}</div>`).join('') : '<div class="empty">Sin vacaciones registradas.</div>'}</div>`;
+    ${s.opening ? `<div class="note">Saldo inicial del Kárdex de CONTPAQi al ${fmt(s.opening.date)}: <b>${num1(s.opening.saldo)}</b> días, asignado a los aniversarios más recientes. Después de esa fecha se suman los aniversarios por ley y se restan los días registrados aquí.</div>` : ''}
+    ${s.expired > 0 ? `<div class="note">${num1(s.expired)} días son de periodos con más de 18 meses desde su aniversario: ya prescribieron (art. 516 LFT) y no cuentan en el saldo. La empresa puede darlos si quiere, pero ya no se pueden exigir.${s.opening ? '' : ' Si ya los tomó, carga el Kárdex de CONTPAQi o regístralos.'}</div>` : ''}
+    <details><summary class="small">Periodos por aniversario (${s.periods.length})</summary><table class="vtable"><thead><tr><th>Año</th><th>Aniversario</th><th class="n">Días</th><th class="n">Quedan</th><th>Darlos antes de</th><th>Vence</th></tr></thead><tbody>${s.periods.slice().reverse().map(periodRow).join('')}</tbody></table></details>
+    <div class="list">${s.taken.length ? s.taken.slice().reverse().map(t => `<div class="item"><span><span class="t">${t.from ? `${fmt(t.from)}${t.to && t.to !== t.from ? ' – ' + fmt(t.to) : ''}` : 'Antes del registro'} · ${dias(t.days)}</span><br><span class="s">${esc(kinds[t.kind] || t.kind)}${t.kind === 'FI' ? ' · no descuenta vacaciones' : ''}${t.note ? ' · ' + esc(t.note) : ''}${t.by && t.kind !== 'kardex' ? ' · ' + esc(t.by) : ''}</span></span>
+      ${chip(t)}${acts(t)}</div>`).join('') : '<div class="empty">Sin faltas ni vacaciones registradas.</div>'}</div>`;
+  box.querySelectorAll('[data-vid]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { const r = await api('PATCH', `/api/employees/${openId}/vacaciones/${b.dataset.vid}`, { kind: b.dataset.kind }); const emp = getEmp(openId); emp.vac = r.vac; renderVac(); if (filter === 'vac') renderRoster(); toast(b.dataset.kind === 'falta' ? `Pasada a vacaciones. Le quedan ${num1(r.summary.balance)} días.` : 'Regresada a falta sin justificar'); }
+    catch (err) { toast(err.message); b.disabled = false; }
+  }));
   box.querySelectorAll('[data-delvac]').forEach(b => armed(b, 'Confirmar', async () => {
     try { const r = await api('DELETE', `/api/employees/${openId}/vacaciones/${b.dataset.delvac}`); const emp = getEmp(openId); emp.vac = r.vac; renderVac(); if (filter === 'vac') renderRoster(); toast('Registro quitado'); }
     catch (err) { toast(err.message); }
@@ -366,9 +375,10 @@ $('#vacForm').addEventListener('submit', async ev => {
   ev.preventDefault();
   if (!$('#v_from').value) { toast('Pon la fecha de inicio.'); return; }
   try {
+    $('#v_kind').dataset.last = $('#v_kind').value;
     const r = await api('POST', `/api/employees/${openId}/vacaciones`, { from: $('#v_from').value, to: $('#v_to').value, days: $('#v_days').value, kind: $('#v_kind').value, note: $('#v_note').value });
     const emp = getEmp(openId); emp.vac = r.vac; $('#vacForm').reset(); renderVac(); if (filter === 'vac') renderRoster();
-    toast(`Registrado. Le quedan ${num1(r.summary.balance)} días.`);
+    toast($('#v_kind').dataset.last === 'FI' ? 'Falta sin justificar registrada. No descuenta vacaciones.' : `Registrado. Le quedan ${num1(r.summary.balance)} días.`);
   } catch (err) { toast(err.message); }
 });
 

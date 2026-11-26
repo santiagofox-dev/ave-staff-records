@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const VAC = require('./public/static/vac');
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
+const KINDS = ['FI', 'falta', 'vacaciones']; // FI: falta sin justificar (no usa días) · falta: falta pasada a vacaciones
 const todayCJ = () => new Date(Date.now() - 7 * 3600e3).toISOString().slice(0, 10);
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-ZÑ ]/g, ' ').replace(/\s+/g, ' ').trim();
 const toks = s => new Set(norm(s).split(' ').filter(w => w.length > 1 && !['DE', 'DEL', 'LA', 'LOS', 'LAS', 'Y'].includes(w)));
@@ -23,7 +24,7 @@ const numKey = n => String(n || '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
 
 module.exports = function (app, { state, persist, who }) {
   const emps = () => Object.values(state.employees);
-  const entry = (e, x, by) => ({ id: crypto.randomBytes(6).toString('hex'), from: x.from, to: x.to || x.from, days: Math.round((+x.days || 0) * 100) / 100, kind: x.kind || 'vacaciones', note: String(x.note || '').slice(0, 200), src: x.src || undefined, by, at: new Date().toISOString() });
+  const entry = (e, x, by) => ({ id: crypto.randomBytes(6).toString('hex'), from: x.from, to: x.to || x.from, days: Math.round((+x.days || 0) * 100) / 100, kind: x.kind || 'FI', note: String(x.note || '').slice(0, 200), src: x.src || undefined, by, at: new Date().toISOString() });
   const touch = e => { e.updatedAt = new Date().toISOString(); };
   const withSummary = e => ({ id: e.id, vac: e.vac || null, summary: VAC.summary(e, todayCJ()) });
 
@@ -117,9 +118,21 @@ module.exports = function (app, { state, persist, who }) {
     if (to < b.from) return res.status(400).json({ error: 'La fecha final es anterior a la inicial.' });
     const days = b.days === '' || b.days == null ? VAC.workDays(b.from, to) : +b.days;
     if (!(days > 0 && days <= 60)) return res.status(400).json({ error: 'Los días deben ser de 0.5 a 60.' });
-    const kind = b.kind === 'falta' ? 'falta' : 'vacaciones';
+    const kind = KINDS.includes(b.kind) ? b.kind : 'FI'; // an absence is a falta sin justificar unless said otherwise
     e.vac = e.vac || { taken: [] }; e.vac.taken = e.vac.taken || [];
     e.vac.taken.push(entry(e, { from: b.from, to, days, kind, note: b.note }, who(req)));
+    touch(e); persist();
+    res.json(withSummary(e));
+  });
+  /* a falta sin justificar can be passed to vacaciones (and back) */
+  app.patch('/api/employees/:id/vacaciones/:entry', (req, res) => {
+    const e = state.employees[req.params.id]; if (!e || !e.vac) return res.status(404).json({ error: 'No existe.' });
+    const t = (e.vac.taken || []).find(x => x.id === req.params.entry);
+    if (!t) return res.status(404).json({ error: 'No existe ese registro.' });
+    if (t.kind === 'kardex') return res.status(400).json({ error: 'Los registros del Kárdex de CONTPAQi solo se cambian volviendo a cargar el Kárdex.' });
+    const kind = (req.body || {}).kind;
+    if (!KINDS.includes(kind)) return res.status(400).json({ error: 'Tipo no válido.' });
+    t.kind = kind; t.changedBy = who(req); t.changedAt = new Date().toISOString();
     touch(e); persist();
     res.json(withSummary(e));
   });
