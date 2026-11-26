@@ -86,3 +86,33 @@ test('every change to vacaciones is editable and leaves a trace (before, after, 
   assert.strictEqual(r.summary.balance, 9);
   assert.strictEqual(call('put', '/api/employees/:id/vacaciones/:entry', { id: 'a', entry: 'k1' }, { from: '2025-12-09', to: '2025-12-01' }).status, 400);
 });
+
+test('VAC days from Asistencia wait for confirmation; un-marking a confirmed one asks to give it back', () => {
+  const routes = {}; const app = {}; for (const m of ['get', 'post', 'put', 'patch', 'delete']) app[m] = (p, h) => { routes[m + ' ' + p] = h; };
+  const state = { employees: { a: { id: 'a', number: '15', name: 'Luis Soto Rivas', hire: '2020-01-06', site: 'Jabil Chihuahua', vac: { taken: [] } } } };
+  const m = require('../vacaciones')(app, { state, persist() {}, who: req => req.user });
+  const call = (mth, p, body, query = {}) => { let out; routes[mth + ' ' + p]({ params: {}, body, query, user: 'laura' }, { json: x => { out = x; }, status: c => ({ json: x => { out = { status: c, ...x }; } }) }); return out; };
+  const run = { id: 'r1', plant: 'jabil-chihuahua', site: 'Jabil Chihuahua', monday: '2026-11-16' };
+  const bal = () => require('../public/static/vac').summary(state.employees.a, '2026-11-26').balance;
+  const b0 = bal();
+  m.syncRun(run, [{ person: '15', name: 'SOTO RIVAS LUIS', ymd: '2026-11-17', source: 'excel' }, { person: '15', name: 'SOTO RIVAS LUIS', ymd: '2026-11-18', source: 'excel' }, { person: '99', name: 'NADIE NADIE', ymd: '2026-11-18', source: 'excel' }], 'x');
+  let p = call('get', '/api/vacaciones/pendientes', {}).items;
+  assert.strictEqual(p.length, 3); assert.strictEqual(bal(), b0); // nothing taken yet
+  assert.strictEqual(p.find(x => x.person === '99').emp, null);
+  m.syncRun(run, [{ person: '15', name: 'SOTO RIVAS LUIS', ymd: '2026-11-17' }, { person: '15', name: 'SOTO RIVAS LUIS', ymd: '2026-11-18' }, { person: '99', name: 'NADIE NADIE', ymd: '2026-11-18' }], 'x'); // reopening the week: no duplicates
+  assert.strictEqual(call('get', '/api/vacaciones/pendientes', {}).items.length, 3);
+  const k17 = p.find(x => x.ymd === '2026-11-17').key, k18 = p.find(x => x.ymd === '2026-11-18' && x.person === '15').key, k99 = p.find(x => x.person === '99').key;
+  let r = call('post', '/api/vacaciones/pendientes/confirmar', { keys: [k17, k18, k99] });
+  assert.strictEqual(r.done, 2); assert.strictEqual(r.skipped.length, 1);
+  assert.strictEqual(bal(), b0 - 2);
+  call('post', '/api/vacaciones/pendientes/descartar', { keys: [k99] });
+  assert.strictEqual(call('get', '/api/vacaciones/pendientes', {}).items.length, 0);
+  // the week is corrected: the 18th is no longer VAC → it comes back as "devolver"; nothing changes until confirmed
+  m.syncRun(run, [{ person: '15', name: 'SOTO RIVAS LUIS', ymd: '2026-11-17' }], 'x');
+  p = call('get', '/api/vacaciones/pendientes', {}).items;
+  assert.deepStrictEqual(p.map(x => [x.key, x.need]), [[k18, 'devolver']]);
+  assert.strictEqual(bal(), b0 - 2);
+  call('post', '/api/vacaciones/pendientes/confirmar', { keys: [k18] });
+  assert.strictEqual(bal(), b0 - 1);
+  assert.deepStrictEqual(state.employees.a.vac.log.map(x => x.action), ['alta', 'alta', 'baja']);
+});

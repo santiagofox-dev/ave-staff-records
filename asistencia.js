@@ -284,6 +284,15 @@ module.exports = function (app, { DATA_DIR, checador, vacaciones }) {
       dates: A.DAYS7.map((key, i) => ({ key, ymd: A.addDays(run.monday, i) })), sheetDays: A.PLANTS[pl].sheetDays, tolMin: settings(pl).tolMin ?? 15, model: AI.MODEL() };
     if (run.status === 'read') {
       out.analysis = analyse(run); out.sheetRows = sheetRows(run);
+      if (vacaciones && out.analysis.results) {
+        // VAC days of this week go to Expedientes only after someone confirms them (Expedientes → Vacaciones)
+        const days = [];
+        for (const r of out.analysis.results) for (const d of r.days || []) if (d.final === 'VAC') days.push({ person: r.id, name: r.name, ymd: d.ymd, source: d.manual ? 'manual' : run.source || 'foto' });
+        // people who are in incidencias / the sheet but not in the checador
+        for (const x of out.analysis.extras || []) { const row = out.sheetRows.find(r => r.key === x.key) || {}; for (const [k, d] of Object.entries(row.days || {})) if (d && A.normClave(d.clave) === 'VAC' && A.DAYS7.includes(k)) days.push({ person: x.id, name: x.name, ymd: A.addDays(run.monday, A.DAYS7.indexOf(k)), source: run.source || 'foto' }); }
+        try { vacaciones.syncRun({ id: run.id, plant: pl, site: A.PLANTS[pl].name, monday: run.monday }, days, run.by || ''); } catch (e) { console.error('vacaciones', e); }
+        out.vacPending = vacaciones.pendingFor ? vacaciones.pendingFor(pl, run.monday) : null;
+      }
       if (out.analysis.summary) { run.lastSummary = out.analysis.summary; try { saveRun(run); } catch (e) {} }
     }
     return out;
@@ -324,20 +333,16 @@ module.exports = function (app, { DATA_DIR, checador, vacaciones }) {
       r.overrides[k] = { final, hours: h, note: String(note || '').slice(0, 200), by: who(req), at: new Date().toISOString() };
     }
     saveRun(r);
-    // a day marked VAC is a vacation day in the employee's file (Expedientes); un-marking gives it back
-    let vac = null;
-    if (vacaciones) {
-      const pl = r.plant || 'monclova', w = week(pl, r.monday), ro = roster(pl);
-      const p = (w && w.people && w.people[person]) || ro.people[person] || {};
-      try { vac = vacaciones.fromAsistencia({ key: `asis:${r.id}:${person}:${day}`, number: person, name: p.name || '', site: A.PLANTS[pl].name, ymd: A.addDays(r.monday, A.DAYS7.indexOf(day)), on: final === 'VAC', by: who(req) }); }
-      catch (e) { console.error('vacaciones', e); }
-    }
+    // a day marked VAC goes to the review list (Expedientes → Vacaciones); nothing is taken until someone confirms it
+    const vac = final === 'VAC' ? { queued: true } : null;
     res.json({ ...publicRun(r), vac });
   });
   app.delete('/api/asis/runs/:id', (req, res) => {
     const id = req.params.id; if (!RUN_ID.test(id)) return res.status(400).json({ error: 'Identificador no válido.' });
     if (reading.has(id)) return res.status(409).json({ error: 'Todavía se está leyendo.' });
-    fs.rmSync(runDir(id), { recursive: true, force: true }); res.json({ ok: true });
+    fs.rmSync(runDir(id), { recursive: true, force: true });
+    if (vacaciones) try { vacaciones.dropRun(id); } catch (e) { console.error('vacaciones', e); }
+    res.json({ ok: true });
   });
 
   /* ---------- Excel for payroll ---------- */
@@ -381,6 +386,12 @@ module.exports = function (app, { DATA_DIR, checador, vacaciones }) {
       await wb.xlsx.write(res); res.end();
     } catch (e) { next(e); }
   });
+
+  /* weeks reviewed before this link existed: queue their VAC days for review once, shortly after start */
+  if (vacaciones && process.env.NODE_ENV !== 'test') setTimeout(() => {
+    try { for (const m of listRuns()) { if (m.status !== 'read') continue; const r = loadRun(m.id); if (r) try { publicRun(r); } catch (e) { console.error('vacaciones backfill', m.id, e.message); } } }
+    catch (e) { console.error('vacaciones backfill', e.message); }
+  }, 8000).unref();
 
   return { summary: () => {
     const runs = listRuns(), ro = roster('monclova');

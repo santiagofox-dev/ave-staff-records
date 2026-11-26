@@ -235,3 +235,5 @@ dialog::backdrop{background:var(--scrim)}
 .vmsg.warn{border-color:var(--warn);background:var(--warn-bg)}
 .vplan{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin:8px 0}
 .filebtn{position:relative;overflow:hidden;cursor:pointer}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.vmsg .vtable{margin:8px 0;background:var(--surface,#fff)}
+.vacts{display:flex;gap:8px;flex-wrap:wrap}

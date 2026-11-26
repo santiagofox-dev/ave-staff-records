@@ -273,6 +273,7 @@
     if (an.notices && an.notices.length) $('#runFlags').append(...an.notices.map(n => h('div', { class: 'msg warn' }, n.msg)));
     if (an.inactive && an.inactive.length) $('#runFlags').append(h('div', { class: 'muted small' }, `Ya no trabajan aquí (fuera de la revisión): ${an.inactive.map(x => `${x.id || ''} ${x.name}`.trim()).join(' · ')}`));
     if (an.exempt && an.exempt.length) $('#runFlags').append(h('div', { class: 'muted small' }, `No usan checador (fuera de la revisión): ${an.exempt.map(x => `${x.id} ${x.name}`).join(' · ')}`));
+    vacPanel(r);
     if (X && r.incid) $('#runFlags').append(h('div', { class: 'muted small' }, `Incidencias: ${r.incid.file} · hoja ${r.incid.sheet}${r.incid.title ? ' · ' + r.incid.title : ''}`));
     $('#mets').replaceChildren(
       h('div', { class: 'met' }, h('b', {}, s.people), h('span', {}, X ? 'Personas en el checador' : `Personas (${an.turnosRead.join(', ') || 'sin turno'})`)),
@@ -287,6 +288,25 @@
     $('#filters').replaceChildren(...[['todo', 'Todos'], ['bad', 'Revisar'], ['warn', 'Atención'], ['ok', 'Sin diferencias']].map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(filter === k), onclick: () => { filter = k; renderRun(); } }, `${t} (${counts[k]})`)));
     grid();
     $('#extras').replaceChildren(...(an.extras.length ? [h('h3', {}, `${X ? 'Personas en incidencias' : 'Renglones de la hoja'} que no están en el checador (${an.extras.length})`), h('ul', {}, an.extras.map(x => h('li', {}, `${X ? '' : x.sheet + ': '}${x.id || 'sin número'} ${x.name}${x.why === 'duplicado' ? ' (repetido)' : ''}${x.codes && x.codes.length ? ' · ' + [...new Set(x.codes)].join(', ') : ''}`)))] : []));
+  }
+  /* VAC days of this week: they are taken from Expedientes only after someone confirms them */
+  function vacPanel(r) {
+    const all = r.vacPending || []; if (!all.length) return;
+    const open = all.filter(x => x.need), sel = new Set(open.filter(x => x.need === 'devolver' || (x.emp && !x.beforeKardex && !x.already)).map(x => x.key));
+    const post = (u, b) => api(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+    const act = async (u, keys, msg) => { if (!keys.length) return; try { const j = await post(u, { keys }); RUN = await api(`/api/asis/runs/${RUN.id}`); renderRun(); const n = h('div', { class: 'msg' }, msg(j)); $('#runFlags').prepend(n); setTimeout(() => n.remove(), 8000); } catch (e) { alert(e.message); } };
+    const note = x => x.need === 'devolver' ? 'Ya no aparece como VAC. ¿Devolverle el día en Expedientes?' : !x.emp ? 'No encontrado en Expedientes: confírmalo en Expedientes → Vacaciones, donde puedes elegir a la persona.' : x.beforeKardex ? 'Es anterior a su saldo del Kárdex: seguramente ya está descontado ahí.' : x.already ? `Ya tiene ${x.already.kind === 'kardex' ? 'vacaciones del Kárdex' : 'un registro'} ese día.` : `Saldo actual ${num(x.emp.balance)} días.`;
+    const row = x => h('tr', { class: x.need ? '' : 'done' },
+      h('td', {}, x.need ? h('input', { type: 'checkbox', checked: sel.has(x.key), disabled: !x.emp && x.need !== 'devolver', onchange: e => e.target.checked ? sel.add(x.key) : sel.delete(x.key) }) : ''),
+      h('td', { class: 'mono' }, dm(x.ymd)), h('td', {}, `${x.person} ${x.name}`), h('td', {}, x.emp ? x.emp.name : '—'),
+      h('td', { class: 'small' }, x.need ? note(x) : x.status === 'confirmed' ? `Descontado por ${x.decidedBy || ''}` : `No se descontó (${x.decidedBy || ''})`));
+    $('#runFlags').append(h('div', { class: 'vacrev' + (open.length ? ' warn' : '') },
+      h('b', {}, open.length ? `Vacaciones (VAC) por confirmar: ${open.length}` : 'Vacaciones (VAC) de esta semana: todas revisadas'),
+      h('div', { class: 'small muted' }, 'Los días VAC no se descuentan de las vacaciones en Expedientes hasta que los confirmes.'),
+      h('table', {}, h('tbody', {}, all.map(row))),
+      open.length ? h('div', { class: 'actions' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => act('/api/vacaciones/pendientes/confirmar', [...sel], j => `Listo: ${j.done} aplicados en Expedientes.${j.skipped.length ? ` ${j.skipped.length} sin persona en Expedientes.` : ''}`) }, 'Confirmar seleccionados'),
+        h('button', { class: 'btn', type: 'button', onclick: () => act('/api/vacaciones/pendientes/descartar', [...sel], j => `${j.done} marcados como "no descontar".`) }, 'No descontar seleccionados')) : null));
   }
   function setPhoto(n) { const img = $('#photo'); img.src = `/api/asis/runs/${RUN.id}/photo/${n}`; img.style.width = $('#zoom').value + '%'; }
   $('#zoom').addEventListener('input', e => { $('#photo').style.width = e.target.value + '%'; });
@@ -363,12 +383,11 @@
       let vacMsg = '';
       if (fin !== editing.final0 || String(hrs) !== String(editing.hours0 ?? '') || note !== (editing.note0 || '')) {
         RUN = await J(`/api/asis/runs/${RUN.id}/override`, { person: editing.person, day: editing.day, final: fin, hours: (fin === 'A' || fin === 'DT') ? hrs : '', note });
-        const v = RUN.vac;
-        if (fin === 'VAC') vacMsg = v && v.found ? `Día de vacaciones registrado en el expediente de ${v.name}. Le quedan ${v.balance} días.` : 'Marcado como VAC, pero no encontré a esta persona en Expedientes: regístralo allá para que se descuente de sus vacaciones.';
-        else if (editing.final0 === 'VAC') vacMsg = 'Se devolvió el día de vacaciones en Expedientes.';
+        if (fin === 'VAC') vacMsg = 'Marcado como VAC. Confírmalo abajo en "Vacaciones por confirmar" para descontarlo de sus vacaciones en Expedientes.';
+        else if (editing.final0 === 'VAC') vacMsg = 'Ya no es VAC. Si ese día ya se había descontado en Expedientes, aparece abajo para devolverlo.';
       }
       renderRun();
-      if (vacMsg) { const n = h('div', { class: 'msg' + (RUN.vac && RUN.vac.found === false ? ' warn' : '') }, vacMsg); $('#runFlags').prepend(n); setTimeout(() => n.remove(), 9000); }
+      if (vacMsg) { const n = h('div', { class: 'msg' }, vacMsg); $('#runFlags').prepend(n); setTimeout(() => n.remove(), 9000); }
     } catch (e) { alert(e.message); }
   });
   function hoursVis() { const f = $('#cFinal').value; $('#cHoursF').hidden = !(f === 'A' || f === 'DT'); }

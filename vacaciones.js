@@ -211,23 +211,110 @@ module.exports = function (app, { state, persist, who }) {
     res.json(withSummary(e));
   });
 
-  /* ---------- from Asistencia: a day marked VAC in the weekly review ---------- */
-  function fromAsistencia({ key, number, name, site, ymd, on, by }) {
-    // remove any earlier entry for this same cell, then add it again if the day is VAC
-    for (const e of emps()) if (e.vac && (e.vac.taken || []).some(t => t.src === key)) {
-      for (const t of e.vac.taken.filter(x => x.src === key)) log(e, by, 'baja', { id: t.id, ...pick(t) }, null, 'Quitado el VAC en Asistencia');
-      e.vac.taken = e.vac.taken.filter(t => t.src !== key); touch(e);
+  /* ---------- from Asistencia: VAC days wait for someone to confirm them ----------
+     Every week reviewed in Asistencia (Excel de incidencias, fotos or the local checador) is scanned for days whose
+     result is VAC. Each one becomes an item to review; nothing is taken from Expedientes until someone confirms it.
+     If a confirmed day stops being VAC (the week is corrected), it comes back for review to return the day.
+     state.vacPending[key] = { key, plant, site, monday, ymd, person, name, runs:[], source, status: 'pending'|'confirmed'|'dismissed', gone, empId, entryId } */
+  const reg = () => (state.vacPending = state.vacPending || {});
+  const vacKey = (plant, person, ymd) => `asis:${plant}:${numKey(person) || norm(person)}:${ymd}`;
+  /** run: { id, plant, site, monday }, days: [{ person, name, ymd, source }] = the VAC days in that run now */
+  function syncRun(run, days, by) {
+    const R = reg(), now = new Date().toISOString(), seen = new Set();
+    let changed = false;
+    for (const d of days) {
+      const k = vacKey(run.plant, d.person, d.ymd); seen.add(k);
+      let it = R[k];
+      if (!it) {
+        const e = findEmployee(d.person, d.name, run.site);
+        it = R[k] = { key: k, plant: run.plant, site: run.site, monday: run.monday, ymd: d.ymd, person: String(d.person), name: d.name, runs: [], source: d.source, status: 'pending', empId: e ? e.id : null, at: now, by };
+        changed = true;
+      }
+      if (!it.runs.includes(run.id)) { it.runs.push(run.id); changed = true; }
+      if (it.gone) { delete it.gone; changed = true; }
+      if (d.source && it.source !== d.source) { it.source = d.source; changed = true; }
     }
-    if (!on) { persist(); return null; }
-    const e = findEmployee(number, name, site);
-    if (!e) { persist(); return { found: false }; }
-    e.vac = e.vac || { taken: [] }; e.vac.taken = e.vac.taken || [];
-    const t = entry(e, { from: ymd, to: ymd, days: 1, kind: 'falta', note: 'Marcado como VAC en Asistencia', src: key }, by);
-    e.vac.taken.push(t); log(e, by, 'alta', null, { id: t.id, ...pick(t) }, 'Marcado como VAC en Asistencia');
-    touch(e); persist();
-    const s = VAC.summary(e, todayCJ());
-    return { found: true, name: e.name, balance: s.balance };
+    for (const it of Object.values(R)) {
+      if (it.plant !== run.plant || it.monday !== run.monday || seen.has(it.key) || !it.runs.includes(run.id)) continue;
+      it.runs = it.runs.filter(x => x !== run.id); changed = true;
+      if (it.runs.length) continue;
+      if (it.status === 'confirmed') it.gone = now; // the day was taken from Expedientes: ask whether to give it back
+      else delete R[it.key];
+    }
+    if (changed) persist();
   }
+  /** Asistencia deleted a run: its VAC days no longer come from it. */
+  function dropRun(runId) {
+    const R = reg(); let changed = false;
+    for (const it of Object.values(R)) if (it.runs.includes(runId)) {
+      it.runs = it.runs.filter(x => x !== runId); changed = true;
+      if (!it.runs.length) { if (it.status === 'confirmed') it.gone = new Date().toISOString(); else delete R[it.key]; }
+    }
+    if (changed) persist();
+  }
+  function pendingView(it) {
+    const e = it.empId && state.employees[it.empId];
+    const s = e ? VAC.summary(e, todayCJ()) : null;
+    const already = e ? ((e.vac && e.vac.taken) || []).find(t => t.kind !== 'FI' && t.from <= it.ymd && (t.to || t.from) >= it.ymd && t.src !== it.key) : null;
+    const op = e && e.vac && e.vac.opening;
+    return { beforeKardex: !!(op && it.ymd <= op.date), key: it.key, plant: it.plant, site: it.site, monday: it.monday, ymd: it.ymd, person: it.person, name: it.name, source: it.source, status: it.status, gone: !!it.gone,
+      need: it.gone ? 'devolver' : it.status === 'pending' ? 'descontar' : null,
+      emp: e ? { id: e.id, name: e.name, number: e.number || '', site: e.site || '', balance: s.balance } : null,
+      already: already ? { from: already.from, to: already.to, kind: already.kind } : null, decidedBy: it.decidedBy, decidedAt: it.decidedAt };
+  }
+  const needs = it => it.status === 'pending' || it.gone;
+  const pendingFor = (plant, monday) => Object.values(reg()).filter(it => it.plant === plant && it.monday === monday).sort((a, b) => a.ymd.localeCompare(b.ymd) || String(a.name).localeCompare(String(b.name))).map(pendingView);
+  app.get('/api/vacaciones/pendientes', (req, res) => {
+    const { plant, monday, all } = req.query;
+    const list = Object.values(reg()).filter(it => (!plant || it.plant === plant) && (!monday || it.monday === monday) && (all ? true : needs(it)))
+      .sort((a, b) => a.ymd.localeCompare(b.ymd) || String(a.name).localeCompare(String(b.name)));
+    res.json({ items: list.map(pendingView), open: Object.values(reg()).filter(needs).length });
+  });
+  /* confirm: take the day from Expedientes (or give it back when the VAC disappeared). body: { keys:[], emp: { key: empId } } */
+  app.post('/api/vacaciones/pendientes/confirmar', (req, res) => {
+    const b = req.body || {}, by = who(req), R = reg(), done = [], skipped = [];
+    for (const k of [].concat(b.keys || [])) {
+      const it = R[k]; if (!it || !needs(it)) continue;
+      if (it.gone) {
+        const e = it.empId && state.employees[it.empId];
+        if (e && e.vac) {
+          const t = (e.vac.taken || []).find(x => x.id === it.entryId || x.src === it.key);
+          if (t) { e.vac.taken = e.vac.taken.filter(x => x !== t); log(e, by, 'baja', { id: t.id, ...pick(t) }, null, 'Ya no está como VAC en Asistencia: se devuelve el día'); touch(e); }
+        }
+        delete R[k]; done.push(k); continue;
+      }
+      const empId = (b.emp && b.emp[k]) || it.empId, e = empId && state.employees[empId];
+      if (!e) { skipped.push({ key: k, why: 'No se sabe a quién de Expedientes corresponde.' }); continue; }
+      e.vac = e.vac || { taken: [] }; e.vac.taken = e.vac.taken || [];
+      const t = entry(e, { from: it.ymd, to: it.ymd, days: 1, kind: 'vacaciones', note: `VAC en Asistencia (${it.site || it.plant})`, src: it.key }, by);
+      e.vac.taken.push(t); log(e, by, 'alta', null, { id: t.id, ...pick(t) }, `Confirmado desde Asistencia (${it.site || it.plant}, semana del ${it.monday})`);
+      touch(e);
+      Object.assign(it, { status: 'confirmed', empId: e.id, entryId: t.id, decidedBy: by, decidedAt: new Date().toISOString() });
+      done.push(k);
+    }
+    persist();
+    res.json({ done: done.length, skipped, open: Object.values(R).filter(needs).length });
+  });
+  /* don't take it from Expedientes (or, for a day that stopped being VAC, keep it taken) */
+  app.post('/api/vacaciones/pendientes/descartar', (req, res) => {
+    const b = req.body || {}, by = who(req), R = reg(); let n = 0;
+    for (const k of [].concat(b.keys || [])) {
+      const it = R[k]; if (!it || !needs(it)) continue;
+      if (it.gone) { delete it.gone; it.keep = true; } else it.status = 'dismissed';
+      Object.assign(it, { decidedBy: by, decidedAt: new Date().toISOString(), why: String(b.reason || '').slice(0, 200) || undefined }); n++;
+    }
+    persist();
+    res.json({ done: n, open: Object.values(R).filter(needs).length });
+  });
+  /* undo a decision: back to review */
+  app.post('/api/vacaciones/pendientes/revisar', (req, res) => {
+    const it = reg()[(req.body || {}).key]; if (!it) return res.status(404).json({ error: 'No existe.' });
+    if (it.status === 'dismissed') { it.status = 'pending'; persist(); }
+    res.json(pendingView(it));
+  });
 
-  return { fromAsistencia, readKardex, planKardex, findEmployee, sameName, likeName };
+  /** Old direct link (kept for compatibility): a manual VAC mark is now only queued for review by syncRun. */
+  function fromAsistencia() { return { queued: true }; }
+
+  return { fromAsistencia, syncRun, dropRun, pendingFor, readKardex, planKardex, findEmployee, sameName, likeName };
 };

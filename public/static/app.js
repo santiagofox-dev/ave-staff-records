@@ -301,6 +301,7 @@ function vacListHTML(list) {
   const owed = rows.reduce((a, r) => a + Math.max(0, r.s.balance || 0), 0), lost = rows.reduce((a, r) => a + (r.s.expired || 0), 0);
   return `<div class="vhead"><span class="muted small">${rows.length} empleados · ${num1(owed)} días de vacaciones vigentes por tomar${lost ? ` · ${num1(lost)} vencidos` : ''}${withK ? ` · ${withK} con saldo inicial del Kárdex` : ''}${noHire ? ` · <b>${noHire} sin fecha de ingreso</b> (no se puede calcular)` : ''}</span>
     <label class="btn sm filebtn">Cargar Kárdex de vacaciones (CONTPAQi)<input type="file" id="kdxFile" accept=".xlsx"></label></div>
+    <div id="vacPend"></div>
     <div id="kdxBox">${kdxPlan ? kdxHTML(kdxPlan) : ''}</div>
     <table class="vtable"><thead><tr><th>Empleado</th><th>No.</th><th>Ingreso</th><th>Antigüedad</th><th class="n">Días por ley (este año)</th><th class="n">Saldo</th><th class="n">Vencidos</th><th>Próximo vencimiento</th><th>Próximo aniversario</th></tr></thead><tbody>${rows.map(({ e, s }) => `<tr class="go" data-open="${esc(e.id)}">
       <td>${esc(e.name)}<br><span class="sub">${esc(e.site || '')}</span></td><td class="mono">${esc(e.number || '—')}</td><td class="mono">${s.hire ? fmt(s.hire) : '<span class="chip warn">Falta</span>'}</td><td>${antig(s)}</td>
@@ -319,7 +320,31 @@ function kdxHTML(r) {
     ${un.length || hd.length || dup.length ? `<details class="vplan"><summary class="small">${[un.length && `${un.length} sin encontrar`, hd.length && `${hd.length} con fecha de ingreso distinta`, dup.length && `${dup.length} repetidos`].filter(Boolean).join(' · ')}</summary>
       <table class="vtable"><thead><tr><th>Kárdex</th><th>Saldo</th><th>Ingreso (Kárdex)</th><th>Expedientes</th></tr></thead><tbody>${[...un, ...hd, ...dup].map(x => `<tr><td>${esc(x.number)} · ${esc(x.name)}</td><td class="n">${num1(x.saldo)}</td><td class="mono">${x.hire ? fmt(x.hire) : ''}</td><td>${x.match ? `${esc(x.match.name)} · ingreso ${x.match.hire ? fmt(x.match.hire) : '—'}${x.dup ? ' (ya usado)' : ''}` : '<span class="chip warn">No encontrado</span>'}</td></tr>`).join('')}</tbody></table></details>` : ''}`;
 }
+/* VAC days from Asistencia waiting for confirmation before they are taken from Expedientes */
+async function loadVacPend() {
+  const box = $('#vacPend'); if (!box) return;
+  let j; try { j = await api('GET', '/api/vacaciones/pendientes'); } catch (e) { box.innerHTML = ''; return; }
+  if (!$('#vacPend')) return;
+  if (!j.items.length) { box.innerHTML = ''; return; }
+  const empOpts = employees.filter(e => e.status !== 'baja').slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', LOC)).map(e => `<option value="${esc(e.id)}">${esc(e.name)}${e.number ? ' · ' + esc(e.number) : ''}${e.site ? ' · ' + esc(e.site) : ''}</option>`).join('');
+  const why = x => x.need === 'devolver' ? 'Ya no aparece como VAC en Asistencia: ¿devolverle el día?' : x.beforeKardex ? 'Anterior a su saldo del Kárdex: seguramente ya está descontado ahí.' : x.already ? `Ya tiene ${x.already.kind === 'kardex' ? 'vacaciones del Kárdex' : 'un registro'} ese día.` : x.emp ? `Saldo actual ${num1(x.emp.balance)} días` : '';
+  const pre = x => x.need === 'devolver' || (x.emp && !x.beforeKardex && !x.already);
+  box.innerHTML = `<div class="vmsg warn"><b>Vacaciones de Asistencia por confirmar: ${j.items.length}.</b> Los días marcados como VAC en Asistencia no se descuentan hasta que los confirmes aquí.
+    <table class="vtable"><thead><tr><th></th><th>Día</th><th>Planta</th><th>En Asistencia</th><th>En Expedientes</th><th>Nota</th></tr></thead><tbody>${j.items.map(x => `<tr>
+      <td><input type="checkbox" data-pk="${esc(x.key)}"${pre(x) ? ' checked' : ''}></td><td class="mono">${fmt(x.ymd)}</td><td>${esc(x.site || x.plant)}</td><td>${esc(x.person)} · ${esc(x.name)}${x.source === 'manual' ? '<br><span class="sub">marcado a mano</span>' : ''}</td>
+      <td>${x.emp ? esc(x.emp.name) : x.need === 'devolver' ? '—' : `<select data-pe="${esc(x.key)}"><option value="">No encontrado: elige a la persona</option>${empOpts}</select>`}</td><td class="small">${esc(why(x))}</td></tr>`).join('')}</tbody></table>
+    <div class="vacts"><button class="btn sm primary" type="button" id="vpOk">Confirmar seleccionados</button><button class="btn sm" type="button" id="vpNo">No descontar seleccionados</button></div></div>`;
+  box.querySelectorAll('[data-pe]').forEach(sel => sel.addEventListener('change', () => { const c = box.querySelector(`[data-pk="${CSS.escape(sel.dataset.pe)}"]`); if (c && sel.value) c.checked = true; }));
+  const keys = () => [...box.querySelectorAll('[data-pk]:checked')].map(c => c.dataset.pk);
+  const run = async (url, body, msg) => {
+    try { const r = await api('POST', url, body); employees = await api('GET', '/api/employees'); renderRoster(); toast(msg(r)); }
+    catch (err) { toast(err.message); }
+  };
+  $('#vpOk').addEventListener('click', () => { const k = keys(); if (!k.length) return toast('Selecciona al menos uno.'); const emp = {}; box.querySelectorAll('[data-pe]').forEach(s => { if (s.value) emp[s.dataset.pe] = s.value; }); run('/api/vacaciones/pendientes/confirmar', { keys: k, emp }, r => `${r.done} aplicados en Expedientes${r.skipped.length ? ` · ${r.skipped.length} sin persona elegida` : ''}`); });
+  $('#vpNo').addEventListener('click', () => { const k = keys(); if (!k.length) return toast('Selecciona al menos uno.'); run('/api/vacaciones/pendientes/descartar', { keys: k }, r => `${r.done} marcados como "no descontar"`); });
+}
 function wireVacList() {
+  loadVacPend();
   const f = $('#kdxFile'); if (f) f.addEventListener('change', async e => {
     kdxFile = e.target.files[0]; if (!kdxFile) return;
     const fd = new FormData(); fd.append('file', kdxFile);
